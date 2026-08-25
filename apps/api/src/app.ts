@@ -32,10 +32,13 @@ export function createApp(): Express {
   app.use(helmet());
   app.use(
     cors({
-      origin: corsOrigins.length > 0 ? corsOrigins : undefined,
+      origin: (origin, callback) => {
+        if (!origin || corsOrigins.includes('*') || corsOrigins.includes(origin)) {
+          return callback(null, true);
+        }
+        return callback(new Error(`CORS blocked for origin: ${origin}`));
+      },
       credentials: true,
-      // Browser JS cannot read Content-Disposition unless it is explicitly exposed — the
-      // admin dashboard needs it to name the downloaded complaints export.
       exposedHeaders: ['Content-Disposition'],
     }),
   );
