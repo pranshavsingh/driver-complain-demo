@@ -18,22 +18,12 @@ export interface GridTile {
 export const DASHBOARD_TILES: GridTile[] = [
   {
     id: 'LOADING',
-    title: 'Loading',
-    subtitle: 'GPS & Waiting',
+    title: 'Loading / Unloading',
+    subtitle: 'GPS Proof & Waiting Timer',
     icon: 'truck',
-    bgColor: '#FFE4E6', // Pastel Pink (matching diagram)
+    bgColor: '#FFE4E6', // Pastel Pink
     borderColor: '#FDA4AF',
     textColor: '#9F1239',
-    iconBgColor: '#FFFFFF',
-  },
-  {
-    id: 'UNLOADING',
-    title: 'Unloading',
-    subtitle: 'Arrival & Timer',
-    icon: 'archive',
-    bgColor: '#DCFCE7', // Light Green (matching diagram)
-    borderColor: '#86EFAC',
-    textColor: '#166534',
     iconBgColor: '#FFFFFF',
   },
   {

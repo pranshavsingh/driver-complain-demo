@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactElement } from 'react';
+import { useMemo, type ReactElement } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -16,9 +16,6 @@ export default function DriverHomeDashboardScreen(): ReactElement {
   const insets = useSafeAreaInsets();
   const { user, logout } = useAuth();
   const vehicles = useApiResource('vehicles:mine', () => api.vehicles.mine());
-
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-
   const vehicleList = useMemo<VehiclePublic[]>(() => vehicles.data ?? [], [vehicles.data]);
   const activeVehicle = vehicleList[0];
 
@@ -40,8 +37,6 @@ export default function DriverHomeDashboardScreen(): ReactElement {
   };
 
   const handleTilePress = (tile: GridTile): void => {
-    setSelectedCategory(tile.id);
-
     // 1. Complaint / Status -> Navigates to Complaint Status tab (history)
     if (tile.id === 'COMPLAINT_STATUS') {
       router.push('/(app)/(tabs)/history');
@@ -139,12 +134,10 @@ export default function DriverHomeDashboardScreen(): ReactElement {
         {/* 9 Grid Action Boxes (matching wireframe design) */}
         <DashboardGrid onTilePress={handleTilePress} />
 
-        {/* Show Loading / Unloading Assistant Card when selected */}
-        {selectedCategory === 'LOADING' || selectedCategory === 'UNLOADING' ? (
-          <View style={styles.assistantSection}>
-            <LoadingAssistantCard />
-          </View>
-        ) : null}
+        {/* Loading & Unloading Assistant Feature */}
+        <View style={styles.assistantSection}>
+          <LoadingAssistantCard />
+        </View>
       </ScrollView>
     </View>
   );
