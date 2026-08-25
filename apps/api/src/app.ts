@@ -33,10 +33,9 @@ export function createApp(): Express {
   app.use(
     cors({
       origin: (origin, callback) => {
-        if (!origin || corsOrigins.includes('*') || corsOrigins.includes(origin)) {
-          return callback(null, true);
-        }
-        return callback(new Error(`CORS blocked for origin: ${origin}`));
+        if (!origin) return callback(null, true);
+        // Reflect the exact requesting origin so credentials: true is always valid
+        return callback(null, origin);
       },
       credentials: true,
       exposedHeaders: ['Content-Disposition'],

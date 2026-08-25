@@ -47,10 +47,9 @@ export function initRealtime(server: HttpServer): RealtimeServer {
     path: '/socket.io',
     cors: {
       origin: (origin, callback) => {
-        if (!origin || corsOrigins.includes('*') || corsOrigins.includes(origin)) {
-          return callback(null, true);
-        }
-        return callback(new Error(`Socket CORS blocked for origin: ${origin}`));
+        if (!origin) return callback(null, true);
+        // Reflect requesting origin to guarantee compatibility with credentials: true
+        return callback(null, origin);
       },
       credentials: true,
     },
