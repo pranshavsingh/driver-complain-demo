@@ -96,13 +96,13 @@ export function RealtimeProvider({ children }: { children: ReactNode }): ReactEl
       });
     });
 
-    for (const event of Object.values(REALTIME_EVENTS)) {
+    for (const event of Object.values(REALTIME_EVENTS) as string[]) {
       socket.on(event, (raw: unknown) => {
         // Validate against the shared contract: a malformed event is dropped rather than
         // pushed into the UI as a half-populated row.
         const parsed = ComplaintEventPayloadSchema.safeParse(raw);
         if (!parsed.success) return;
-        for (const handler of handlers.current) handler({ event, payload: parsed.data });
+        for (const handler of handlers.current) handler({ event: event as any, payload: parsed.data });
       });
     }
 
