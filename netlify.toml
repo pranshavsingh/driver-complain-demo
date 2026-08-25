@@ -1,6 +1,6 @@
 [build]
   base = ""
-  command = "pnpm install && pnpm --filter @driver-complaint/shared-types build && pnpm --filter @driver-complaint/admin-web build"
+  command = "pnpm install --no-frozen-lockfile && pnpm --filter @driver-complaint/shared-types build && pnpm --filter @driver-complaint/admin-web build"
   publish = "apps/admin-web/dist"
 
 [[redirects]]
