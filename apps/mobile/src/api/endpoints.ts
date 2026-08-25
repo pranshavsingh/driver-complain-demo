@@ -7,6 +7,7 @@ import {
   LoginResponseSchema,
   UserPublicSchema,
   VehiclePublicSchema,
+  LoadingRecordSchema,
   type ComplaintDetail,
   type ComplaintPublic,
   type CreateComplaint,
@@ -17,6 +18,7 @@ import {
   type RegisterDeviceToken,
   type UserPublic,
   type VehiclePublic,
+  type LoadingRecord,
 } from '@driver-complaint/shared-types';
 import { request, requestNoContent } from './client';
 import { clearTokens, getRefreshToken } from './tokens';
@@ -119,3 +121,39 @@ export const notifications = {
   unregisterDevice: (token: string): Promise<void> =>
     requestNoContent(`/notifications/devices/${encodeURIComponent(token)}`, { method: 'DELETE' }),
 };
+
+export const loading = {
+  active: (): Promise<{ active: LoadingRecord | null }> =>
+    request(z.object({ active: z.any() }) as any, '/loading/active'),
+
+  reached: (
+    input: { latitude: number; longitude: number; address?: string; locationName?: string; complaintId?: string },
+    photo: FileToUpload,
+  ): Promise<LoadingRecord> => {
+    const form = new FormData();
+    form.append('latitude', String(input.latitude));
+    form.append('longitude', String(input.longitude));
+    if (input.address) form.append('address', input.address);
+    if (input.locationName) form.append('locationName', input.locationName);
+    if (input.complaintId) form.append('complaintId', input.complaintId);
+    form.append('photo', photo as unknown as Blob);
+    return request(LoadingRecordSchema, '/loading/reached', { method: 'POST', body: form });
+  },
+
+  completed: (
+    loadingId: string,
+    input: { latitude: number; longitude: number; address?: string },
+    photo: FileToUpload,
+  ): Promise<LoadingRecord> => {
+    const form = new FormData();
+    form.append('latitude', String(input.latitude));
+    form.append('longitude', String(input.longitude));
+    if (input.address) form.append('address', input.address);
+    form.append('photo', photo as unknown as Blob);
+    return request(LoadingRecordSchema, `/loading/${encodeURIComponent(loadingId)}/complete`, {
+      method: 'PATCH',
+      body: form,
+    });
+  },
+};
+

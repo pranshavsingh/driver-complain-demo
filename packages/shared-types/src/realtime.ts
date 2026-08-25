@@ -13,6 +13,8 @@ export const REALTIME_EVENTS = {
   complaintCreated: 'complaint:created',
   complaintStatusChanged: 'complaint:status-changed',
   complaintAssigned: 'complaint:assigned',
+  loadingReached: 'loading:reached',
+  loadingCompleted: 'loading:completed',
 } as const;
 export type RealtimeEvent = (typeof REALTIME_EVENTS)[keyof typeof REALTIME_EVENTS];
 

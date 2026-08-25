@@ -5,6 +5,7 @@ import { driversRouter } from './modules/drivers/drivers.router';
 import { vehiclesRouter } from './modules/vehicles/vehicles.router';
 import { complaintsRouter } from './modules/complaints/complaints.router';
 import { notificationsRouter } from './modules/notifications/notifications.router';
+import { loadingRouter } from './modules/loading/loading.router';
 
 /** All v1 routes, mounted by app.ts under /api/v1. */
 export const apiRouter = Router();
@@ -15,3 +16,5 @@ apiRouter.use('/drivers', driversRouter);
 apiRouter.use('/vehicles', vehiclesRouter);
 apiRouter.use('/complaints', complaintsRouter);
 apiRouter.use('/notifications', notificationsRouter);
+apiRouter.use('/loading', loadingRouter);
+

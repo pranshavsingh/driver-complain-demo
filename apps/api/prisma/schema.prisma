@@ -96,8 +96,9 @@ model Driver {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  vehicles   Vehicle[]
-  complaints Complaint[]
+  vehicles       Vehicle[]
+  complaints     Complaint[]
+  loadingRecords LoadingRecord[]
 }
 
 model Vehicle {
@@ -134,9 +135,10 @@ model Complaint {
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
 
-  attachments   ComplaintAttachment[]
-  updates       ComplaintUpdate[]
-  notifications Notification[]
+  attachments    ComplaintAttachment[]
+  updates        ComplaintUpdate[]
+  notifications  Notification[]
+  loadingRecords LoadingRecord[]
 
   @@index([status])
   @@index([driverId])
@@ -238,3 +240,43 @@ model Counter {
   name  String @id
   value Int    @default(0)
 }
+
+enum LoadingStatus {
+  REACHED
+  COMPLETED
+}
+
+model LoadingRecord {
+  id                 String        @id @default(uuid(7)) @db.Uuid
+  driverId           String        @db.Uuid
+  driver             Driver        @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  complaintId        String?       @db.Uuid
+  complaint          Complaint?    @relation(fields: [complaintId], references: [id], onDelete: SetNull)
+  locationName       String?
+
+  reachedAt          DateTime      @default(now())
+  reachedLatitude    Float
+  reachedLongitude   Float
+  reachedAddress     String?
+  reachedPhotoUrl    String
+  reachedPublicId    String?
+
+  completedAt        DateTime?
+  completedLatitude  Float?
+  completedLongitude Float?
+  completedAddress   String?
+  completedPhotoUrl  String?
+  completedPublicId  String?
+
+  waitingTimeMinutes Int?
+  status             LoadingStatus @default(REACHED)
+
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  @@index([driverId])
+  @@index([complaintId])
+  @@index([status])
+  @@index([reachedAt])
+}
+

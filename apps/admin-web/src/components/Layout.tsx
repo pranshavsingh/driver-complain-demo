@@ -60,6 +60,14 @@ export function Layout(): ReactElement {
             <ClipboardList size={18} className="nav-icon" />
             <span className="nav-label">Complaints</span>
           </NavLink>
+
+          <NavLink
+            to="/loading"
+            className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
+          >
+            <Truck size={18} className="nav-icon" />
+            <span className="nav-label">Loading & Waiting</span>
+          </NavLink>
         </nav>
 
         <div className="sidebar-footer">

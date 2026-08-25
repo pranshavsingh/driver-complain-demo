@@ -26,3 +26,11 @@ declare module 'expo-av' {
   export const Audio: any;
   export const Video: any;
 }
+
+declare module 'expo-location' {
+  export const Accuracy: any;
+  export function requestForegroundPermissionsAsync(): Promise<any>;
+  export function getCurrentPositionAsync(options?: any): Promise<any>;
+  export function reverseGeocodeAsync(coords: any): Promise<any>;
+}
+

@@ -35,6 +35,7 @@ import { useVoiceRecorder, type VoiceNote } from '../../../src/media/recorder';
 import { captureVideo, videoCaptureAvailable } from '../../../src/media/video';
 import { radius, spacing, PRIORITY_TONES } from '../../../src/theme';
 import { Ionicons } from '@expo/vector-icons';
+import { LoadingAssistantCard } from '../../../src/components/LoadingAssistantCard';
 
 export default function WhatsAppRegisterComplaintScreen(): ReactElement {
   const insets = useSafeAreaInsets();
@@ -327,6 +328,9 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
           contentContainerStyle={styles.chatTimeline}
           keyboardShouldPersistTaps="handled"
         >
+          {/* Loading Location Arrival & Waiting Assistant */}
+          <LoadingAssistantCard />
+
           {/* Welcome Message */}
           <View style={styles.systemBubble}>
             <Text style={styles.systemText}>

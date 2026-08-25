@@ -8,3 +8,5 @@ export * from './notification';
 export * from './device';
 export * from './realtime';
 export * from './auth';
+export * from './loading';
+

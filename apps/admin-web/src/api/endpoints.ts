@@ -18,6 +18,8 @@ import {
   type UpdateComplaintStatus,
   type UserPublic,
   type VehiclePublic,
+  LoadingRecordSchema,
+  type LoadingRecord,
 } from '@driver-complaint/shared-types';
 import { download, request, requestNoContent, type QueryValue } from './client';
 import { clearTokens, getRefreshToken } from './tokens';
@@ -142,3 +144,9 @@ export const complaints = {
   exportXlsx: (filter: ComplaintFilterInput): Promise<void> =>
     download('/complaints/export', { query: toQuery(filter) }, 'complaints.xlsx'),
 };
+
+export const loading = {
+  list: (): Promise<{ data: LoadingRecord[] }> =>
+    request(z.object({ data: z.array(LoadingRecordSchema) }), '/loading'),
+};
+

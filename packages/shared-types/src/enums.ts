@@ -40,3 +40,8 @@ export const PLATFORMS = PlatformSchema.options;
 export const AttachmentKindSchema = z.enum(['PHOTO', 'VOICE', 'VIDEO']);
 export type AttachmentKind = z.infer<typeof AttachmentKindSchema>;
 export const ATTACHMENT_KINDS = AttachmentKindSchema.options;
+
+export const LoadingStatusSchema = z.enum(['REACHED', 'COMPLETED']);
+export type LoadingStatus = z.infer<typeof LoadingStatusSchema>;
+export const LOADING_STATUSES = LoadingStatusSchema.options;
+
