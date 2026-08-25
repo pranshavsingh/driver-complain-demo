@@ -100,9 +100,9 @@ export async function create(
   const categoryToUse = input.category ?? 'SUPPORT';
   const matchingAdmin = await prisma.user.findFirst({
     where: {
-      role: 'ADMIN',
+      role: { in: ['ADMIN', 'SUPER_ADMIN', 'EXECUTIVE'] },
       isActive: true,
-      approvalStatus: 'APPROVED',
+      OR: [{ approvalStatus: 'APPROVED' }, { approvalStatus: null as any }],
       category: categoryToUse,
     },
     select: { id: true },

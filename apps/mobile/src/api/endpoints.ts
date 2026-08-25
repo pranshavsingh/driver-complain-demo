@@ -100,6 +100,7 @@ export const complaints = {
     const form = new FormData();
     form.append('title', input.title);
     form.append('description', input.description);
+    if (input.category) form.append('category', input.category);
     if (input.vehicleId) form.append('vehicleId', input.vehicleId);
     if (input.priority) form.append('priority', input.priority);
     for (const [field, file] of Object.entries(evidence)) {
