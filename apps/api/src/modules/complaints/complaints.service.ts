@@ -217,16 +217,18 @@ export async function create(
   return toComplaintPublic(created);
 }
 
-/** Build the Prisma filter for list/export. Drivers are hard-scoped to their own rows. */
+/** Build the Prisma filter for list/export. Drivers are hard-scoped to their own rows; Admins and Executives are hard-scoped to complaints assigned to them. */
 function buildWhere(
-  role: Role,
+  actor: Actor,
   actorDriverId: string | undefined,
   query: ComplaintFilter,
 ): Prisma.ComplaintWhereInput {
   const where: Prisma.ComplaintWhereInput = {};
 
-  if (role === 'DRIVER') {
+  if (actor.role === 'DRIVER') {
     where.driverId = actorDriverId;
+  } else if (actor.role === 'ADMIN' || actor.role === 'EXECUTIVE') {
+    where.assignedToId = actor.id;
   } else if (query.driverId) {
     where.driverId = query.driverId;
   }
@@ -235,7 +237,9 @@ function buildWhere(
   if (query.priority) where.priority = query.priority;
   if (query.category) where.category = query.category;
   if (query.vehicleId) where.vehicleId = query.vehicleId;
-  if (query.assignedToId) where.assignedToId = query.assignedToId;
+  if (actor.role === 'SUPER_ADMIN' && query.assignedToId) {
+    where.assignedToId = query.assignedToId;
+  }
 
   if (query.createdFrom || query.createdTo) {
     where.createdAt = {
@@ -275,7 +279,7 @@ export async function list(
     actorDriverId = driver.id;
   }
 
-  const where = buildWhere(actor.role, actorDriverId, query);
+  const where = buildWhere(actor, actorDriverId, query);
   const skip = (query.page - 1) * query.pageSize;
 
   const [rows, total] = await prisma.$transaction([
@@ -323,20 +327,23 @@ const EXPORT_BATCH_SIZE = 500;
  * shift the window and cause a row to be duplicated or silently dropped.
  */
 export async function* iterateForExport(
-  actor: Actor,
+  actor: Actor | string,
   filter: ComplaintFilter,
 ): AsyncGenerator<ComplaintExportRow[]> {
+  const actorObj: Actor =
+    typeof actor === 'string' ? { id: actor, role: 'SUPER_ADMIN' } : actor;
+
   let scopedDriverId: string | undefined;
-  if (actor.role === 'DRIVER') {
+  if (actorObj.role === 'DRIVER') {
     const driver = await prisma.driver.findUnique({
-      where: { userId: actor.id },
+      where: { userId: actorObj.id },
       select: { id: true },
     });
     if (!driver) return; // No driver profile → nothing to export.
     scopedDriverId = driver.id;
   }
 
-  const where = buildWhere(actor.role, scopedDriverId, filter);
+  const where = buildWhere(actorObj, scopedDriverId, filter);
   let cursor: string | undefined;
 
   for (;;) {
@@ -368,19 +375,30 @@ export async function getOne(actor: Actor, id: string): Promise<ComplaintDetail>
     throw ApiError.forbidden('You can only view your own complaints');
   }
 
+  if ((actor.role === 'ADMIN' || actor.role === 'EXECUTIVE') && complaint.assignedToId !== actor.id) {
+    throw ApiError.forbidden('You can only view complaints assigned to you');
+  }
+
   return toComplaintDetail(complaint);
 }
 
 export async function updateStatus(
-  adminUserId: string,
+  actor: Actor | string,
   id: string,
   input: UpdateComplaintStatus,
 ): Promise<ComplaintPublic> {
+  const actorObj: Actor =
+    typeof actor === 'string' ? { id: actor, role: 'SUPER_ADMIN' } : actor;
+
   const existing = await prisma.complaint.findUnique({
     where: { id },
     include: { driver: true },
   });
   if (!existing) throw ApiError.notFound('Complaint not found');
+
+  if ((actorObj.role === 'ADMIN' || actorObj.role === 'EXECUTIVE') && existing.assignedToId !== actorObj.id) {
+    throw ApiError.forbidden('You can only update complaints assigned to you');
+  }
 
   const from = existing.status;
   const to = input.status;
@@ -398,7 +416,7 @@ export async function updateStatus(
     await tx.complaintUpdate.create({
       data: {
         complaintId: id,
-        authorId: adminUserId,
+        authorId: actorObj.id,
         fromStatus: from,
         toStatus: to,
         note: input.note ?? null,

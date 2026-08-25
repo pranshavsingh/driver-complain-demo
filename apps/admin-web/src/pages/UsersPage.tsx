@@ -416,150 +416,294 @@ export function UsersPage(): ReactElement {
 
       {/* Create User Modal */}
       {showCreateModal && (
-        <div className="modal-backdrop">
-          <div className="modal-card" style={{ maxWidth: 540 }}>
-            <div className="modal-header">
-              <h2 className="modal-title">Create New User ID</h2>
-              <button type="button" className="close-btn" onClick={() => setShowCreateModal(false)}>
+        <div className="modal-backdrop" style={{ backdropFilter: 'blur(4px)', backgroundColor: 'rgba(15, 23, 42, 0.65)' }}>
+          <div
+            className="modal-card"
+            style={{
+              maxWidth: 580,
+              borderRadius: 16,
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+              padding: 0,
+              overflow: 'hidden',
+              border: '1px solid #e2e8f0',
+            }}
+          >
+            {/* Modal Header */}
+            <div
+              style={{
+                backgroundColor: '#075E54',
+                padding: '20px 24px',
+                color: '#FFFFFF',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 10,
+                    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Plus size={22} color="#FFFFFF" />
+                </div>
+                <div>
+                  <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: '#FFFFFF' }}>Create User ID</h2>
+                  <p style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.8)', margin: 0, marginTop: 2 }}>
+                    Provision new credentials for Fleet Staff or Drivers
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCreateModal(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#FFFFFF',
+                  cursor: 'pointer',
+                  opacity: 0.8,
+                  padding: 4,
+                  display: 'flex',
+                }}
+              >
                 <X size={20} />
               </button>
             </div>
 
-            <form onSubmit={handleCreateUser} style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 14 }}>
+            {/* Modal Form Body */}
+            <form onSubmit={handleCreateUser} style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
               {!isSuperAdmin && (
-                <div style={{ backgroundColor: '#fffbe5', padding: 10, borderRadius: 6, border: '1px solid #fde047', fontSize: 13, color: '#854d0e' }}>
-                  <strong>Note:</strong> Accounts created by Department Admins require <strong>Super Admin Approval</strong> before becoming active.
-                </div>
-              )}
-
-              {modalError && <div style={{ backgroundColor: '#fef2f2', color: '#991b1b', padding: 10, borderRadius: 6, fontSize: 13 }}>{modalError}</div>}
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div>
-                  <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 4 }}>Employee ID *</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="e.g. EMP-104"
-                    value={employeeId}
-                    onChange={(e) => setEmployeeId(e.target.value)}
-                    required
-                  />
-                </div>
-                <div>
-                  <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 4 }}>Initial PIN *</label>
-                  <input
-                    type="password"
-                    className="form-input"
-                    placeholder="4-6 digit PIN"
-                    value={pin}
-                    onChange={(e) => setPin(e.target.value)}
-                    required
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 4 }}>User Role *</label>
-                <select
-                  className="form-input"
-                  value={selectedRole}
-                  onChange={(e) => setSelectedRole(e.target.value as Role)}
+                <div
+                  style={{
+                    backgroundColor: '#fffbe5',
+                    padding: '12px 16px',
+                    borderRadius: 10,
+                    border: '1px solid #fde047',
+                    fontSize: 13,
+                    color: '#854d0e',
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 10,
+                  }}
                 >
-                  {isSuperAdmin && <option value="SUPER_ADMIN">Super Admin</option>}
-                  {isSuperAdmin && <option value="ADMIN">Department Admin</option>}
-                  <option value="EXECUTIVE">Executive</option>
-                  <option value="DRIVER">Driver</option>
-                </select>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div>
-                  <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 4 }}>First Name *</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="First Name"
-                    value={firstName}
-                    onChange={(e) => setFirstName(e.target.value)}
-                    required
-                  />
-                </div>
-                <div>
-                  <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 4 }}>Last Name *</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="Last Name"
-                    value={lastName}
-                    onChange={(e) => setLastName(e.target.value)}
-                    required
-                  />
-                </div>
-              </div>
-
-              {(selectedRole === 'ADMIN' || selectedRole === 'EXECUTIVE') && (
-                <div>
-                  <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 4 }}>
-                    Assigned Complaint Category (for Auto-Assignment)
-                  </label>
-                  <select
-                    className="form-input"
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value as ComplaintCategory)}
-                  >
-                    <option value="">-- Select Category --</option>
-                    {COMPLAINT_CATEGORIES.map((cat) => (
-                      <option key={cat} value={cat}>
-                        {cat}
-                      </option>
-                    ))}
-                  </select>
+                  <ShieldAlert size={18} style={{ flexShrink: 0, marginTop: 1 }} />
+                  <div>
+                    <strong>SuperAdmin Approval Required:</strong> Accounts requested by Department Admins remain pending until approved by Super Admin.
+                  </div>
                 </div>
               )}
 
-              {selectedRole === 'DRIVER' && (
-                <div>
-                  <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 4 }}>Driving License (DL) Number</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="DL Number"
-                    value={licenseNumber}
-                    onChange={(e) => setLicenseNumber(e.target.value)}
-                  />
+              {modalError && (
+                <div
+                  style={{
+                    backgroundColor: '#fef2f2',
+                    color: '#991b1b',
+                    padding: '12px 16px',
+                    borderRadius: 10,
+                    border: '1px solid #fecaca',
+                    fontSize: 13,
+                  }}
+                >
+                  {modalError}
                 </div>
               )}
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div>
-                  <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 4 }}>Email (Optional)</label>
-                  <input
-                    type="email"
-                    className="form-input"
-                    placeholder="email@company.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 4 }}>Phone (Optional)</label>
-                  <input
-                    type="tel"
-                    className="form-input"
-                    placeholder="+91..."
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                  />
+              {/* Section 1: Authentication */}
+              <div>
+                <h4 style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b', marginBottom: 12 }}>
+                  1. Login Credentials
+                </h4>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                  <div>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: '#334155', display: 'block', marginBottom: 6 }}>
+                      Employee ID <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="e.g. EMP-104 or DRV-501"
+                      value={employeeId}
+                      onChange={(e) => setEmployeeId(e.target.value)}
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14 }}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: '#334155', display: 'block', marginBottom: 6 }}>
+                      Initial PIN <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <input
+                      type="password"
+                      className="form-input"
+                      placeholder="4 to 6 digit PIN"
+                      value={pin}
+                      onChange={(e) => setPin(e.target.value)}
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14 }}
+                      required
+                    />
+                  </div>
                 </div>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
-                <button type="button" className="btn-secondary" onClick={() => setShowCreateModal(false)}>
+              {/* Section 2: Role & Routing */}
+              <div>
+                <h4 style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b', marginBottom: 12 }}>
+                  2. Role & Department Auto-Routing
+                </h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <div>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: '#334155', display: 'block', marginBottom: 6 }}>
+                      Account Role <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <select
+                      className="form-input"
+                      value={selectedRole}
+                      onChange={(e) => setSelectedRole(e.target.value as Role)}
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14, backgroundColor: '#ffffff' }}
+                    >
+                      {isSuperAdmin && <option value="SUPER_ADMIN">Super Admin (Full Fleet Control)</option>}
+                      {isSuperAdmin && <option value="ADMIN">Department Admin (Category Head)</option>}
+                      <option value="EXECUTIVE">Executive (Category Staff)</option>
+                      <option value="DRIVER">Driver (Mobile App User)</option>
+                    </select>
+                  </div>
+
+                  {(selectedRole === 'ADMIN' || selectedRole === 'EXECUTIVE') && (
+                    <div style={{ backgroundColor: '#f8fafc', padding: 14, borderRadius: 10, border: '1px solid #e2e8f0' }}>
+                      <label style={{ fontSize: 13, fontWeight: 600, color: '#0f172a', display: 'block', marginBottom: 4 }}>
+                        Assigned Complaint Category (Auto-Routing)
+                      </label>
+                      <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 8px 0' }}>
+                        Driver complaints raised under this category will auto-assign directly to this user.
+                      </p>
+                      <select
+                        className="form-input"
+                        value={category}
+                        onChange={(e) => setCategory(e.target.value as ComplaintCategory)}
+                        style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14, backgroundColor: '#ffffff' }}
+                      >
+                        <option value="">-- Select Category --</option>
+                        {COMPLAINT_CATEGORIES.map((cat) => (
+                          <option key={cat} value={cat}>
+                            {cat}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Section 3: Personal Details */}
+              <div>
+                <h4 style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b', marginBottom: 12 }}>
+                  3. User Information
+                </h4>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
+                  <div>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: '#334155', display: 'block', marginBottom: 6 }}>
+                      First Name <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="e.g. Rahul"
+                      value={firstName}
+                      onChange={(e) => setFirstName(e.target.value)}
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14 }}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: '#334155', display: 'block', marginBottom: 6 }}>
+                      Last Name <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="e.g. Sharma"
+                      value={lastName}
+                      onChange={(e) => setLastName(e.target.value)}
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14 }}
+                      required
+                    />
+                  </div>
+                </div>
+
+                {selectedRole === 'DRIVER' && (
+                  <div style={{ marginBottom: 14 }}>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: '#334155', display: 'block', marginBottom: 6 }}>
+                      Driving License (DL) Number
+                    </label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="e.g. DL-1420110012345"
+                      value={licenseNumber}
+                      onChange={(e) => setLicenseNumber(e.target.value)}
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14 }}
+                    />
+                  </div>
+                )}
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                  <div>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: '#334155', display: 'block', marginBottom: 6 }}>Email (Optional)</label>
+                    <input
+                      type="email"
+                      className="form-input"
+                      placeholder="user@company.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14 }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: '#334155', display: 'block', marginBottom: 6 }}>Phone (Optional)</label>
+                    <input
+                      type="tel"
+                      className="form-input"
+                      placeholder="+91 9876543210"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14 }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, paddingTop: 16, borderTop: '1px solid #f1f5f9' }}>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setShowCreateModal(false)}
+                  style={{ padding: '10px 20px', borderRadius: 8, fontWeight: 600, cursor: 'pointer' }}
+                >
                   Cancel
                 </button>
-                <button type="submit" className="btn-primary" disabled={submitting}>
-                  {submitting ? 'Creating…' : 'Create User'}
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  disabled={submitting}
+                  style={{
+                    padding: '10px 24px',
+                    borderRadius: 8,
+                    fontWeight: 600,
+                    backgroundColor: '#075E54',
+                    borderColor: '#075E54',
+                    color: '#FFFFFF',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {submitting ? 'Creating User...' : 'Create User ID'}
                 </button>
               </div>
             </form>
@@ -569,46 +713,111 @@ export function UsersPage(): ReactElement {
 
       {/* Edit User Modal */}
       {editingUser && (
-        <div className="modal-backdrop">
-          <div className="modal-card" style={{ maxWidth: 500 }}>
-            <div className="modal-header">
-              <h2 className="modal-title">Edit User Details ({editingUser.employeeId})</h2>
-              <button type="button" className="close-btn" onClick={() => setEditingUser(null)}>
+        <div className="modal-backdrop" style={{ backdropFilter: 'blur(4px)', backgroundColor: 'rgba(15, 23, 42, 0.65)' }}>
+          <div
+            className="modal-card"
+            style={{
+              maxWidth: 540,
+              borderRadius: 16,
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+              padding: 0,
+              overflow: 'hidden',
+              border: '1px solid #e2e8f0',
+            }}
+          >
+            {/* Modal Header */}
+            <div
+              style={{
+                backgroundColor: '#1e293b',
+                padding: '20px 24px',
+                color: '#FFFFFF',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 10,
+                    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Edit2 size={20} color="#FFFFFF" />
+                </div>
+                <div>
+                  <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: '#FFFFFF' }}>Edit User Details</h2>
+                  <p style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.8)', margin: 0, marginTop: 2 }}>
+                    Employee ID: <strong style={{ color: '#38bdf8' }}>{editingUser.employeeId}</strong> • Role: {editingUser.role}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingUser(null)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: '#FFFFFF',
+                  cursor: 'pointer',
+                  opacity: 0.8,
+                  padding: 4,
+                  display: 'flex',
+                }}
+              >
                 <X size={20} />
               </button>
             </div>
 
-            <form onSubmit={handleSaveEdit} style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 14 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            {/* Form Body */}
+            <form onSubmit={handleSaveEdit} style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 18 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                 <div>
-                  <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 4 }}>First Name</label>
+                  <label style={{ fontSize: 13, fontWeight: 600, color: '#334155', display: 'block', marginBottom: 6 }}>
+                    First Name <span style={{ color: '#ef4444' }}>*</span>
+                  </label>
                   <input
                     type="text"
                     className="form-input"
                     value={editingUser.firstName}
                     onChange={(e) => setEditingUser({ ...editingUser, firstName: e.target.value })}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14 }}
                     required
                   />
                 </div>
                 <div>
-                  <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 4 }}>Last Name</label>
+                  <label style={{ fontSize: 13, fontWeight: 600, color: '#334155', display: 'block', marginBottom: 6 }}>
+                    Last Name <span style={{ color: '#ef4444' }}>*</span>
+                  </label>
                   <input
                     type="text"
                     className="form-input"
                     value={editingUser.lastName}
                     onChange={(e) => setEditingUser({ ...editingUser, lastName: e.target.value })}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14 }}
                     required
                   />
                 </div>
               </div>
 
               {(editingUser.role === 'ADMIN' || editingUser.role === 'EXECUTIVE') && (
-                <div>
-                  <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 4 }}>Assigned Complaint Category</label>
+                <div style={{ backgroundColor: '#f8fafc', padding: 14, borderRadius: 10, border: '1px solid #e2e8f0' }}>
+                  <label style={{ fontSize: 13, fontWeight: 600, color: '#0f172a', display: 'block', marginBottom: 4 }}>
+                    Assigned Complaint Category (Auto-Routing)
+                  </label>
+                  <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 8px 0' }}>
+                    Complaints filed in this category will automatically be routed to this user.
+                  </p>
                   <select
                     className="form-input"
                     value={editingUser.category ?? ''}
                     onChange={(e) => setEditingUser({ ...editingUser, category: (e.target.value as ComplaintCategory) || null })}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14, backgroundColor: '#ffffff' }}
                   >
                     <option value="">-- None --</option>
                     {COMPLAINT_CATEGORIES.map((cat) => (
@@ -620,32 +829,46 @@ export function UsersPage(): ReactElement {
                 </div>
               )}
 
-              <div>
-                <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 4 }}>Email</label>
-                <input
-                  type="email"
-                  className="form-input"
-                  value={editingUser.email ?? ''}
-                  onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value })}
-                />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                <div>
+                  <label style={{ fontSize: 13, fontWeight: 600, color: '#334155', display: 'block', marginBottom: 6 }}>Email</label>
+                  <input
+                    type="email"
+                    className="form-input"
+                    value={editingUser.email ?? ''}
+                    onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value })}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14 }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: 13, fontWeight: 600, color: '#334155', display: 'block', marginBottom: 6 }}>Phone</label>
+                  <input
+                    type="tel"
+                    className="form-input"
+                    value={editingUser.phone ?? ''}
+                    onChange={(e) => setEditingUser({ ...editingUser, phone: e.target.value })}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14 }}
+                  />
+                </div>
               </div>
 
-              <div>
-                <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 4 }}>Phone</label>
-                <input
-                  type="tel"
-                  className="form-input"
-                  value={editingUser.phone ?? ''}
-                  onChange={(e) => setEditingUser({ ...editingUser, phone: e.target.value })}
-                />
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
-                <button type="button" className="btn-secondary" onClick={() => setEditingUser(null)}>
+              {/* Action Buttons */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, paddingTop: 16, borderTop: '1px solid #f1f5f9' }}>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setEditingUser(null)}
+                  style={{ padding: '10px 20px', borderRadius: 8, fontWeight: 600, cursor: 'pointer' }}
+                >
                   Cancel
                 </button>
-                <button type="submit" className="btn-primary" disabled={submitting}>
-                  {submitting ? 'Saving…' : 'Save Changes'}
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  disabled={submitting}
+                  style={{ padding: '10px 24px', borderRadius: 8, fontWeight: 600, cursor: 'pointer' }}
+                >
+                  {submitting ? 'Saving Changes...' : 'Save Changes'}
                 </button>
               </div>
             </form>

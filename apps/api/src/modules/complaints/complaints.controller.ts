@@ -99,7 +99,11 @@ export async function updateStatus(req: Request<{ id: string }>, res: Response):
   if (!req.user) throw ApiError.unauthorized();
   const { id } = req.params;
   const input = req.body as UpdateComplaintStatus;
-  const complaint = await complaintsService.updateStatus(req.user.id, id, input);
+  const complaint = await complaintsService.updateStatus(
+    { id: req.user.id, role: req.user.role },
+    id,
+    input,
+  );
   sendSuccess(res, complaint);
 }
 
