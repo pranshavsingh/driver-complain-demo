@@ -97,6 +97,18 @@ export async function create(
     vehicleIdToUse = vehicle.id;
   }
 
+  const categoryToUse = input.category ?? 'SUPPORT';
+  const matchingAdmin = await prisma.user.findFirst({
+    where: {
+      role: 'ADMIN',
+      isActive: true,
+      approvalStatus: 'APPROVED',
+      category: categoryToUse,
+    },
+    select: { id: true },
+  });
+  const autoAssignedToId = matchingAdmin?.id ?? null;
+
   const year = new Date().getFullYear();
   const admins = await prisma.user.findMany({
     where: { role: { in: ADMIN_ROLES }, isActive: true },
@@ -133,7 +145,9 @@ export async function create(
         vehicleId: vehicleIdToUse,
         title: input.title,
         description: input.description,
+        category: categoryToUse,
         priority: input.priority ?? 'MEDIUM',
+        assignedToId: autoAssignedToId,
       },
     });
 
@@ -159,7 +173,9 @@ export async function create(
         complaintId: complaint.id,
         authorId: driverUserId,
         toStatus: 'NEW',
-        note: 'Complaint submitted',
+        note: autoAssignedToId
+          ? `Complaint submitted and auto-assigned to department admin based on category (${categoryToUse})`
+          : `Complaint submitted under category (${categoryToUse})`,
       },
     });
 
@@ -217,6 +233,7 @@ function buildWhere(
 
   if (query.status) where.status = query.status;
   if (query.priority) where.priority = query.priority;
+  if (query.category) where.category = query.category;
   if (query.vehicleId) where.vehicleId = query.vehicleId;
   if (query.assignedToId) where.assignedToId = query.assignedToId;
 

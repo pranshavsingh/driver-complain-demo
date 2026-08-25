@@ -32,15 +32,7 @@ export default function TabsLayout(): ReactElement {
       <Tabs.Screen
         name="register"
         options={{
-          title: 'Register Complaint',
-          tabBarLabel: 'Register',
-          tabBarIcon: ({ color, focused }) => (
-            <Ionicons
-              name={focused ? 'add-circle' : 'add-circle-outline'}
-              size={24}
-              color={color}
-            />
-          ),
+          href: null,
         }}
       />
       <Tabs.Screen

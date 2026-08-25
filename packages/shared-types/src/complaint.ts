@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AttachmentKindSchema, ComplaintStatusSchema, PrioritySchema } from './enums';
+import { AttachmentKindSchema, ComplaintCategorySchema, ComplaintStatusSchema, PrioritySchema } from './enums';
 import { PaginationQuerySchema, PaginationMetaSchema } from './common';
 import { VehiclePublicSchema } from './vehicle';
 
@@ -9,6 +9,7 @@ export const CreateComplaintSchema = z.object({
   vehicleId: z.string().optional(),
   vehicleNumber: z.string().optional(),
   priority: PrioritySchema.optional(),
+  category: ComplaintCategorySchema.optional(),
 });
 export type CreateComplaint = z.infer<typeof CreateComplaintSchema>;
 
@@ -30,6 +31,7 @@ export const ComplaintPublicSchema = z.object({
   vehicleId: z.string().nullable().optional(),
   title: z.string(),
   description: z.string(),
+  category: ComplaintCategorySchema.optional(),
   status: ComplaintStatusSchema,
   priority: PrioritySchema,
   assignedToId: z.string().nullable().optional(),
@@ -46,6 +48,7 @@ export type ComplaintPublic = z.infer<typeof ComplaintPublicSchema>;
 export const ComplaintFilterSchema = z.object({
   status: ComplaintStatusSchema.optional(),
   priority: PrioritySchema.optional(),
+  category: ComplaintCategorySchema.optional(),
   driverId: z.string().optional(),
   vehicleId: z.string().optional(),
   assignedToId: z.string().optional(),

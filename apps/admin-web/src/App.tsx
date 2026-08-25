@@ -8,6 +8,7 @@ import { DriversPage } from './pages/DriversPage';
 import { ComplaintsListPage } from './pages/ComplaintsListPage';
 import { ComplaintDetailPage } from './pages/ComplaintDetailPage';
 import { LoadingTrackerPage } from './pages/LoadingTrackerPage';
+import { UsersPage } from './pages/UsersPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 
 export function App(): ReactElement {
@@ -26,6 +27,7 @@ export function App(): ReactElement {
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/drivers" element={<DriversPage />} />
+        <Route path="/users" element={<UsersPage />} />
         <Route path="/complaints" element={<ComplaintsListPage />} />
         <Route path="/complaints/:id" element={<ComplaintDetailPage />} />
         <Route path="/loading" element={<LoadingTrackerPage />} />

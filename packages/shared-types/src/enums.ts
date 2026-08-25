@@ -7,9 +7,13 @@ import { z } from 'zod';
  * pull the Prisma runtime into frontend bundles.
  */
 
-export const RoleSchema = z.enum(['DRIVER', 'ADMIN', 'SUPER_ADMIN']);
+export const RoleSchema = z.enum(['DRIVER', 'EXECUTIVE', 'ADMIN', 'SUPER_ADMIN']);
 export type Role = z.infer<typeof RoleSchema>;
 export const ROLES = RoleSchema.options;
+
+export const ApprovalStatusSchema = z.enum(['APPROVED', 'PENDING_APPROVAL', 'REJECTED']);
+export type ApprovalStatus = z.infer<typeof ApprovalStatusSchema>;
+export const APPROVAL_STATUSES = ApprovalStatusSchema.options;
 
 export const ComplaintStatusSchema = z.enum(['NEW', 'IN_PROGRESS', 'RESOLVED', 'CLOSED']);
 export type ComplaintStatus = z.infer<typeof ComplaintStatusSchema>;

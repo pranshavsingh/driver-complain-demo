@@ -7,12 +7,44 @@ export const usersRouter = Router();
 
 usersRouter.get('/me', authenticate, usersController.getMe);
 
-// SAFETY-CRITICAL: this is the only endpoint that enumerates staff identities. It must stay
-// admin-gated — a driver who could list admins gains a target list for social engineering,
-// and it is not needed by the mobile app.
 usersRouter.get(
   '/admins',
   authenticate,
   requireRole('ADMIN', 'SUPER_ADMIN'),
   usersController.listAdmins,
+);
+
+usersRouter.post(
+  '/',
+  authenticate,
+  requireRole('ADMIN', 'SUPER_ADMIN'),
+  usersController.createUser,
+);
+
+usersRouter.get(
+  '/',
+  authenticate,
+  requireRole('ADMIN', 'SUPER_ADMIN'),
+  usersController.listUsers,
+);
+
+usersRouter.post(
+  '/:id/approve',
+  authenticate,
+  requireRole('SUPER_ADMIN'),
+  usersController.approveUser,
+);
+
+usersRouter.post(
+  '/:id/reject',
+  authenticate,
+  requireRole('SUPER_ADMIN'),
+  usersController.rejectUser,
+);
+
+usersRouter.patch(
+  '/:id',
+  authenticate,
+  requireRole('SUPER_ADMIN'),
+  usersController.updateUser,
 );

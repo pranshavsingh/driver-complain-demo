@@ -326,6 +326,7 @@ export function ComplaintsListPage(): ReactElement {
                 <tr>
                   <th>COMPLAINT</th>
                   <th>TITLE</th>
+                  <th>CATEGORY</th>
                   <th>STATUS</th>
                   <th>PRIORITY</th>
                   <th>DRIVER</th>
@@ -347,6 +348,25 @@ export function ComplaintsListPage(): ReactElement {
                       <Link to={`/complaints/${c.id}`} className="complaint-title-link">
                         {c.title}
                       </Link>
+                    </td>
+                    <td>
+                      {c.category ? (
+                        <span
+                          style={{
+                            display: 'inline-block',
+                            padding: '2px 8px',
+                            borderRadius: 4,
+                            backgroundColor: '#075E54',
+                            color: '#FFFFFF',
+                            fontSize: 12,
+                            fontWeight: 600,
+                          }}
+                        >
+                          {c.category}
+                        </span>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
                     </td>
                     <td>
                       <StatusBadge status={c.status} />

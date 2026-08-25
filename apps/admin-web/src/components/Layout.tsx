@@ -54,6 +54,14 @@ export function Layout(): ReactElement {
           </NavLink>
 
           <NavLink
+            to="/users"
+            className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
+          >
+            <Users size={18} className="nav-icon" />
+            <span className="nav-label">Users & Approvals</span>
+          </NavLink>
+
+          <NavLink
             to="/complaints"
             className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
           >

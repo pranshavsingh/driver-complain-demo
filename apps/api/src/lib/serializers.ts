@@ -37,7 +37,7 @@ export function toPartySummary(user: User): PartySummary {
 
 /** An admin for the dashboard's assignee dropdown (role included so the UI can label it). */
 export function toAdminSummary(user: User): AdminSummary {
-  return { ...toPartySummary(user), role: user.role };
+  return { ...toPartySummary(user), role: user.role, category: user.category ?? null };
 }
 
 export function toUserPublic(user: User): UserPublic {
@@ -50,6 +50,9 @@ export function toUserPublic(user: User): UserPublic {
     email: user.email ?? null,
     phone: user.phone ?? null,
     isActive: user.isActive,
+    approvalStatus: user.approvalStatus,
+    category: user.category ?? null,
+    createdByAdminId: user.createdByAdminId ?? null,
     createdAt: user.createdAt.toISOString(),
     updatedAt: user.updatedAt.toISOString(),
   };
@@ -100,6 +103,7 @@ export function toComplaintPublic(complaint: Complaint): ComplaintPublic {
     vehicleId: complaint.vehicleId ?? null,
     title: complaint.title,
     description: complaint.description,
+    category: complaint.category,
     status: complaint.status,
     priority: complaint.priority,
     assignedToId: complaint.assignedToId ?? null,

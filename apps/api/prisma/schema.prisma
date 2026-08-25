@@ -12,8 +12,27 @@ datasource db {
 
 enum Role {
   DRIVER
+  EXECUTIVE
   ADMIN
   SUPER_ADMIN
+}
+
+enum ApprovalStatus {
+  APPROVED
+  PENDING_APPROVAL
+  REJECTED
+}
+
+enum ComplaintCategory {
+  LOADING
+  UNLOADING
+  BREAKDOWN
+  TYRE_ISSUE
+  FUEL_DEF
+  ACCOUNTS
+  COMPLAINT_STATUS
+  MEDICAL_EMERGENCY
+  SUPPORT
 }
 
 enum ComplaintStatus {
@@ -61,20 +80,23 @@ enum Platform {
 }
 
 model User {
-  id                  String    @id @default(uuid(7)) @db.Uuid
-  employeeId          String    @unique
+  id                  String            @id @default(uuid(7)) @db.Uuid
+  employeeId          String            @unique
   pinHash             String
-  role                Role      @default(DRIVER)
+  role                Role              @default(DRIVER)
+  approvalStatus      ApprovalStatus    @default(APPROVED)
+  category            ComplaintCategory?
+  createdByAdminId    String?           @db.Uuid
   firstName           String
   lastName            String
-  email               String?   @unique
+  email               String?           @unique
   phone               String?
-  isActive            Boolean   @default(true)
-  failedLoginAttempts Int       @default(0)
+  isActive            Boolean           @default(true)
+  failedLoginAttempts Int               @default(0)
   lockedUntil         DateTime?
   lastLoginAt         DateTime?
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
 
   driver              Driver?
   assignedComplaints  Complaint[]           @relation("AssignedAdmin")
@@ -85,6 +107,7 @@ model User {
   refreshTokens       RefreshToken[]
 
   @@index([role])
+  @@index([approvalStatus])
 }
 
 model Driver {
@@ -119,21 +142,22 @@ model Vehicle {
 }
 
 model Complaint {
-  id           String          @id @default(uuid(7)) @db.Uuid
-  complaintNo  String          @unique
-  driverId     String          @db.Uuid
-  driver       Driver          @relation(fields: [driverId], references: [id])
-  vehicleId    String?         @db.Uuid
-  vehicle      Vehicle?        @relation(fields: [vehicleId], references: [id])
+  id           String            @id @default(uuid(7)) @db.Uuid
+  complaintNo  String            @unique
+  driverId     String            @db.Uuid
+  driver       Driver            @relation(fields: [driverId], references: [id])
+  vehicleId    String?           @db.Uuid
+  vehicle      Vehicle?          @relation(fields: [vehicleId], references: [id])
   title        String
   description  String
-  status       ComplaintStatus @default(NEW)
-  priority     Priority        @default(MEDIUM)
-  assignedToId String?         @db.Uuid
-  assignedTo   User?           @relation("AssignedAdmin", fields: [assignedToId], references: [id])
+  category     ComplaintCategory @default(SUPPORT)
+  status       ComplaintStatus   @default(NEW)
+  priority     Priority          @default(MEDIUM)
+  assignedToId String?           @db.Uuid
+  assignedTo   User?             @relation("AssignedAdmin", fields: [assignedToId], references: [id])
   resolvedAt   DateTime?
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
 
   attachments    ComplaintAttachment[]
   updates        ComplaintUpdate[]
