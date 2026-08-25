@@ -1,0 +1,22 @@
+# Local Postgres for development. Migrations/seed run against this.
+# Production and staging use separate, host-managed databases.
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: driver_complaint
+    ports:
+      - '5432:5432'
+    volumes:
+      - dc_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U app -d driver_complaint']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  dc_pgdata:

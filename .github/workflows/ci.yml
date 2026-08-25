@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: driver_complaint
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U app -d driver_complaint"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://app:app@localhost:5432/driver_complaint?schema=public
+      JWT_ACCESS_SECRET: ci-access-secret-0123456789abcdef
+      REFRESH_TOKEN_SECRET: ci-refresh-secret-0123456789abcdef
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm --filter @driver-complaint/api prisma:generate
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Build
+        run: pnpm build
+
+      # The mobile app has no `build` script — `expo export` running the real Metro bundler is
+      # its equivalent, and the only check that catches an import which resolves for tsc but
+      # breaks at bundle time. Output is discarded; this is a gate, not an artifact.
+      - name: Bundle mobile app
+        run: pnpm --filter @driver-complaint/mobile bundle
+
+      # Migrations must be applied before the integration tests run.
+      - name: Apply migrations
+        run: pnpm --filter @driver-complaint/api migrate:deploy
+
+      - name: Migration status
+        run: pnpm --filter @driver-complaint/api exec prisma migrate status
+
+      - name: Test
+        run: pnpm test
+
+      # Drift guard — fails if schema.prisma was changed without a matching migration.
+      # Compares the live (migrated) DB against the schema datamodel; no shadow DB needed.
+      - name: Migration drift guard
+        run: >-
+          pnpm --filter @driver-complaint/api exec prisma migrate diff
+          --from-schema-datasource ./prisma/schema.prisma
+          --to-schema-datamodel ./prisma/schema.prisma
+          --exit-code

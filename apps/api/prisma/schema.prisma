@@ -1,0 +1,240 @@
+// Driver Complaint — data model v1.
+// Enum VALUES mirror packages/shared-types/src/enums.ts by hand (intentional, low-churn).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  DRIVER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum ComplaintStatus {
+  NEW
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum NotificationType {
+  COMPLAINT_CREATED
+  STATUS_CHANGED
+  ASSIGNED
+  COMMENT_ADDED
+}
+
+// What kind of evidence an attachment is. Drives playback in the dashboard (an <img> and an
+// <audio> are not interchangeable) and the per-kind size limits on upload. Cloudinary's own
+// resourceType cannot carry this: it stores audio under resource_type "video".
+enum AttachmentKind {
+  PHOTO
+  VOICE
+  VIDEO
+}
+
+enum RevokedReason {
+  ROTATED
+  LOGOUT
+  REUSE_DETECTED
+  EXPIRED
+  ADMIN_REVOKED
+}
+
+enum Platform {
+  ANDROID
+  IOS
+  WEB
+}
+
+model User {
+  id                  String    @id @default(uuid(7)) @db.Uuid
+  employeeId          String    @unique
+  pinHash             String
+  role                Role      @default(DRIVER)
+  firstName           String
+  lastName            String
+  email               String?   @unique
+  phone               String?
+  isActive            Boolean   @default(true)
+  failedLoginAttempts Int       @default(0)
+  lockedUntil         DateTime?
+  lastLoginAt         DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  driver              Driver?
+  assignedComplaints  Complaint[]           @relation("AssignedAdmin")
+  complaintUpdates    ComplaintUpdate[]
+  uploadedAttachments ComplaintAttachment[]
+  notifications       Notification[]
+  deviceTokens        DeviceToken[]
+  refreshTokens       RefreshToken[]
+
+  @@index([role])
+}
+
+model Driver {
+  id            String    @id @default(uuid(7)) @db.Uuid
+  userId        String    @unique @db.Uuid
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  licenseNumber String    @unique
+  licenseExpiry DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  vehicles   Vehicle[]
+  complaints Complaint[]
+}
+
+model Vehicle {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  driverId    String   @db.Uuid
+  driver      Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  plateNumber String   @unique
+  make        String?
+  model       String?
+  year        Int?
+  vin         String?  @unique
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  complaints Complaint[]
+
+  @@index([driverId])
+}
+
+model Complaint {
+  id           String          @id @default(uuid(7)) @db.Uuid
+  complaintNo  String          @unique
+  driverId     String          @db.Uuid
+  driver       Driver          @relation(fields: [driverId], references: [id])
+  vehicleId    String?         @db.Uuid
+  vehicle      Vehicle?        @relation(fields: [vehicleId], references: [id])
+  title        String
+  description  String
+  status       ComplaintStatus @default(NEW)
+  priority     Priority        @default(MEDIUM)
+  assignedToId String?         @db.Uuid
+  assignedTo   User?           @relation("AssignedAdmin", fields: [assignedToId], references: [id])
+  resolvedAt   DateTime?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  attachments   ComplaintAttachment[]
+  updates       ComplaintUpdate[]
+  notifications Notification[]
+
+  @@index([status])
+  @@index([driverId])
+  @@index([assignedToId])
+  @@index([createdAt])
+}
+
+model ComplaintAttachment {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  complaintId  String    @db.Uuid
+  complaint    Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  uploadedById String    @db.Uuid
+  uploadedBy   User      @relation(fields: [uploadedById], references: [id])
+  // Defaulted to PHOTO so the column could be added to existing rows (all of which were
+  // photos) without a data migration. Every write path sets it explicitly — treat the default
+  // as a backfill artefact, not a fallback to rely on.
+  kind         AttachmentKind @default(PHOTO)
+  url          String
+  publicId     String         @unique
+  resourceType String
+  format       String?
+  bytes        Int?
+  /// Runtime of a voice note or video, from Cloudinary. Null for photos.
+  durationSec  Int?
+  originalName String?
+  createdAt    DateTime       @default(now())
+
+  @@index([complaintId])
+}
+
+model ComplaintUpdate {
+  id          String           @id @default(uuid(7)) @db.Uuid
+  complaintId String           @db.Uuid
+  complaint   Complaint        @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  authorId    String           @db.Uuid
+  author      User             @relation(fields: [authorId], references: [id])
+  fromStatus  ComplaintStatus?
+  toStatus    ComplaintStatus?
+  note        String?
+  createdAt   DateTime         @default(now())
+
+  @@index([complaintId])
+}
+
+model Notification {
+  id          String           @id @default(uuid(7)) @db.Uuid
+  userId      String           @db.Uuid
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        NotificationType
+  title       String
+  body        String
+  data        Json?
+  complaintId String?          @db.Uuid
+  complaint   Complaint?       @relation(fields: [complaintId], references: [id], onDelete: SetNull)
+  isRead      Boolean          @default(false)
+  readAt      DateTime?
+  createdAt   DateTime         @default(now())
+
+  @@index([userId, isRead])
+}
+
+model DeviceToken {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  userId     String   @db.Uuid
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token      String   @unique
+  platform   Platform
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// ADDED beyond the 7 v1 entities — required for refresh-token rotation, reuse
+// detection, and server-side revocation (JWTs alone can't be revoked).
+model RefreshToken {
+  id            String         @id @default(uuid(7)) @db.Uuid
+  userId        String         @db.Uuid
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  familyId      String         @db.Uuid
+  tokenHash     String         @unique
+  expiresAt     DateTime
+  revokedAt     DateTime?
+  revokedReason RevokedReason?
+  replacedById  String?        @unique @db.Uuid
+  userAgent     String?
+  ipAddress     String?
+  createdAt     DateTime       @default(now())
+
+  @@index([userId])
+  @@index([familyId])
+  @@index([expiresAt])
+}
+
+// Monotonic counters for human-readable identifiers (e.g. complaintNo). Keyed by
+// name (e.g. "complaint-2026"); incremented atomically inside the create transaction.
+// Kept in-schema (rather than a raw Postgres sequence) so migrate-diff drift checks stay clean.
+model Counter {
+  name  String @id
+  value Int    @default(0)
+}

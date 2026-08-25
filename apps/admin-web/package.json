@@ -1,0 +1,28 @@
+{
+  "name": "@driver-complaint/admin-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@driver-complaint/shared-types": "workspace:*",
+    "react": "^19",
+    "react-dom": "^19",
+    "react-router-dom": "^7",
+    "socket.io-client": "^4.8.3",
+    "zod": "^4"
+  },
+  "devDependencies": {
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^5",
+    "typescript": "^5",
+    "vite": "^7"
+  }
+}

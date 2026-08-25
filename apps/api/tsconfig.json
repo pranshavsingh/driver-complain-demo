@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": ".",
+    "types": ["node"],
+    "noEmit": true,
+    // This is an application, not a library — it never emits declarations. Disabling
+    // declaration emit also avoids TS2742 portability errors on inferred Router types
+    // under pnpm's nested node_modules.
+    "declaration": false,
+    "declarationMap": false
+  },
+  "include": ["src", "prisma", "test", "vitest.config.ts", "tsup.config.ts"],
+  "exclude": ["node_modules", "dist"]
+}

@@ -1,0 +1,53 @@
+{
+  "name": "@driver-complaint/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env --import tsx --import ./src/instrument.ts --watch src/index.ts",
+    "start": "node --env-file-if-exists=.env --import tsx --import ./src/instrument.ts src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prisma:generate": "prisma generate",
+    "migrate:dev": "prisma migrate dev",
+    "migrate:deploy": "prisma migrate deploy",
+    "seed": "prisma db seed"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@driver-complaint/shared-types": "workspace:*",
+    "@prisma/client": "^6",
+    "@sentry/node": "^10",
+    "bcryptjs": "^3",
+    "cloudinary": "^2",
+    "cors": "^2",
+    "exceljs": "^4.4.0",
+    "express": "^5",
+    "express-rate-limit": "^7",
+    "firebase-admin": "^14.3.0",
+    "helmet": "^8",
+    "jose": "^5",
+    "multer": "^2",
+    "pino": "^9",
+    "pino-http": "^10",
+    "socket.io": "^4.8.3",
+    "zod": "^4"
+  },
+  "devDependencies": {
+    "@types/cors": "^2",
+    "@types/express": "^5",
+    "@types/multer": "^2",
+    "@types/node": "^24",
+    "@types/supertest": "^6",
+    "prisma": "^6",
+    "socket.io-client": "^4.8.3",
+    "supertest": "^7",
+    "tsx": "^4",
+    "typescript": "^5",
+    "vitest": "^3"
+  }
+}
