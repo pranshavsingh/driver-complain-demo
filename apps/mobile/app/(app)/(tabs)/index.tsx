@@ -1,5 +1,5 @@
-import { useMemo, type ReactElement } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useMemo, useState, type ReactElement } from 'react';
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { VehiclePublic } from '@driver-complaint/shared-types';
@@ -15,6 +15,8 @@ import { LoadingAssistantCard } from '../../../src/components/LoadingAssistantCa
 export default function DriverHomeDashboardScreen(): ReactElement {
   const insets = useSafeAreaInsets();
   const { user, logout } = useAuth();
+  const [showLoadingAssistant, setShowLoadingAssistant] = useState(false);
+
   const vehicles = useApiResource('vehicles:mine', () => api.vehicles.mine());
   const vehicleList = useMemo<VehiclePublic[]>(() => vehicles.data ?? [], [vehicles.data]);
   const activeVehicle = vehicleList[0];
@@ -37,13 +39,19 @@ export default function DriverHomeDashboardScreen(): ReactElement {
   };
 
   const handleTilePress = (tile: GridTile): void => {
-    // 1. Complaint / Status -> Navigates to Complaint Status tab (history)
+    // 1. Complaint / Status -> Navigates directly to Complaint Status tab
     if (tile.id === 'COMPLAINT_STATUS') {
       router.push('/(app)/(tabs)/history');
       return;
     }
 
-    // 2. Medical Emergency -> High priority alert + Navigate to Register tab
+    // 2. Loading / Unloading -> Opens the Loading/Unloading Assistant Modal Popup
+    if (tile.id === 'LOADING' || tile.id === 'UNLOADING') {
+      setShowLoadingAssistant(true);
+      return;
+    }
+
+    // 3. Medical Emergency -> Triggers Emergency SOS Alert prompt
     if (tile.id === 'MEDICAL_EMERGENCY') {
       Alert.alert(
         '🚨 MEDICAL EMERGENCY SOS',
@@ -57,6 +65,8 @@ export default function DriverHomeDashboardScreen(): ReactElement {
               router.push({
                 pathname: '/(app)/(tabs)/register',
                 params: {
+                  cardName: tile.title,
+                  category: tile.id,
                   initialText: '🚨 MEDICAL EMERGENCY SOS: Urgent medical/accident assistance required!',
                   initialPriority: 'URGENT',
                 },
@@ -68,35 +78,18 @@ export default function DriverHomeDashboardScreen(): ReactElement {
       return;
     }
 
-    // 3. Loading / Unloading -> Show assistant card right here or navigate to Register
-    if (tile.id === 'LOADING' || tile.id === 'UNLOADING') {
-      return;
-    }
-
-    // 4. Other Issue Boxes (Breakdown, Tyre issue, Fuel/DEF, Accounts, Support) -> Navigate to Register Tab
-    let initialText = '';
+    // 4. All Service Issue Boxes (Breakdown, Tyre issue, Fuel/DEF, Accounts, Support) -> Navigate to Register Tab with Card Context
     let initialPriority = 'MEDIUM';
-
-    if (tile.id === 'BREAKDOWN') {
-      initialText = '🛠️ Breakdown Issue: ';
-      initialPriority = 'HIGH';
-    } else if (tile.id === 'TYRE_ISSUE') {
-      initialText = '🛞 Tyre Issue: ';
-      initialPriority = 'MEDIUM';
-    } else if (tile.id === 'FUEL_DEF') {
-      initialText = '⛽ Fuel / DEF Request: ';
-      initialPriority = 'MEDIUM';
-    } else if (tile.id === 'ACCOUNTS') {
-      initialText = '💰 Accounts / Settlement Query: ';
-      initialPriority = 'LOW';
-    } else if (tile.id === 'SUPPORT') {
-      initialText = '🎧 Support Request: ';
-      initialPriority = 'MEDIUM';
-    }
+    if (tile.id === 'BREAKDOWN') initialPriority = 'HIGH';
+    if (tile.id === 'ACCOUNTS') initialPriority = 'LOW';
 
     router.push({
       pathname: '/(app)/(tabs)/register',
-      params: { initialText, initialPriority },
+      params: {
+        cardName: tile.title,
+        category: tile.id,
+        initialPriority,
+      },
     });
   };
 
@@ -126,19 +119,37 @@ export default function DriverHomeDashboardScreen(): ReactElement {
         <View style={styles.welcomeBanner}>
           <View style={{ flex: 1 }}>
             <Text style={styles.welcomeTitle}>Driver Support Portal 🚛</Text>
-            <Text style={styles.welcomeSub}>Tap any service box below to submit an issue or record arrival.</Text>
+            <Text style={styles.welcomeSub}>Tap any service box below to register an issue for that department.</Text>
           </View>
           <Ionicons name="shield-checkmark" size={32} color="#075E54" />
         </View>
 
         {/* 9 Grid Action Boxes (matching wireframe design) */}
         <DashboardGrid onTilePress={handleTilePress} />
-
-        {/* Loading & Unloading Assistant Feature */}
-        <View style={styles.assistantSection}>
-          <LoadingAssistantCard />
-        </View>
       </ScrollView>
+
+      {/* Loading & Unloading Assistant Modal Popup */}
+      <Modal
+        visible={showLoadingAssistant}
+        animationType="slide"
+        transparent={false}
+        onRequestClose={() => setShowLoadingAssistant(false)}
+      >
+        <View style={styles.modalScreen}>
+          <View style={[styles.modalHeader, { paddingTop: insets.top + spacing.xs }]}>
+            <View style={styles.modalHeaderTitleRow}>
+              <Ionicons name="truck" size={22} color="#FFFFFF" />
+              <Text style={styles.modalTitle}>Loading / Unloading Assistant</Text>
+            </View>
+            <Pressable onPress={() => setShowLoadingAssistant(false)} style={styles.closeModalBtn}>
+              <Ionicons name="close" size={24} color="#FFFFFF" />
+            </Pressable>
+          </View>
+          <ScrollView contentContainerStyle={styles.modalContent}>
+            <LoadingAssistantCard />
+          </ScrollView>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -151,7 +162,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.md,
-    backgroundColor: '#075E54', // Fleet Green Theme
+    backgroundColor: '#075E54',
     elevation: 4,
   },
   headerProfile: {
@@ -204,8 +215,33 @@ const styles = StyleSheet.create({
     color: '#64748B',
     marginTop: 2,
   },
-  assistantSection: {
-    paddingHorizontal: spacing.md,
-    marginTop: spacing.xs,
+  modalScreen: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
+    backgroundColor: '#075E54',
+    elevation: 4,
+  },
+  modalHeaderTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  closeModalBtn: {
+    padding: spacing.xs,
+  },
+  modalContent: {
+    padding: spacing.md,
   },
 });

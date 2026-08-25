@@ -16,7 +16,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import {
   CreateComplaintSchema,
-  PRIORITIES,
   type Priority,
   type VehiclePublic,
 } from '@driver-complaint/shared-types';
@@ -24,7 +23,7 @@ import * as api from '../../../src/api/endpoints';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { ErrorNotice } from '../../../src/components/ErrorNotice';
 import { useApiResource } from '../../../src/hooks/useApiResource';
-import { describeVehicle, formatEnum, formatDuration } from '../../../src/lib/format';
+import { describeVehicle, formatDuration } from '../../../src/lib/format';
 import {
   NO_EVIDENCE,
   toEvidenceUpload,
@@ -33,15 +32,23 @@ import {
 import { MAX_PHOTO_BYTES, MAX_VOICE_SECONDS, PHOTO_QUALITY } from '../../../src/media/limits';
 import { useVoiceRecorder, type VoiceNote } from '../../../src/media/recorder';
 import { captureVideo, videoCaptureAvailable } from '../../../src/media/video';
-import { radius, spacing, PRIORITY_TONES } from '../../../src/theme';
+import { radius, spacing } from '../../../src/theme';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function WhatsAppRegisterComplaintScreen(): ReactElement {
   const insets = useSafeAreaInsets();
   const { user, logout } = useAuth();
-  const params = useLocalSearchParams<{ initialText?: string; initialPriority?: string }>();
+  const params = useLocalSearchParams<{
+    cardName?: string;
+    category?: string;
+    initialText?: string;
+    initialPriority?: string;
+  }>();
 
   const vehicles = useApiResource('vehicles:mine', () => api.vehicles.mine());
+
+  const cardName = params.cardName || '';
+  const category = params.category || '';
 
   const [textInput, setTextInput] = useState('');
   const [priority, setPriority] = useState<Priority>('MEDIUM');
@@ -51,13 +58,12 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
   const [error, setError] = useState<unknown>(null);
   const [submitting, setSubmitting] = useState(false);
   const [showVehicleDropdown, setShowVehicleDropdown] = useState(false);
-  const [showPriorityPicker, setShowPriorityPicker] = useState(false);
 
   useEffect(() => {
     if (params.initialText) {
       setTextInput(params.initialText);
     }
-    if (params.initialPriority && PRIORITIES.includes(params.initialPriority as Priority)) {
+    if (params.initialPriority) {
       setPriority(params.initialPriority as Priority);
     }
   }, [params.initialText, params.initialPriority]);
@@ -174,14 +180,14 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
     const titleText =
       lines[0]?.trim() ||
       (evidence.photo
-        ? 'Photo evidence report'
+        ? `${cardName || 'Photo evidence'} report`
         : evidence.voice
-          ? 'Voice note report'
-          : 'Vehicle Complaint');
+          ? `${cardName || 'Voice note'} report`
+          : `${cardName || 'Vehicle'} Complaint`);
     const descriptionText = trimmed || (evidence.photo ? 'Photo attached' : 'Voice note attached');
 
     const parsed = CreateComplaintSchema.safeParse({
-      title: titleText,
+      title: cardName ? `[${cardName}] ${titleText}` : titleText,
       description: descriptionText,
       priority,
       ...(selectedVehicleId ? { vehicleId: selectedVehicleId } : {}),
@@ -215,6 +221,34 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
 
   const hasAttachments = Boolean(evidence.photo || evidence.voice || evidence.video);
 
+  // Mandatory card check: If no card selected, require driver to pick card from Home
+  if (!cardName && !category) {
+    return (
+      <View style={styles.screen}>
+        <View style={[styles.whatsappHeader, { paddingTop: insets.top + spacing.xs }]}>
+          <View style={styles.headerProfile}>
+            <Pressable onPress={() => router.push('/(app)/(tabs)')} style={{ marginRight: 4 }}>
+              <Ionicons name="arrow-back" size={22} color="#FFFFFF" />
+            </Pressable>
+            <Text style={styles.headerTitle}>Register Complaint</Text>
+          </View>
+        </View>
+        <View style={styles.emptyCenterContainer}>
+          <View style={styles.emptyCardBox}>
+            <Ionicons name="apps-outline" size={54} color="#075E54" />
+            <Text style={styles.emptyTitle}>No Service Card Selected</Text>
+            <Text style={styles.emptyDesc}>
+              Please select a service card (Breakdown, Tyre Issue, Fuel/DEF, Accounts, etc.) from the Home screen before registering a complaint.
+            </Text>
+            <Pressable style={styles.goHomeBtn} onPress={() => router.push('/(app)/(tabs)')}>
+              <Text style={styles.goHomeBtnText}>👈 Select Card on Home Screen</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.screen}>
       {/* 1. Status Bar & WhatsApp Top Header */}
@@ -237,7 +271,7 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
         </Pressable>
       </View>
 
-      {/* 2. Prominent Vehicle Input & Priority Controls */}
+      {/* 2. Prominent Vehicle Input & Selected Card Department Display */}
       <View style={styles.vehicleInputSection}>
         <View style={styles.vehicleBox}>
           <Ionicons name="bus-outline" size={20} color="#075E54" />
@@ -262,20 +296,13 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
           ) : null}
         </View>
 
-        {/* Priority Selector Pill */}
-        <Pressable
-          style={[
-            styles.priorityPill,
-            { backgroundColor: PRIORITY_TONES[priority].surface },
-          ]}
-          onPress={() => setShowPriorityPicker(!showPriorityPicker)}
-        >
-          <Ionicons name="alert-circle" size={15} color={PRIORITY_TONES[priority].text} />
-          <Text style={[styles.priorityPillText, { color: PRIORITY_TONES[priority].text }]}>
-            Priority: {formatEnum(priority)}
+        {/* Selected Card / Department Badge (Replaces Priority Dropdown) */}
+        <View style={styles.selectedCardBadge}>
+          <Ionicons name="pricetag" size={14} color="#075E54" />
+          <Text style={styles.selectedCardBadgeText}>
+            Selected Category: <Text style={styles.cardNameHighlight}>{cardName}</Text>
           </Text>
-          <Ionicons name="chevron-down" size={12} color={PRIORITY_TONES[priority].text} />
-        </Pressable>
+        </View>
       </View>
 
       {/* Dropdown Vehicle Options */}
@@ -299,39 +326,6 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
         </View>
       ) : null}
 
-      {/* Priority Picker Dropdown */}
-      {showPriorityPicker ? (
-        <View style={styles.dropdownMenu}>
-          <Text style={styles.dropdownHeader}>Set Priority:</Text>
-          <View style={styles.priorityRow}>
-            {PRIORITIES.map((p) => (
-              <Pressable
-                key={p}
-                onPress={() => {
-                  setPriority(p);
-                  setShowPriorityPicker(false);
-                }}
-                style={[
-                  styles.priorityChip,
-                  { backgroundColor: PRIORITY_TONES[p].surface },
-                  priority === p && styles.priorityChipSelected,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.priorityChipText,
-                    { color: PRIORITY_TONES[p].text },
-                    priority === p && { fontWeight: '700' },
-                  ]}
-                >
-                  {formatEnum(p)}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        </View>
-      ) : null}
-
       {/* 3. WhatsApp Chat Timeline Area */}
       <KeyboardAvoidingView
         style={styles.flex}
@@ -344,7 +338,7 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
           {/* Welcome Message */}
           <View style={styles.systemBubble}>
             <Text style={styles.systemText}>
-              👋 Describe your issue below or record a voice note. You can also attach proof images and video clips.
+              👋 Submitting to <Text style={{ fontWeight: '700' }}>{cardName}</Text> department. Describe your issue below or attach photo/voice/video.
             </Text>
             <Text style={styles.bubbleTime}>Just now</Text>
           </View>
@@ -443,7 +437,7 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
           <View style={styles.chatInputWrapper}>
             <TextInput
               style={styles.chatTextInput}
-              placeholder="Type a problem..."
+              placeholder={`Type problem for ${cardName || 'department'}...`}
               placeholderTextColor="#94A3B8"
               value={textInput}
               onChangeText={setTextInput}
@@ -479,6 +473,46 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#E5DDD5' },
   flex: { flex: 1 },
+  emptyCenterContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.lg,
+  },
+  emptyCardBox: {
+    backgroundColor: '#FFFFFF',
+    padding: spacing.xl,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 340,
+    elevation: 4,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginTop: spacing.md,
+  },
+  emptyDesc: {
+    fontSize: 13,
+    color: '#64748B',
+    textAlign: 'center',
+    marginVertical: spacing.md,
+    lineHeight: 18,
+  },
+  goHomeBtn: {
+    backgroundColor: '#075E54',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderRadius: radius.pill,
+    marginTop: spacing.xs,
+  },
+  goHomeBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
   whatsappHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -541,19 +575,27 @@ const styles = StyleSheet.create({
   dropdownToggle: {
     padding: 4,
   },
-  priorityPill: {
+  selectedCardBadge: {
     alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 6,
+    backgroundColor: '#E0F2FE',
     paddingHorizontal: spacing.md,
-    paddingVertical: 4,
+    paddingVertical: 5,
     borderRadius: radius.pill,
     marginTop: 2,
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
   },
-  priorityPillText: {
+  selectedCardBadgeText: {
     fontSize: 12,
     fontWeight: '600',
+    color: '#0369A1',
+  },
+  cardNameHighlight: {
+    fontWeight: '800',
+    color: '#075E54',
   },
   dropdownMenu: {
     backgroundColor: '#FFFFFF',
@@ -578,23 +620,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#0F172A',
     fontWeight: '500',
-  },
-  priorityRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
-  },
-  priorityChip: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: 6,
-    borderRadius: radius.pill,
-  },
-  priorityChipSelected: {
-    borderWidth: 1,
-    borderColor: '#075E54',
-  },
-  priorityChipText: {
-    fontSize: 13,
   },
   chatTimeline: {
     padding: spacing.md,
