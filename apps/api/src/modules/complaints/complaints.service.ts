@@ -102,7 +102,7 @@ export async function create(
     where: {
       role: { in: ['ADMIN', 'SUPER_ADMIN', 'EXECUTIVE'] },
       isActive: true,
-      OR: [{ approvalStatus: 'APPROVED' }, { approvalStatus: null as any }],
+      approvalStatus: 'APPROVED',
       category: categoryToUse,
     },
     select: { id: true },
