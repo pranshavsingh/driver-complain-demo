@@ -25,7 +25,14 @@ export async function getById(id: string): Promise<UserPublic> {
 
 export async function listAdmins(): Promise<AdminSummary[]> {
   const admins = await prisma.user.findMany({
-    where: { role: { in: ['ADMIN', 'SUPER_ADMIN'] }, isActive: true, approvalStatus: 'APPROVED' },
+    where: {
+      role: { in: ['ADMIN', 'SUPER_ADMIN'] },
+      isActive: true,
+      OR: [
+        { approvalStatus: 'APPROVED' },
+        { approvalStatus: null as any },
+      ],
+    },
     orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
   });
   return admins.map(toAdminSummary);
@@ -90,15 +97,27 @@ export async function listUsers(filters?: {
 }): Promise<UserPublic[]> {
   const where: any = {};
   if (filters?.role) where.role = filters.role;
-  if (filters?.approvalStatus) where.approvalStatus = filters.approvalStatus;
+  if (filters?.approvalStatus) {
+    if (filters.approvalStatus === 'APPROVED') {
+      where.OR = [{ approvalStatus: 'APPROVED' }, { approvalStatus: null }];
+    } else {
+      where.approvalStatus = filters.approvalStatus;
+    }
+  }
   if (filters?.isActive !== undefined) where.isActive = filters.isActive;
   if (filters?.search) {
-    where.OR = [
+    const searchConditions = [
       { employeeId: { contains: filters.search, mode: 'insensitive' } },
       { firstName: { contains: filters.search, mode: 'insensitive' } },
       { lastName: { contains: filters.search, mode: 'insensitive' } },
       { email: { contains: filters.search, mode: 'insensitive' } },
     ];
+    if (where.OR) {
+      where.AND = [{ OR: where.OR }, { OR: searchConditions }];
+      delete where.OR;
+    } else {
+      where.OR = searchConditions;
+    }
   }
 
   const users = await prisma.user.findMany({
