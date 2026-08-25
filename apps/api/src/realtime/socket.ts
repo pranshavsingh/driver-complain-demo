@@ -45,7 +45,15 @@ function extractToken(socket: Socket<ClientToServerEvents, ServerToClientEvents>
 export function initRealtime(server: HttpServer): RealtimeServer {
   const instance: RealtimeServer = new Server(server, {
     path: '/socket.io',
-    cors: { origin: corsOrigins.length > 0 ? corsOrigins : undefined, credentials: true },
+    cors: {
+      origin: (origin, callback) => {
+        if (!origin || corsOrigins.includes('*') || corsOrigins.includes(origin)) {
+          return callback(null, true);
+        }
+        return callback(new Error(`Socket CORS blocked for origin: ${origin}`));
+      },
+      credentials: true,
+    },
   });
 
   // Same JWT as the REST API — an unauthenticated socket is rejected before it connects,
