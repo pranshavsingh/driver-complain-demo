@@ -4,6 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build": "prisma generate && prisma migrate deploy",
+    "prestart": "prisma generate && prisma migrate deploy",
     "dev": "node --env-file-if-exists=.env --import tsx --import ./src/instrument.ts --watch src/index.ts",
     "start": "node --env-file-if-exists=.env --import tsx --import ./src/instrument.ts src/index.ts",
     "typecheck": "tsc --noEmit",
