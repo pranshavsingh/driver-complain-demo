@@ -8,7 +8,7 @@ export default function TabsLayout(): ReactElement {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: '#1D4ED8',
+        tabBarActiveTintColor: '#075E54', // WhatsApp / Primary Green
         tabBarInactiveTintColor: '#64748B',
         tabBarStyle: styles.tabBar,
         tabBarLabelStyle: styles.tabBarLabel,
@@ -17,6 +17,20 @@ export default function TabsLayout(): ReactElement {
     >
       <Tabs.Screen
         name="index"
+        options={{
+          title: 'Home Dashboard',
+          tabBarLabel: 'Home',
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons
+              name={focused ? 'grid' : 'grid-outline'}
+              size={22}
+              color={color}
+            />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="register"
         options={{
           title: 'Register Complaint',
           tabBarLabel: 'Register',
@@ -32,12 +46,12 @@ export default function TabsLayout(): ReactElement {
       <Tabs.Screen
         name="history"
         options={{
-          title: 'Complaint History',
-          tabBarLabel: 'History',
+          title: 'Complaint Status',
+          tabBarLabel: 'Complaint / Status',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
-              name={focused ? 'time' : 'time-outline'}
-              size={24}
+              name={focused ? 'clipboard' : 'clipboard-outline'}
+              size={22}
               color={color}
             />
           ),

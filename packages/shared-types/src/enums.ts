@@ -45,3 +45,18 @@ export const LoadingStatusSchema = z.enum(['REACHED', 'COMPLETED']);
 export type LoadingStatus = z.infer<typeof LoadingStatusSchema>;
 export const LOADING_STATUSES = LoadingStatusSchema.options;
 
+export const ComplaintCategorySchema = z.enum([
+  'LOADING',
+  'UNLOADING',
+  'BREAKDOWN',
+  'TYRE_ISSUE',
+  'FUEL_DEF',
+  'ACCOUNTS',
+  'COMPLAINT_STATUS',
+  'MEDICAL_EMERGENCY',
+  'SUPPORT',
+]);
+export type ComplaintCategory = z.infer<typeof ComplaintCategorySchema>;
+export const COMPLAINT_CATEGORIES = ComplaintCategorySchema.options;
+
+
