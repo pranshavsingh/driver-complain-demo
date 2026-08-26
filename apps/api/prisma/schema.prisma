@@ -161,6 +161,7 @@ model Complaint {
   vehicle           Vehicle?          @relation(fields: [vehicleId], references: [id])
   title             String
   description       String
+  transcription     String?
   category          ComplaintCategory @default(SUPPORT)
   status            ComplaintStatus   @default(NEW)
   priority          Priority          @default(MEDIUM)
@@ -202,6 +203,7 @@ model ComplaintAttachment {
   /// Runtime of a voice note or video, from Cloudinary. Null for photos.
   durationSec  Int?
   originalName String?
+  transcription String?
   createdAt    DateTime       @default(now())
 
   @@index([complaintId])

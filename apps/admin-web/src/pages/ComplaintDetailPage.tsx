@@ -328,11 +328,22 @@ export function ComplaintDetailPage(): ReactElement {
 
           {/* Card 2: Driver Report Description */}
           <div className="table-card detail-card">
-            <h2 className="card-section-title">
-              <MessageSquare size={18} color="#1d4ed8" /> What the Driver Reported
+            <h2 className="card-section-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <MessageSquare size={18} color="#1d4ed8" /> What the Driver Reported
+              </span>
+              {complaint.transcription || complaint.attachments.some((a) => a.kind === 'VOICE' && a.transcription) ? (
+                <span className="transcription-badge">
+                  <Mic size={14} style={{ marginRight: 4 }} /> Transcribed Voice Note
+                </span>
+              ) : null}
             </h2>
             <div className="driver-statement-box">
-              <p className="statement-text">{complaint.description}</p>
+              <p className="statement-text">
+                {complaint.description && complaint.description !== 'Voice note attached'
+                  ? complaint.description
+                  : complaint.transcription ?? 'Voice note attached'}
+              </p>
             </div>
           </div>
 

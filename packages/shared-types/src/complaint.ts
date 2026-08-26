@@ -36,6 +36,7 @@ export const ComplaintPublicSchema = z.object({
   vehicleId: z.string().nullable().optional(),
   title: z.string(),
   description: z.string(),
+  transcription: z.string().nullable().optional(),
   category: ComplaintCategorySchema.optional(),
   status: ComplaintStatusSchema,
   priority: PrioritySchema,
@@ -95,6 +96,7 @@ export const ComplaintAttachmentPublicSchema = z.object({
   /** Runtime of a voice note or video in seconds. Null for photos. */
   durationSec: z.number().int().nullable().optional(),
   originalName: z.string().nullable().optional(),
+  transcription: z.string().nullable().optional(),
   createdAt: z.string(),
 });
 export type ComplaintAttachmentPublic = z.infer<typeof ComplaintAttachmentPublicSchema>;

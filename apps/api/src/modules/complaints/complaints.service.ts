@@ -17,6 +17,7 @@ import { prisma } from '../../lib/prisma';
 import { toComplaintPublic, toComplaintDetail } from '../../lib/serializers';
 import { uploadBuffer, cloudinaryFolder } from '../../lib/cloudinary';
 import { dispatchComplaintEvent } from '../../lib/notify';
+import { transcribeAudio } from '../../lib/transcribe';
 import { ApiError } from '../../errors/api-error';
 
 /** The authenticated caller, as far as the complaint layer is concerned. */
@@ -116,6 +117,16 @@ export async function create(
     select: { id: true },
   });
 
+  const voiceFile = evidence.VOICE;
+  let voiceTranscription: string | null = null;
+  if (voiceFile) {
+    try {
+      voiceTranscription = await transcribeAudio(voiceFile.buffer, voiceFile.originalName);
+    } catch {
+      voiceTranscription = null;
+    }
+  }
+
   const pending = ATTACHMENT_KINDS.flatMap((kind) => {
     const file = evidence[kind];
     return file ? [{ kind, file }] : [];
@@ -124,12 +135,19 @@ export async function create(
     pending.map(async ({ kind, file }) => ({
       kind,
       originalName: file.originalName ?? null,
+      transcription: kind === 'VOICE' ? voiceTranscription : null,
       asset: await uploadBuffer(file.buffer, {
         folder: `${cloudinaryFolder}/complaints`,
         resourceType: resourceTypeFor(kind),
       }),
     })),
   );
+
+  const finalDescription =
+    voiceTranscription &&
+    (input.description === 'Voice note attached' || !input.description.trim())
+      ? voiceTranscription
+      : input.description;
 
   const created = await prisma.$transaction(async (tx) => {
     const counter = await tx.counter.upsert({
@@ -145,7 +163,8 @@ export async function create(
         driverId: driver.id,
         vehicleId: vehicleIdToUse,
         title: input.title,
-        description: input.description,
+        description: finalDescription,
+        transcription: voiceTranscription,
         category: categoryToUse,
         priority: input.priority ?? 'MEDIUM',
         assignedToId: autoAssignedToId,
@@ -154,7 +173,7 @@ export async function create(
 
     if (uploads.length > 0) {
       await tx.complaintAttachment.createMany({
-        data: uploads.map(({ kind, asset, originalName }) => ({
+        data: uploads.map(({ kind, asset, originalName, transcription }) => ({
           complaintId: complaint.id,
           uploadedById: driverUserId,
           kind,
@@ -165,6 +184,7 @@ export async function create(
           bytes: asset.bytes,
           durationSec: asset.durationSec,
           originalName,
+          transcription,
         })),
       });
     }

@@ -103,6 +103,7 @@ export function toComplaintPublic(complaint: Complaint): ComplaintPublic {
     vehicleId: complaint.vehicleId ?? null,
     title: complaint.title,
     description: complaint.description,
+    transcription: (complaint as any).transcription ?? null,
     category: (complaint as any).category ?? 'SUPPORT',
     status: complaint.status,
     priority: complaint.priority,
@@ -155,6 +156,7 @@ export function toComplaintAttachmentPublic(a: ComplaintAttachment): ComplaintAt
     bytes: a.bytes ?? null,
     durationSec: a.durationSec ?? null,
     originalName: a.originalName ?? null,
+    transcription: (a as any).transcription ?? null,
     createdAt: a.createdAt.toISOString(),
   };
 }
