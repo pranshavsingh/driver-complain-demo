@@ -10,7 +10,7 @@ usersRouter.get('/me', authenticate, usersController.getMe);
 usersRouter.get(
   '/admins',
   authenticate,
-  requireRole('SUPER_ADMIN'),
+  requireRole('ADMIN', 'SUPER_ADMIN', 'EXECUTIVE'),
   usersController.listAdmins,
 );
 
