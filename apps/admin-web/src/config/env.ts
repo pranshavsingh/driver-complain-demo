@@ -18,8 +18,9 @@ if (!parsed.success) {
   throw new Error(`Invalid admin-web environment:\n${parsed.error.issues.map((i) => i.message).join('\n')}`);
 }
 
-/** API origin, trailing slashes stripped so string concatenation is always well-formed. */
-export const apiUrl = parsed.data.VITE_API_URL.replace(/\/+$/, '');
+/** API origin, trailing slashes and /api/v1 suffix stripped so concatenation is safe. */
+const cleanUrl = parsed.data.VITE_API_URL.replace(/\/+$/, '');
+export const apiUrl = cleanUrl.endsWith('/api/v1') ? cleanUrl.slice(0, -7) : cleanUrl;
 
-/** Versioned REST base, e.g. http://localhost:4000/api/v1 */
+/** Versioned REST base, e.g. https://driver-complain-demo.onrender.com/api/v1 */
 export const apiBase = `${apiUrl}/api/v1`;
