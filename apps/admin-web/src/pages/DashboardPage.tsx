@@ -1,14 +1,14 @@
 import { useMemo, useState, type ReactElement } from 'react';
 import { Link } from 'react-router-dom';
 import type { ComplaintPublic, VehiclePublic } from '@driver-complaint/shared-types';
-import { ClipboardList, Clock, CheckCircle2, RotateCw, Search, X } from '../components/Icons';
+import { ClipboardList, AlertCircle, Clock, CheckCircle2, RotateCw, Search, X } from '../components/Icons';
 import * as api from '../api/endpoints';
 import { PriorityBadge, StatusBadge } from '../components/Badges';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { useApiResource } from '../hooks/useApiResource';
 import { describeVehicle, formatDateTime } from '../lib/format';
 
-type StatFilterMode = 'ALL' | 'IN_PROGRESS' | 'RESOLVED';
+type StatFilterMode = 'ALL' | 'NEW' | 'IN_PROGRESS' | 'RESOLVED';
 
 export function DashboardPage(): ReactElement {
   const [selectedStat, setSelectedStat] = useState<StatFilterMode>('ALL');
@@ -32,16 +32,17 @@ export function DashboardPage(): ReactElement {
   }, [vehicleList]);
 
   const totalCount = complaintsResource.data?.meta.total ?? complaintsList.length;
-  const inProgressCount = complaintsList.filter(
-    (c) => c.status === 'NEW' || c.status === 'IN_PROGRESS',
-  ).length;
+  const newCount = complaintsList.filter((c) => c.status === 'NEW').length;
+  const inProgressCount = complaintsList.filter((c) => c.status === 'IN_PROGRESS').length;
   const resolvedCount = complaintsList.filter(
     (c) => c.status === 'RESOLVED' || c.status === 'CLOSED',
   ).length;
 
   const filteredComplaints = complaintsList.filter((item) => {
-    if (selectedStat === 'IN_PROGRESS') {
-      if (item.status !== 'NEW' && item.status !== 'IN_PROGRESS') return false;
+    if (selectedStat === 'NEW') {
+      if (item.status !== 'NEW') return false;
+    } else if (selectedStat === 'IN_PROGRESS') {
+      if (item.status !== 'IN_PROGRESS') return false;
     } else if (selectedStat === 'RESOLVED') {
       if (item.status !== 'RESOLVED' && item.status !== 'CLOSED') return false;
     }
@@ -81,7 +82,7 @@ export function DashboardPage(): ReactElement {
 
       <ErrorBanner error={complaintsResource.error} />
 
-      {/* 3 Metric Stat Boxes with Professional Icons */}
+      {/* 4 Metric Stat Boxes with Professional Icons */}
       <div className="stat-cards-grid">
         <button
           type="button"
@@ -98,6 +99,19 @@ export function DashboardPage(): ReactElement {
 
         <button
           type="button"
+          className={`stat-card stat-info ${selectedStat === 'NEW' ? 'selected' : ''}`}
+          onClick={() => setSelectedStat('NEW')}
+        >
+          <div className="stat-card-header">
+            <span className="stat-card-title">New Complaints</span>
+            <AlertCircle size={22} color="#0284c7" />
+          </div>
+          <div className="stat-card-value">{newCount}</div>
+          <div className="stat-card-footer">Click to view new complaints</div>
+        </button>
+
+        <button
+          type="button"
           className={`stat-card stat-warning ${selectedStat === 'IN_PROGRESS' ? 'selected' : ''}`}
           onClick={() => setSelectedStat('IN_PROGRESS')}
         >
@@ -106,7 +120,7 @@ export function DashboardPage(): ReactElement {
             <Clock size={22} color="#d97706" />
           </div>
           <div className="stat-card-value">{inProgressCount}</div>
-          <div className="stat-card-footer">Click to view active / in-progress complaints</div>
+          <div className="stat-card-footer">Click to view in process complaints</div>
         </button>
 
         <button
@@ -130,9 +144,11 @@ export function DashboardPage(): ReactElement {
             <h2 className="table-card-title">
               {selectedStat === 'ALL'
                 ? 'All Complaints'
-                : selectedStat === 'IN_PROGRESS'
-                  ? 'In Process Complaints'
-                  : 'Resolved Complaints'}
+                : selectedStat === 'NEW'
+                  ? 'New Complaints'
+                  : selectedStat === 'IN_PROGRESS'
+                    ? 'In Process Complaints'
+                    : 'Resolved Complaints'}
               <span className="badge-pill">{filteredComplaints.length}</span>
             </h2>
           </div>

@@ -275,8 +275,20 @@ a:hover {
 
 .stat-cards-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 20px;
+}
+
+@media (max-width: 1024px) {
+  .stat-cards-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .stat-cards-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .stat-card {
@@ -303,6 +315,12 @@ a:hover {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.15);
   background: #eff6ff;
+}
+
+.stat-card.stat-info.selected {
+  border-color: #0284c7;
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15);
+  background: #f0f9ff;
 }
 
 .stat-card.stat-warning.selected {

@@ -4,9 +4,9 @@
   "private": true,
   "main": "expo-router/entry",
   "scripts": {
-    "start": "npx expo@54 start --go",
-    "start:go": "npx expo@54 start --go",
-    "start:dev-client": "npx expo@54 start --dev-client",
+    "start": "expo start --go",
+    "start:go": "expo start --go",
+    "start:dev-client": "expo start --dev-client",
     "android": "expo run:android",
     "ios": "expo run:ios",
     "prebuild": "expo prebuild --clean",

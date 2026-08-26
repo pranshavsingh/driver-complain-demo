@@ -10,21 +10,21 @@ usersRouter.get('/me', authenticate, usersController.getMe);
 usersRouter.get(
   '/admins',
   authenticate,
-  requireRole('ADMIN', 'SUPER_ADMIN'),
+  requireRole('SUPER_ADMIN'),
   usersController.listAdmins,
 );
 
 usersRouter.post(
   '/',
   authenticate,
-  requireRole('ADMIN', 'SUPER_ADMIN'),
+  requireRole('SUPER_ADMIN'),
   usersController.createUser,
 );
 
 usersRouter.get(
   '/',
   authenticate,
-  requireRole('ADMIN', 'SUPER_ADMIN'),
+  requireRole('SUPER_ADMIN'),
   usersController.listUsers,
 );
 

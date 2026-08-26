@@ -1,6 +1,6 @@
 import type { ReactElement, ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { isAdmin, useAuth } from './AuthContext';
+import { isAdmin, isSuperAdmin, useAuth } from './AuthContext';
 
 /**
  * Route guard for every authenticated screen.
@@ -21,6 +21,23 @@ export function RequireAdmin({ children }: { children: ReactNode }): ReactElemen
   if (status !== 'authenticated' || !isAdmin(user)) {
     // Remember where they were headed so login can send them back there.
     return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
+  }
+
+  return <>{children}</>;
+}
+
+/**
+ * Route guard restricted exclusively to SUPER_ADMIN users (e.g., Users & Approvals page).
+ */
+export function RequireSuperAdmin({ children }: { children: ReactNode }): ReactElement {
+  const { status, user } = useAuth();
+
+  if (status === 'loading') {
+    return <div className="page-message">Restoring your session…</div>;
+  }
+
+  if (status !== 'authenticated' || !isSuperAdmin(user)) {
+    return <Navigate to="/dashboard" replace />;
   }
 
   return <>{children}</>;

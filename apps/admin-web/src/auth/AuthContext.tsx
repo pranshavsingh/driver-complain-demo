@@ -20,6 +20,11 @@ export function isAdmin(user: UserPublic | null): boolean {
   return user !== null && ADMIN_ROLES.includes(user.role);
 }
 
+/** Whether this user is a Super Admin with full user & approval privileges. */
+export function isSuperAdmin(user: UserPublic | null): boolean {
+  return user !== null && user.role === 'SUPER_ADMIN';
+}
+
 type Status = 'loading' | 'authenticated' | 'anonymous';
 
 interface AuthContextValue {

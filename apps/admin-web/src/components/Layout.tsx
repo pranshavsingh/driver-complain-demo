@@ -1,7 +1,7 @@
 import { useState, type ReactElement } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { Truck, LayoutDashboard, Users, ClipboardList, LogOut } from './Icons';
-import { useAuth } from '../auth/AuthContext';
+import { isSuperAdmin, useAuth } from '../auth/AuthContext';
 import { useRealtime } from '../realtime/RealtimeProvider';
 import { PageErrorBoundary } from './ErrorBoundary';
 import { fullName } from '../lib/format';
@@ -53,13 +53,15 @@ export function Layout(): ReactElement {
             <span className="nav-label">Drivers</span>
           </NavLink>
 
-          <NavLink
-            to="/users"
-            className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
-          >
-            <Users size={18} className="nav-icon" />
-            <span className="nav-label">Users & Approvals</span>
-          </NavLink>
+          {isSuperAdmin(user) ? (
+            <NavLink
+              to="/users"
+              className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
+            >
+              <Users size={18} className="nav-icon" />
+              <span className="nav-label">Users & Approvals</span>
+            </NavLink>
+          ) : null}
 
           <NavLink
             to="/complaints"
