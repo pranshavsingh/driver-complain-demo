@@ -483,6 +483,12 @@ export async function assign(
   const existing = await prisma.complaint.findUnique({ where: { id } });
   if (!existing) throw ApiError.notFound('Complaint not found');
 
+  if (existing.assignmentStatus === 'PENDING') {
+    throw ApiError.badRequest(
+      'Please accept or reject the pending assignment request before re-assigning this complaint.',
+    );
+  }
+
   const target = await prisma.user.findUnique({ where: { id: input.assignedToId } });
   if (!target || !target.isActive || !ADMIN_ROLES.includes(target.role)) {
     throw ApiError.badRequest('Assignee must be an active admin');

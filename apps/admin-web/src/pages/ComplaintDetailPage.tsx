@@ -487,6 +487,7 @@ export function ComplaintDetailPage(): ReactElement {
                 className="form-select"
                 value={assignee}
                 onChange={(e) => setAssignee(e.target.value)}
+                disabled={complaint.assignmentStatus === 'PENDING'}
               >
                 <option value="">Select an admin or executive…</option>
                 {(adminsRes.data ?? []).map((a) => (
@@ -498,6 +499,7 @@ export function ComplaintDetailPage(): ReactElement {
             </div>
 
             {(() => {
+              const isPending = complaint.assignmentStatus === 'PENDING';
               const selectedUser = (adminsRes.data ?? []).find((a) => a.id === assignee);
               const isAssigningToSuperAdmin = user?.role === 'ADMIN' && selectedUser?.role === 'SUPER_ADMIN';
 
@@ -506,7 +508,7 @@ export function ComplaintDetailPage(): ReactElement {
                   <button
                     type="submit"
                     className="btn-primary btn-full"
-                    disabled={savingAssignee || !assignee || (assignee === complaint.assignedToId && complaint.assignmentStatus !== 'PENDING')}
+                    disabled={isPending || savingAssignee || !assignee || assignee === complaint.assignedToId}
                   >
                     {savingAssignee
                       ? 'Submitting…'
@@ -514,7 +516,11 @@ export function ComplaintDetailPage(): ReactElement {
                         ? 'Request SuperAdmin Assignment'
                         : 'Assign Complaint'}
                   </button>
-                  {isAssigningToSuperAdmin ? (
+                  {isPending ? (
+                    <p className="form-hint" style={{ color: '#d97706', fontWeight: 600 }}>
+                      Please Accept or Reject the pending assignment request above before re-assigning this complaint.
+                    </p>
+                  ) : isAssigningToSuperAdmin ? (
                     <p className="form-hint">
                       Assigning to a SuperAdmin requires their acceptance before ownership transfers.
                     </p>
