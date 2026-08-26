@@ -17,7 +17,7 @@ import { prisma } from '../../lib/prisma';
 import { toComplaintPublic, toComplaintDetail } from '../../lib/serializers';
 import { uploadBuffer, cloudinaryFolder } from '../../lib/cloudinary';
 import { dispatchComplaintEvent } from '../../lib/notify';
-import { transcribeAudio } from '../../lib/transcribe';
+import { transcribeAudio, transcribeAudioFromUrl } from '../../lib/transcribe';
 import { ApiError } from '../../errors/api-error';
 
 /** The authenticated caller, as far as the complaint layer is concerned. */
@@ -752,6 +752,46 @@ export async function rejectAssignment(
       },
     });
   }
+
+  return toComplaintPublic(updated);
+}
+
+export async function transcribeComplaint(id: string): Promise<ComplaintPublic> {
+  const existing = await prisma.complaint.findUnique({
+    where: { id },
+    include: { attachments: true },
+  });
+  if (!existing) throw ApiError.notFound('Complaint not found');
+
+  const voiceAttachment = existing.attachments.find((a) => a.kind === 'VOICE');
+  if (!voiceAttachment) {
+    throw ApiError.badRequest('No voice note attachment found on this complaint');
+  }
+
+  const transcribedText = await transcribeAudioFromUrl(voiceAttachment.url);
+  if (!transcribedText) {
+    throw ApiError.badRequest('Could not transcribe audio recording. Please ensure voice note is clear.');
+  }
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const updatedComplaint = await tx.complaint.update({
+      where: { id },
+      data: {
+        transcription: transcribedText,
+        description:
+          existing.description === 'Voice note attached' || !existing.description.trim()
+            ? transcribedText
+            : existing.description,
+      },
+    });
+
+    await tx.complaintAttachment.update({
+      where: { id: voiceAttachment.id },
+      data: { transcription: transcribedText },
+    });
+
+    return updatedComplaint;
+  });
 
   return toComplaintPublic(updated);
 }

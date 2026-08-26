@@ -146,3 +146,13 @@ export async function rejectAssignment(
   );
   sendSuccess(res, complaint);
 }
+
+export async function transcribe(
+  req: Request<{ id: string }>,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw ApiError.unauthorized();
+  const { id } = req.params;
+  const complaint = await complaintsService.transcribeComplaint(id);
+  sendSuccess(res, complaint);
+}

@@ -72,3 +72,19 @@ export async function transcribeAudio(
     });
   }
 }
+
+/**
+ * Fetch an audio file from a URL (e.g. Cloudinary) and transcribe it using faster-whisper.
+ */
+export async function transcribeAudioFromUrl(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const arrayBuffer = await res.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    return await transcribeAudio(buffer, url);
+  } catch (err) {
+    logger.warn({ err, url }, 'Failed to download and transcribe audio from URL');
+    return null;
+  }
+}

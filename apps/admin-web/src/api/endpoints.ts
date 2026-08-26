@@ -159,6 +159,9 @@ export const complaints = {
       body: { note },
     }),
 
+  transcribe: (id: string): Promise<ComplaintPublic> =>
+    request(ComplaintPublicSchema, `/complaints/${id}/transcribe`, { method: 'POST' }),
+
   /** Streams the filtered result set as .xlsx — the same filters the list is showing. */
   exportXlsx: (filter: ComplaintFilterInput): Promise<void> =>
     download('/complaints/export', { query: toQuery(filter) }, 'complaints.xlsx'),

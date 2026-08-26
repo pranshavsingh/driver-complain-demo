@@ -65,6 +65,25 @@ export function ComplaintDetailPage(): ReactElement {
   const [rejectNote, setRejectNote] = useState('');
   const [showRejectBox, setShowRejectBox] = useState(false);
 
+  const [transcribing, setTranscribing] = useState(false);
+  const [transcribeError, setTranscribeError] = useState<unknown>(null);
+
+  const handleTranscribe = (): void => {
+    if (!complaint) return;
+    setTranscribeError(null);
+    setTranscribing(true);
+    api.complaints.transcribe(complaint.id).then(
+      () => {
+        setTranscribing(false);
+        reload();
+      },
+      (err: unknown) => {
+        setTranscribeError(err);
+        setTranscribing(false);
+      },
+    );
+  };
+
   useEffect(() => {
     if (!complaint) return;
     setStatus(complaint.status);
@@ -336,8 +355,22 @@ export function ComplaintDetailPage(): ReactElement {
                 <span className="transcription-badge">
                   <Mic size={14} style={{ marginRight: 4 }} /> Transcribed Voice Note
                 </span>
+              ) : complaint.attachments.some((a) => a.kind === 'VOICE') ? (
+                <button
+                  type="button"
+                  className="btn-secondary btn-sm"
+                  onClick={handleTranscribe}
+                  disabled={transcribing}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '4px 10px' }}
+                >
+                  <Mic size={14} color="#1d4ed8" />
+                  {transcribing ? 'Transcribing…' : 'Convert Voice Note to Text'}
+                </button>
               ) : null}
             </h2>
+
+            <ErrorBanner error={transcribeError} />
+
             <div className="driver-statement-box">
               <p className="statement-text">
                 {complaint.description && complaint.description !== 'Voice note attached'

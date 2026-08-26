@@ -60,3 +60,8 @@ complaintsRouter.post(
   requireRole('SUPER_ADMIN'),
   complaintsController.rejectAssignment,
 );
+complaintsRouter.post(
+  '/:id/transcribe',
+  requireRole('ADMIN', 'SUPER_ADMIN', 'EXECUTIVE'),
+  complaintsController.transcribe,
+);
