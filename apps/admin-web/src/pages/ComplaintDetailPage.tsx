@@ -317,13 +317,13 @@ export function ComplaintDetailPage(): ReactElement {
             </div>
 
             <div className="form-group">
-              <label htmlFor="note" className="form-label">Action Taken / Resolution Note</label>
+              <label htmlFor="note" className="form-label">Action Taken / Progress Note</label>
               <textarea
                 id="note"
                 className="form-textarea"
                 rows={4}
                 maxLength={2000}
-                placeholder="What action was taken or why status changed? The driver receives this update."
+                placeholder="Type progress update or resolution details. The driver receives this update."
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
               />
@@ -332,12 +332,16 @@ export function ComplaintDetailPage(): ReactElement {
             <button
               type="submit"
               className="btn-primary btn-full"
-              disabled={savingStatus || status === complaint.status}
+              disabled={savingStatus || (status === complaint.status && !note.trim())}
             >
-              {savingStatus ? 'Saving Status…' : 'Save Status'}
+              {savingStatus
+                ? 'Saving Update…'
+                : status === complaint.status
+                  ? 'Add Progress Note'
+                  : 'Save Status'}
             </button>
-            {status === complaint.status ? (
-              <p className="form-hint">Choose a different status to record an update.</p>
+            {status === complaint.status && !note.trim() ? (
+              <p className="form-hint">Type a progress note above to record an update while keeping current status.</p>
             ) : null}
           </form>
 

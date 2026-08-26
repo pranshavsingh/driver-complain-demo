@@ -408,6 +408,18 @@ export async function updateStatus(
   if (to === 'RESOLVED') resolvedAt = existing.resolvedAt ?? new Date();
   else if (to === 'NEW' || to === 'IN_PROGRESS') resolvedAt = null;
 
+  const isStatusChange = from !== to;
+  const notifTitle = isStatusChange
+    ? `Complaint ${existing.complaintNo} is now ${to}`
+    : `Progress update on ${existing.complaintNo}`;
+  const notifBody =
+    input.note && input.note.trim()
+      ? input.note.trim()
+      : isStatusChange
+        ? `Status changed from ${from} to ${to}.`
+        : `Progress updated.`;
+  const notifType = isStatusChange ? 'STATUS_CHANGED' : 'COMMENT_ADDED';
+
   const updated = await prisma.$transaction(async (tx) => {
     const complaint = await tx.complaint.update({
       where: { id },
@@ -425,17 +437,17 @@ export async function updateStatus(
     await tx.notification.create({
       data: {
         userId: existing.driver.userId,
-        type: 'STATUS_CHANGED',
-        title: `Complaint ${existing.complaintNo} is now ${to}`,
-        body: input.note ?? `Status changed from ${from} to ${to}.`,
+        type: notifType,
+        title: notifTitle,
+        body: notifBody,
         complaintId: id,
-        data: { complaintId: id, type: 'STATUS_CHANGED', status: to },
+        data: { complaintId: id, type: notifType, status: to },
       },
     });
     return complaint;
   });
 
-  // Tell the driver their complaint moved. Post-commit, best-effort (see create()).
+  // Tell the driver their complaint moved or was updated. Post-commit, best-effort.
   dispatchComplaintEvent({
     userIds: [existing.driver.userId],
     event: REALTIME_EVENTS.complaintStatusChanged,
@@ -447,9 +459,9 @@ export async function updateStatus(
       at: new Date().toISOString(),
     },
     push: {
-      title: `Complaint ${existing.complaintNo} is now ${to}`,
-      body: input.note ?? `Status changed from ${from} to ${to}.`,
-      data: { complaintId: updated.id, type: 'STATUS_CHANGED', status: to },
+      title: notifTitle,
+      body: notifBody,
+      data: { complaintId: updated.id, type: notifType, status: to },
     },
   });
 

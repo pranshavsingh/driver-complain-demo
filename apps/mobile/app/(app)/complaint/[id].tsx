@@ -200,10 +200,10 @@ function VideoAttachmentPlayer({ attachment }: { attachment: ComplaintAttachment
  */
 function TimelineEntry({ update }: { update: ComplaintUpdatePublic }): ReactElement {
   const change =
-    update.fromStatus && update.toStatus
+    update.fromStatus && update.toStatus && update.fromStatus !== update.toStatus
       ? `${formatEnum(update.fromStatus)} → ${formatEnum(update.toStatus)}`
       : update.toStatus
-        ? formatEnum(update.toStatus)
+        ? `${formatEnum(update.toStatus)} Update`
         : 'Updated';
 
   return (
