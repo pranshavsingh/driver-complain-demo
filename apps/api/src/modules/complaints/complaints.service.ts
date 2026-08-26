@@ -770,7 +770,9 @@ export async function transcribeComplaint(id: string): Promise<ComplaintPublic> 
 
   const transcribedText = await transcribeAudioFromUrl(voiceAttachment.url);
   if (!transcribedText) {
-    throw ApiError.badRequest('Could not transcribe audio recording. Please ensure voice note is clear.');
+    throw ApiError.badRequest(
+      'Could not transcribe audio recording. Please ensure python/faster-whisper or GROQ_API_KEY / OPENAI_API_KEY is configured on the server.',
+    );
   }
 
   const updated = await prisma.$transaction(async (tx) => {
