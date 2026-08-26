@@ -388,9 +388,15 @@ export function ComplaintsListPage(): ReactElement {
                     </td>
                     <td>
                       <span className="assignee-text">
-                        {c.assignedToId
-                          ? (adminNames.get(c.assignedToId) ?? c.assignedToId)
-                          : 'Unassigned'}
+                        {c.assignmentStatus === 'PENDING' ? (
+                          <span className="pending-assignee-badge" title="Awaiting SuperAdmin Acceptance">
+                            Pending Approval
+                          </span>
+                        ) : c.assignedToId ? (
+                          (adminNames.get(c.assignedToId) ?? c.assignedToId)
+                        ) : (
+                          'Unassigned'
+                        )}
                       </span>
                     </td>
                     <td>

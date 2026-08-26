@@ -26,7 +26,7 @@ export async function getById(id: string): Promise<UserPublic> {
 export async function listAdmins(): Promise<AdminSummary[]> {
   const admins = await prisma.user.findMany({
     where: {
-      role: { in: ['ADMIN', 'SUPER_ADMIN'] },
+      role: { in: ['ADMIN', 'SUPER_ADMIN', 'EXECUTIVE'] },
       isActive: true,
       approvalStatus: 'APPROVED',
     },

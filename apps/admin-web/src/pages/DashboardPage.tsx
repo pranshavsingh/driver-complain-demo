@@ -8,9 +8,12 @@ import { ErrorBanner } from '../components/ErrorBanner';
 import { useApiResource } from '../hooks/useApiResource';
 import { describeVehicle, formatDateTime } from '../lib/format';
 
+import { useAuth } from '../auth/AuthContext';
+
 type StatFilterMode = 'ALL' | 'NEW' | 'IN_PROGRESS' | 'RESOLVED';
 
 export function DashboardPage(): ReactElement {
+  const { user } = useAuth();
   const [selectedStat, setSelectedStat] = useState<StatFilterMode>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -37,6 +40,7 @@ export function DashboardPage(): ReactElement {
   const resolvedCount = complaintsList.filter(
     (c) => c.status === 'RESOLVED' || c.status === 'CLOSED',
   ).length;
+  const pendingApprovals = complaintsList.filter((c) => c.assignmentStatus === 'PENDING');
 
   const filteredComplaints = complaintsList.filter((item) => {
     if (selectedStat === 'NEW') {
@@ -81,6 +85,33 @@ export function DashboardPage(): ReactElement {
       </div>
 
       <ErrorBanner error={complaintsResource.error} />
+
+      {/* SuperAdmin Pending Approval Alert Banner */}
+      {user?.role === 'SUPER_ADMIN' && pendingApprovals.length > 0 ? (
+        <div className="pending-assignment-banner" style={{ marginBottom: 24 }}>
+          <div className="banner-content">
+            <div className="banner-icon">
+              <Clock size={24} color="#d97706" />
+            </div>
+            <div>
+              <h3 className="banner-title">
+                {pendingApprovals.length} Complaint Assignment Request{pendingApprovals.length > 1 ? 's' : ''} Awaiting Acceptance
+              </h3>
+              <p className="banner-desc">
+                An Admin requested to assign complaint{pendingApprovals.length > 1 ? 's' : ''}{' '}
+                {pendingApprovals.map((p) => p.complaintNo).join(', ')} to SuperAdmin. Click a complaint to Accept or Reject the assignment.
+              </p>
+            </div>
+          </div>
+          <div className="banner-btn-group">
+            {pendingApprovals.map((p) => (
+              <Link key={p.id} to={`/complaints/${p.id}`} className="btn-success-banner">
+                Review {p.complaintNo}
+              </Link>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       {/* 4 Metric Stat Boxes with Professional Icons */}
       <div className="stat-cards-grid">
