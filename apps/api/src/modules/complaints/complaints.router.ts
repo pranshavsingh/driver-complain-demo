@@ -50,3 +50,13 @@ complaintsRouter.post(
   validate(AssignComplaintSchema),
   complaintsController.assign,
 );
+complaintsRouter.post(
+  '/:id/accept-assignment',
+  requireRole('SUPER_ADMIN'),
+  complaintsController.acceptAssignment,
+);
+complaintsRouter.post(
+  '/:id/reject-assignment',
+  requireRole('SUPER_ADMIN'),
+  complaintsController.rejectAssignment,
+);

@@ -53,6 +53,7 @@ const detailInclude = {
   driver: { include: { user: true } },
   vehicle: true,
   assignedTo: true,
+  pendingAssignee: true,
 } satisfies Prisma.ComplaintInclude;
 
 /**
@@ -469,10 +470,16 @@ export async function updateStatus(
 }
 
 export async function assign(
-  adminUserId: string,
+  actor: Actor | string,
   id: string,
   input: AssignComplaint,
 ): Promise<ComplaintPublic> {
+  const actorObj: Actor =
+    typeof actor === 'string' ? { id: actor, role: 'SUPER_ADMIN' } : actor;
+
+  const actorUser = await prisma.user.findUnique({ where: { id: actorObj.id } });
+  if (!actorUser) throw ApiError.unauthorized();
+
   const existing = await prisma.complaint.findUnique({ where: { id } });
   if (!existing) throw ApiError.notFound('Complaint not found');
 
@@ -481,32 +488,61 @@ export async function assign(
     throw ApiError.badRequest('Assignee must be an active admin');
   }
 
+  // Admin assigning to SuperAdmin requires SuperAdmin acceptance
+  const isRequestingSuperAdmin = actorUser.role === 'ADMIN' && target.role === 'SUPER_ADMIN';
+
   const updated = await prisma.$transaction(async (tx) => {
     const complaint = await tx.complaint.update({
       where: { id },
-      data: { assignedToId: target.id },
+      data: isRequestingSuperAdmin
+        ? {
+            pendingAssigneeId: target.id,
+            assignmentStatus: 'PENDING',
+            // Keep assignedToId as the requesting admin until SuperAdmin accepts
+            assignedToId: existing.assignedToId ?? actorUser.id,
+          }
+        : {
+            assignedToId: target.id,
+            pendingAssigneeId: null,
+            assignmentStatus: 'NONE',
+          },
     });
+
+    const noteText = isRequestingSuperAdmin
+      ? `Requested assignment to SuperAdmin ${target.firstName} ${target.lastName} (Pending Acceptance)`
+      : `Assigned to ${target.firstName} ${target.lastName}`;
+
     await tx.complaintUpdate.create({
       data: {
         complaintId: id,
-        authorId: adminUserId,
-        note: `Assigned to ${target.firstName} ${target.lastName}`,
+        authorId: actorUser.id,
+        note: noteText,
       },
     });
+
+    const notifType = isRequestingSuperAdmin ? 'ASSIGNMENT_REQUESTED' : 'ASSIGNED';
+    const notifTitle = isRequestingSuperAdmin
+      ? `Assignment Request for ${existing.complaintNo}`
+      : `Assigned complaint ${existing.complaintNo}`;
+    const notifBody = isRequestingSuperAdmin
+      ? `${actorUser.firstName} ${actorUser.lastName} requested to assign complaint ${existing.complaintNo} to you.`
+      : existing.title;
+
     await tx.notification.create({
       data: {
         userId: target.id,
-        type: 'ASSIGNED',
-        title: `Assigned complaint ${existing.complaintNo}`,
-        body: existing.title,
+        type: notifType,
+        title: notifTitle,
+        body: notifBody,
         complaintId: id,
-        data: { complaintId: id, type: 'ASSIGNED' },
+        data: { complaintId: id, type: notifType },
       },
     });
+
     return complaint;
   });
 
-  // Notify the assignee only. Post-commit, best-effort (see create()).
+  // Notify target user
   dispatchComplaintEvent({
     userIds: [target.id],
     event: REALTIME_EVENTS.complaintAssigned,
@@ -518,11 +554,178 @@ export async function assign(
       at: new Date().toISOString(),
     },
     push: {
-      title: `Assigned complaint ${existing.complaintNo}`,
-      body: existing.title,
-      data: { complaintId: updated.id, type: 'ASSIGNED' },
+      title: isRequestingSuperAdmin
+        ? `Assignment Request for ${existing.complaintNo}`
+        : `Assigned complaint ${existing.complaintNo}`,
+      body: isRequestingSuperAdmin
+        ? `${actorUser.firstName} ${actorUser.lastName} requested to assign complaint ${existing.complaintNo} to you.`
+        : existing.title,
+      data: { complaintId: updated.id, type: isRequestingSuperAdmin ? 'ASSIGNMENT_REQUESTED' : 'ASSIGNED' },
     },
   });
+
+  return toComplaintPublic(updated);
+}
+
+export async function acceptAssignment(
+  actor: Actor | string,
+  id: string,
+): Promise<ComplaintPublic> {
+  const actorObj: Actor =
+    typeof actor === 'string' ? { id: actor, role: 'SUPER_ADMIN' } : actor;
+
+  const actorUser = await prisma.user.findUnique({ where: { id: actorObj.id } });
+  if (!actorUser) throw ApiError.unauthorized();
+
+  const existing = await prisma.complaint.findUnique({ where: { id } });
+  if (!existing) throw ApiError.notFound('Complaint not found');
+
+  if (existing.assignmentStatus !== 'PENDING' || !existing.pendingAssigneeId) {
+    throw ApiError.badRequest('No pending assignment to accept');
+  }
+
+  if (actorObj.role !== 'SUPER_ADMIN' && existing.pendingAssigneeId !== actorObj.id) {
+    throw ApiError.forbidden('Only the target SuperAdmin can accept this assignment');
+  }
+
+  const previousAdminId = existing.assignedToId;
+  const newAssigneeId = existing.pendingAssigneeId;
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const complaint = await tx.complaint.update({
+      where: { id },
+      data: {
+        assignedToId: newAssigneeId,
+        pendingAssigneeId: null,
+        assignmentStatus: 'NONE',
+      },
+    });
+
+    await tx.complaintUpdate.create({
+      data: {
+        complaintId: id,
+        authorId: actorUser.id,
+        note: `SuperAdmin ${actorUser.firstName} ${actorUser.lastName} accepted the assignment request`,
+      },
+    });
+
+    if (previousAdminId && previousAdminId !== actorUser.id) {
+      await tx.notification.create({
+        data: {
+          userId: previousAdminId,
+          type: 'ASSIGNMENT_ACCEPTED',
+          title: `Assignment Accepted: ${existing.complaintNo}`,
+          body: `SuperAdmin ${actorUser.firstName} ${actorUser.lastName} accepted assignment of complaint ${existing.complaintNo}.`,
+          complaintId: id,
+          data: { complaintId: id, type: 'ASSIGNMENT_ACCEPTED' },
+        },
+      });
+    }
+
+    return complaint;
+  });
+
+  if (previousAdminId && previousAdminId !== actorUser.id) {
+    dispatchComplaintEvent({
+      userIds: [previousAdminId],
+      event: REALTIME_EVENTS.complaintAssigned,
+      payload: {
+        complaintId: updated.id,
+        complaintNo: updated.complaintNo,
+        title: updated.title,
+        status: updated.status,
+        at: new Date().toISOString(),
+      },
+      push: {
+        title: `Assignment Accepted: ${existing.complaintNo}`,
+        body: `SuperAdmin ${actorUser.firstName} ${actorUser.lastName} accepted assignment of complaint ${existing.complaintNo}.`,
+        data: { complaintId: updated.id, type: 'ASSIGNMENT_ACCEPTED' },
+      },
+    });
+  }
+
+  return toComplaintPublic(updated);
+}
+
+export async function rejectAssignment(
+  actor: Actor | string,
+  id: string,
+  input: { note?: string } = {},
+): Promise<ComplaintPublic> {
+  const actorObj: Actor =
+    typeof actor === 'string' ? { id: actor, role: 'SUPER_ADMIN' } : actor;
+
+  const actorUser = await prisma.user.findUnique({ where: { id: actorObj.id } });
+  if (!actorUser) throw ApiError.unauthorized();
+
+  const existing = await prisma.complaint.findUnique({ where: { id } });
+  if (!existing) throw ApiError.notFound('Complaint not found');
+
+  if (existing.assignmentStatus !== 'PENDING' || !existing.pendingAssigneeId) {
+    throw ApiError.badRequest('No pending assignment to reject');
+  }
+
+  if (actorObj.role !== 'SUPER_ADMIN' && existing.pendingAssigneeId !== actorObj.id) {
+    throw ApiError.forbidden('Only the target SuperAdmin can reject this assignment');
+  }
+
+  const previousAdminId = existing.assignedToId;
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const complaint = await tx.complaint.update({
+      where: { id },
+      data: {
+        pendingAssigneeId: null,
+        assignmentStatus: 'NONE',
+      },
+    });
+
+    const rejectNote = input.note && input.note.trim()
+      ? `SuperAdmin ${actorUser.firstName} ${actorUser.lastName} rejected assignment request. Reason: ${input.note.trim()}`
+      : `SuperAdmin ${actorUser.firstName} ${actorUser.lastName} rejected assignment request`;
+
+    await tx.complaintUpdate.create({
+      data: {
+        complaintId: id,
+        authorId: actorUser.id,
+        note: rejectNote,
+      },
+    });
+
+    if (previousAdminId) {
+      await tx.notification.create({
+        data: {
+          userId: previousAdminId,
+          type: 'ASSIGNMENT_REJECTED',
+          title: `Assignment Rejected: ${existing.complaintNo}`,
+          body: rejectNote,
+          complaintId: id,
+          data: { complaintId: id, type: 'ASSIGNMENT_REJECTED' },
+        },
+      });
+    }
+
+    return complaint;
+  });
+
+  if (previousAdminId) {
+    dispatchComplaintEvent({
+      userIds: [previousAdminId],
+      event: REALTIME_EVENTS.complaintAssigned,
+      payload: {
+        complaintId: updated.id,
+        complaintNo: updated.complaintNo,
+        title: updated.title,
+        status: updated.status,
+        at: new Date().toISOString(),
+      },
+      push: {
+        title: `Assignment Rejected: ${existing.complaintNo}`,
+        body: `SuperAdmin ${actorUser.firstName} ${actorUser.lastName} rejected assignment request.${input.note?.trim() ? ` Reason: ${input.note.trim()}` : ''}`,
+        data: { complaintId: updated.id, type: 'ASSIGNMENT_REJECTED' },
+      },
+    });
+  }
 
   return toComplaintPublic(updated);
 }

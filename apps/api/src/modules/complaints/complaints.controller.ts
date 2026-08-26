@@ -111,6 +111,38 @@ export async function assign(req: Request<{ id: string }>, res: Response): Promi
   if (!req.user) throw ApiError.unauthorized();
   const { id } = req.params;
   const input = req.body as AssignComplaint;
-  const complaint = await complaintsService.assign(req.user.id, id, input);
+  const complaint = await complaintsService.assign(
+    { id: req.user.id, role: req.user.role },
+    id,
+    input,
+  );
+  sendSuccess(res, complaint);
+}
+
+export async function acceptAssignment(
+  req: Request<{ id: string }>,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw ApiError.unauthorized();
+  const { id } = req.params;
+  const complaint = await complaintsService.acceptAssignment(
+    { id: req.user.id, role: req.user.role },
+    id,
+  );
+  sendSuccess(res, complaint);
+}
+
+export async function rejectAssignment(
+  req: Request<{ id: string }>,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw ApiError.unauthorized();
+  const { id } = req.params;
+  const input = req.body as { note?: string };
+  const complaint = await complaintsService.rejectAssignment(
+    { id: req.user.id, role: req.user.role },
+    id,
+    input,
+  );
   sendSuccess(res, complaint);
 }

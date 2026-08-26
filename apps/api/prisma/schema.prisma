@@ -49,11 +49,21 @@ enum Priority {
   URGENT
 }
 
+enum AssignmentStatus {
+  NONE
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
 enum NotificationType {
   COMPLAINT_CREATED
   STATUS_CHANGED
   ASSIGNED
   COMMENT_ADDED
+  ASSIGNMENT_REQUESTED
+  ASSIGNMENT_ACCEPTED
+  ASSIGNMENT_REJECTED
 }
 
 // What kind of evidence an attachment is. Drives playback in the dashboard (an <img> and an
@@ -100,6 +110,7 @@ model User {
 
   driver              Driver?
   assignedComplaints  Complaint[]           @relation("AssignedAdmin")
+  pendingComplaints   Complaint[]           @relation("PendingAssignee")
   complaintUpdates    ComplaintUpdate[]
   uploadedAttachments ComplaintAttachment[]
   notifications       Notification[]
@@ -142,22 +153,25 @@ model Vehicle {
 }
 
 model Complaint {
-  id           String            @id @default(uuid(7)) @db.Uuid
-  complaintNo  String            @unique
-  driverId     String            @db.Uuid
-  driver       Driver            @relation(fields: [driverId], references: [id])
-  vehicleId    String?           @db.Uuid
-  vehicle      Vehicle?          @relation(fields: [vehicleId], references: [id])
-  title        String
-  description  String
-  category     ComplaintCategory @default(SUPPORT)
-  status       ComplaintStatus   @default(NEW)
-  priority     Priority          @default(MEDIUM)
-  assignedToId String?           @db.Uuid
-  assignedTo   User?             @relation("AssignedAdmin", fields: [assignedToId], references: [id])
-  resolvedAt   DateTime?
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
+  id                String            @id @default(uuid(7)) @db.Uuid
+  complaintNo       String            @unique
+  driverId          String            @db.Uuid
+  driver            Driver            @relation(fields: [driverId], references: [id])
+  vehicleId         String?           @db.Uuid
+  vehicle           Vehicle?          @relation(fields: [vehicleId], references: [id])
+  title             String
+  description       String
+  category          ComplaintCategory @default(SUPPORT)
+  status            ComplaintStatus   @default(NEW)
+  priority          Priority          @default(MEDIUM)
+  assignedToId      String?           @db.Uuid
+  assignedTo        User?             @relation("AssignedAdmin", fields: [assignedToId], references: [id])
+  pendingAssigneeId String?           @db.Uuid
+  pendingAssignee   User?             @relation("PendingAssignee", fields: [pendingAssigneeId], references: [id])
+  assignmentStatus  AssignmentStatus  @default(NONE)
+  resolvedAt        DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
 
   attachments    ComplaintAttachment[]
   updates        ComplaintUpdate[]

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { AttachmentKindSchema, ComplaintCategorySchema, ComplaintStatusSchema, PrioritySchema } from './enums';
+import { AttachmentKindSchema, AssignmentStatusSchema, ComplaintCategorySchema, ComplaintStatusSchema, PrioritySchema } from './enums';
 import { PaginationQuerySchema, PaginationMetaSchema } from './common';
 import { VehiclePublicSchema } from './vehicle';
 
@@ -24,6 +24,11 @@ export const AssignComplaintSchema = z.object({
 });
 export type AssignComplaint = z.infer<typeof AssignComplaintSchema>;
 
+export const RejectAssignmentSchema = z.object({
+  note: z.string().max(2000).optional(),
+});
+export type RejectAssignment = z.infer<typeof RejectAssignmentSchema>;
+
 export const ComplaintPublicSchema = z.object({
   id: z.string(),
   complaintNo: z.string(),
@@ -35,6 +40,8 @@ export const ComplaintPublicSchema = z.object({
   status: ComplaintStatusSchema,
   priority: PrioritySchema,
   assignedToId: z.string().nullable().optional(),
+  pendingAssigneeId: z.string().nullable().optional(),
+  assignmentStatus: AssignmentStatusSchema.optional(),
   resolvedAt: z.string().nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -132,5 +139,6 @@ export const ComplaintDetailSchema = ComplaintPublicSchema.extend({
   driver: ComplaintDriverSummarySchema,
   vehicle: VehiclePublicSchema.nullable(),
   assignedTo: PartySummarySchema.nullable(),
+  pendingAssignee: PartySummarySchema.nullable().optional(),
 });
 export type ComplaintDetail = z.infer<typeof ComplaintDetailSchema>;

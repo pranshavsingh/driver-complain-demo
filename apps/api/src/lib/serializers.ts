@@ -107,6 +107,8 @@ export function toComplaintPublic(complaint: Complaint): ComplaintPublic {
     status: complaint.status,
     priority: complaint.priority,
     assignedToId: complaint.assignedToId ?? null,
+    pendingAssigneeId: (complaint as any).pendingAssigneeId ?? null,
+    assignmentStatus: (complaint as any).assignmentStatus ?? 'NONE',
     resolvedAt: iso(complaint.resolvedAt),
     createdAt: complaint.createdAt.toISOString(),
     updatedAt: complaint.updatedAt.toISOString(),
@@ -179,6 +181,7 @@ type ComplaintDetailRow = Complaint & {
   driver: Driver & { user: User };
   vehicle: Vehicle | null;
   assignedTo: User | null;
+  pendingAssignee?: User | null;
 };
 
 export function toComplaintDetail(c: ComplaintDetailRow): ComplaintDetail {
@@ -193,5 +196,6 @@ export function toComplaintDetail(c: ComplaintDetailRow): ComplaintDetail {
     },
     vehicle: c.vehicle ? toVehiclePublic(c.vehicle) : null,
     assignedTo: c.assignedTo ? toPartySummary(c.assignedTo) : null,
+    pendingAssignee: c.pendingAssignee ? toPartySummary(c.pendingAssignee) : null,
   };
 }

@@ -23,11 +23,18 @@ export const PrioritySchema = z.enum(['LOW', 'MEDIUM', 'HIGH', 'URGENT']);
 export type Priority = z.infer<typeof PrioritySchema>;
 export const PRIORITIES = PrioritySchema.options;
 
+export const AssignmentStatusSchema = z.enum(['NONE', 'PENDING', 'ACCEPTED', 'REJECTED']);
+export type AssignmentStatus = z.infer<typeof AssignmentStatusSchema>;
+export const ASSIGNMENT_STATUSES = AssignmentStatusSchema.options;
+
 export const NotificationTypeSchema = z.enum([
   'COMPLAINT_CREATED',
   'STATUS_CHANGED',
   'ASSIGNED',
   'COMMENT_ADDED',
+  'ASSIGNMENT_REQUESTED',
+  'ASSIGNMENT_ACCEPTED',
+  'ASSIGNMENT_REJECTED',
 ]);
 export type NotificationType = z.infer<typeof NotificationTypeSchema>;
 export const NOTIFICATION_TYPES = NotificationTypeSchema.options;

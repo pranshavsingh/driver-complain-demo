@@ -16,8 +16,12 @@ import {
   History,
   CheckSquare,
   UserCheck,
+  Check,
+  X,
+  Clock,
 } from '../components/Icons';
 import * as api from '../api/endpoints';
+import { useAuth } from '../auth/AuthContext';
 import { useApiResource } from '../hooks/useApiResource';
 import { useRealtime } from '../realtime/RealtimeProvider';
 import { ErrorBanner } from '../components/ErrorBanner';
@@ -27,6 +31,7 @@ import { formatBytes, formatDateTime, formatDuration, formatEnum, fullName } fro
 const TERMINAL_STATUSES: ComplaintStatus[] = ['RESOLVED', 'CLOSED'];
 
 export function ComplaintDetailPage(): ReactElement {
+  const { user } = useAuth();
   const { id = '' } = useParams<{ id: string }>();
   const detailRes = useApiResource<ComplaintDetail>(`complaint:${id}`, () =>
     api.complaints.get(id),
@@ -54,11 +59,52 @@ export function ComplaintDetailPage(): ReactElement {
   const [assignError, setAssignError] = useState<unknown>(null);
   const [savingAssignee, setSavingAssignee] = useState(false);
 
+  const [acceptingAssignment, setAcceptingAssignment] = useState(false);
+  const [rejectingAssignment, setRejectingAssignment] = useState(false);
+  const [rejectError, setRejectError] = useState<unknown>(null);
+  const [rejectNote, setRejectNote] = useState('');
+  const [showRejectBox, setShowRejectBox] = useState(false);
+
   useEffect(() => {
     if (!complaint) return;
     setStatus(complaint.status);
     setAssignee(complaint.assignedToId ?? '');
   }, [complaint]);
+
+  const handleAcceptAssignment = (): void => {
+    if (!complaint) return;
+    setRejectError(null);
+    setAcceptingAssignment(true);
+    api.complaints.acceptAssignment(complaint.id).then(
+      () => {
+        setAcceptingAssignment(false);
+        reload();
+      },
+      (err: unknown) => {
+        setRejectError(err);
+        setAcceptingAssignment(false);
+      },
+    );
+  };
+
+  const handleRejectAssignment = (e: FormEvent): void => {
+    e.preventDefault();
+    if (!complaint) return;
+    setRejectError(null);
+    setRejectingAssignment(true);
+    api.complaints.rejectAssignment(complaint.id, rejectNote.trim()).then(
+      () => {
+        setRejectingAssignment(false);
+        setShowRejectBox(false);
+        setRejectNote('');
+        reload();
+      },
+      (err: unknown) => {
+        setRejectError(err);
+        setRejectingAssignment(false);
+      },
+    );
+  };
 
   const submitStatus = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
@@ -143,6 +189,83 @@ export function ComplaintDetailPage(): ReactElement {
 
       <ErrorBanner error={detailRes.error} />
 
+      {/* Pending SuperAdmin Acceptance Banner */}
+      {complaint.assignmentStatus === 'PENDING' && complaint.pendingAssignee ? (
+        <div className="pending-assignment-banner">
+          <div className="banner-content">
+            <div className="banner-icon">
+              <Clock size={24} color="#d97706" />
+            </div>
+            <div>
+              <h3 className="banner-title">Pending SuperAdmin Acceptance</h3>
+              <p className="banner-desc">
+                {user?.role === 'SUPER_ADMIN' && complaint.pendingAssignee.id === user.id ? (
+                  <>An admin requested to assign this complaint to you. Please accept or reject this assignment request.</>
+                ) : (
+                  <>
+                    Requested assignment to SuperAdmin <strong>{fullName(complaint.pendingAssignee)}</strong>. Awaiting SuperAdmin acceptance.
+                  </>
+                )}
+              </p>
+            </div>
+          </div>
+
+          {user?.role === 'SUPER_ADMIN' ? (
+            <div className="banner-actions">
+              <ErrorBanner error={rejectError} />
+              {!showRejectBox ? (
+                <div className="banner-btn-group">
+                  <button
+                    type="button"
+                    className="btn-success-banner"
+                    onClick={handleAcceptAssignment}
+                    disabled={acceptingAssignment}
+                  >
+                    <Check size={16} style={{ marginRight: 6 }} />
+                    {acceptingAssignment ? 'Accepting…' : 'Accept Assignment'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-danger-outline-banner"
+                    onClick={() => setShowRejectBox(true)}
+                    disabled={acceptingAssignment}
+                  >
+                    <X size={16} style={{ marginRight: 6 }} />
+                    Reject Assignment
+                  </button>
+                </div>
+              ) : (
+                <form className="reject-form-box" onSubmit={handleRejectAssignment}>
+                  <textarea
+                    className="form-textarea"
+                    rows={2}
+                    placeholder="Reason for rejecting this assignment (optional)..."
+                    value={rejectNote}
+                    onChange={(e) => setRejectNote(e.target.value)}
+                  />
+                  <div className="banner-btn-group" style={{ marginTop: 8 }}>
+                    <button
+                      type="submit"
+                      className="btn-danger-banner"
+                      disabled={rejectingAssignment}
+                    >
+                      {rejectingAssignment ? 'Rejecting…' : 'Confirm Rejection'}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={() => setShowRejectBox(false)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       {/* 2-Column Responsive Layout */}
       <div className="detail-layout-grid">
         {/* Left Main Content Column */}
@@ -175,7 +298,11 @@ export function ComplaintDetailPage(): ReactElement {
               <div className="meta-item">
                 <span className="meta-label">Assigned Maintenance Staff</span>
                 <span className="meta-value">
-                  {complaint.assignedTo ? (
+                  {complaint.assignmentStatus === 'PENDING' && complaint.pendingAssignee ? (
+                    <span className="pending-assignee-badge">
+                      Pending SuperAdmin Approval ({fullName(complaint.pendingAssignee)})
+                    </span>
+                  ) : complaint.assignedTo ? (
                     <span className="assignee-tag">
                       {fullName(complaint.assignedTo)} ({complaint.assignedTo.employeeId})
                     </span>
@@ -354,14 +481,14 @@ export function ComplaintDetailPage(): ReactElement {
             <ErrorBanner error={adminsRes.error} />
 
             <div className="form-group">
-              <label htmlFor="assignee" className="form-label">Assignee Admin</label>
+              <label htmlFor="assignee" className="form-label">Assignee Admin / Executive</label>
               <select
                 id="assignee"
                 className="form-select"
                 value={assignee}
                 onChange={(e) => setAssignee(e.target.value)}
               >
-                <option value="">Select an admin…</option>
+                <option value="">Select an admin or executive…</option>
                 {(adminsRes.data ?? []).map((a) => (
                   <option key={a.id} value={a.id}>
                     {fullName(a)} ({formatEnum(a.role)})
@@ -370,13 +497,31 @@ export function ComplaintDetailPage(): ReactElement {
               </select>
             </div>
 
-            <button
-              type="submit"
-              className="btn-primary btn-full"
-              disabled={savingAssignee || !assignee || assignee === complaint.assignedToId}
-            >
-              {savingAssignee ? 'Assigning…' : 'Assign Complaint'}
-            </button>
+            {(() => {
+              const selectedUser = (adminsRes.data ?? []).find((a) => a.id === assignee);
+              const isAssigningToSuperAdmin = user?.role === 'ADMIN' && selectedUser?.role === 'SUPER_ADMIN';
+
+              return (
+                <>
+                  <button
+                    type="submit"
+                    className="btn-primary btn-full"
+                    disabled={savingAssignee || !assignee || (assignee === complaint.assignedToId && complaint.assignmentStatus !== 'PENDING')}
+                  >
+                    {savingAssignee
+                      ? 'Submitting…'
+                      : isAssigningToSuperAdmin
+                        ? 'Request SuperAdmin Assignment'
+                        : 'Assign Complaint'}
+                  </button>
+                  {isAssigningToSuperAdmin ? (
+                    <p className="form-hint">
+                      Assigning to a SuperAdmin requires their acceptance before ownership transfers.
+                    </p>
+                  ) : null}
+                </>
+              );
+            })()}
           </form>
         </div>
       </div>
