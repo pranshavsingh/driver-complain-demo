@@ -65,3 +65,8 @@ complaintsRouter.post(
   requireRole('ADMIN', 'SUPER_ADMIN', 'EXECUTIVE'),
   complaintsController.transcribe,
 );
+complaintsRouter.post(
+  '/translate',
+  complaintsController.translate,
+);
+

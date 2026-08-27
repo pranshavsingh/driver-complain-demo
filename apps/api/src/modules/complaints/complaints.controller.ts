@@ -156,3 +156,17 @@ export async function transcribe(
   const complaint = await complaintsService.transcribeComplaint(id);
   sendSuccess(res, complaint);
 }
+
+export async function translate(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw ApiError.unauthorized();
+  const { text, targetLang } = req.body as {
+    text: string;
+    targetLang: 'ENGLISH' | 'HINDI' | 'BENGALI';
+  };
+  const result = await complaintsService.translateComplaintText(text, targetLang ?? 'ENGLISH');
+  sendSuccess(res, result);
+}
+

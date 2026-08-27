@@ -28,7 +28,7 @@ def transcribe(audio_path):
 
     try:
         model = WhisperModel("tiny", device="cpu", compute_type="int8")
-        segments, info = model.transcribe(audio_path, beam_size=5)
+        segments, info = model.transcribe(audio_path, beam_size=5, task="translate")
         text = " ".join([segment.text.strip() for segment in segments]).strip()
         print(json.dumps({"text": text, "language": info.language}))
     except Exception as e:

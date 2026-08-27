@@ -5,7 +5,7 @@ import fs from 'node:fs/promises';
 import { logger } from './logger';
 
 /**
- * Transcribe an audio buffer:
+ * Transcribe an audio buffer directly into ENGLISH:
  * 1. Groq / OpenAI / HuggingFace API if key set (0MB RAM overhead, sub-second response on cloud hosts like Render)
  * 2. Local Python faster-whisper fallback (for local PC dev)
  */
@@ -30,21 +30,37 @@ async function transcribeViaCloudApi(
 ): Promise<string | null> {
   const filename = originalName ? path.basename(originalName) : 'voice.mp3';
 
-  // 1. Groq Whisper API (100% Free, sub-second ultra-fast transcription, 0MB server RAM)
+  // 1. Groq Whisper API - use /translations endpoint to transcribe directly to English
   if (process.env.GROQ_API_KEY) {
     try {
       const formData = new FormData();
       const fileBlob = new Blob([buffer], { type: 'audio/mp3' });
       formData.append('file', fileBlob, filename);
-      formData.append('model', 'whisper-large-v3-turbo');
+      formData.append('model', 'whisper-large-v3');
 
-      const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+      // Try translations endpoint (translates audio in any language to English)
+      let res = await fetch('https://api.groq.com/openai/v1/audio/translations', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
         },
         body: formData,
       });
+
+      // Fallback to transcriptions if translations fails
+      if (!res.ok) {
+        const formData2 = new FormData();
+        formData2.append('file', new Blob([buffer], { type: 'audio/mp3' }), filename);
+        formData2.append('model', 'whisper-large-v3-turbo');
+
+        res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+          },
+          body: formData2,
+        });
+      }
 
       if (res.ok) {
         const data = (await res.json()) as { text?: string };
@@ -58,7 +74,7 @@ async function transcribeViaCloudApi(
     }
   }
 
-  // 2. OpenAI Whisper API
+  // 2. OpenAI Whisper API - translations endpoint
   if (process.env.OPENAI_API_KEY) {
     try {
       const formData = new FormData();
@@ -66,7 +82,7 @@ async function transcribeViaCloudApi(
       formData.append('file', fileBlob, filename);
       formData.append('model', 'whisper-1');
 
-      const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      const res = await fetch('https://api.openai.com/v1/audio/translations', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
@@ -200,4 +216,70 @@ export async function transcribeAudioFromUrl(url: string): Promise<string | null
     logger.warn({ err, url }, 'Failed to download and transcribe audio from URL');
     return null;
   }
+}
+
+/**
+ * Translate text into specified target language: 'ENGLISH', 'HINDI', or 'BENGALI'
+ */
+export async function translateText(
+  text: string,
+  targetLang: 'ENGLISH' | 'HINDI' | 'BENGALI',
+): Promise<string> {
+  if (!text.trim() || targetLang === 'ENGLISH') {
+    return text;
+  }
+
+  // 1. Groq Chat API translation
+  if (process.env.GROQ_API_KEY) {
+    try {
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'qwen/qwen3.6-27b',
+          messages: [
+            {
+              role: 'user',
+              content: `Translate the following text into ${targetLang === 'HINDI' ? 'Hindi' : 'Bengali'}. Return ONLY the final translated text, without extra explanation, markdown tags, or thinking:\n\n${text}`,
+            },
+          ],
+          temperature: 0.1,
+        }),
+      });
+
+      if (res.ok) {
+        const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+        let content = data.choices?.[0]?.message?.content?.trim();
+        if (content) {
+          if (content.includes('</think>')) {
+            content = content.split('</think>').pop()?.trim() || content;
+          }
+          return content;
+        }
+      }
+    } catch (err) {
+      logger.warn({ err }, 'Groq translation failed');
+    }
+  }
+
+  // 2. MyMemory Free API fallback
+  try {
+    const langCode = targetLang === 'HINDI' ? 'hi' : 'bn';
+    const res = await fetch(
+      `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=autodetect|${langCode}`,
+    );
+    if (res.ok) {
+      const data = (await res.json()) as { responseData?: { translatedText?: string } };
+      if (data.responseData?.translatedText?.trim()) {
+        return data.responseData.translatedText.trim();
+      }
+    }
+  } catch (err) {
+    logger.warn({ err }, 'MyMemory translation failed');
+  }
+
+  return text;
 }

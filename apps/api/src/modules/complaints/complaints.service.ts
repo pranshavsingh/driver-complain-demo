@@ -17,7 +17,7 @@ import { prisma } from '../../lib/prisma';
 import { toComplaintPublic, toComplaintDetail } from '../../lib/serializers';
 import { uploadBuffer, cloudinaryFolder } from '../../lib/cloudinary';
 import { dispatchComplaintEvent } from '../../lib/notify';
-import { transcribeAudio, transcribeAudioFromUrl } from '../../lib/transcribe';
+import { transcribeAudio, transcribeAudioFromUrl, translateText } from '../../lib/transcribe';
 import { ApiError } from '../../errors/api-error';
 
 /** The authenticated caller, as far as the complaint layer is concerned. */
@@ -797,3 +797,15 @@ export async function transcribeComplaint(id: string): Promise<ComplaintPublic> 
 
   return toComplaintPublic(updated);
 }
+
+export async function translateComplaintText(
+  text: string,
+  targetLang: 'ENGLISH' | 'HINDI' | 'BENGALI',
+): Promise<{ text: string; translatedText: string; targetLang: string }> {
+  if (!text || typeof text !== 'string') {
+    throw ApiError.badRequest('Text is required for translation');
+  }
+  const translatedText = await translateText(text, targetLang);
+  return { text, translatedText, targetLang };
+}
+

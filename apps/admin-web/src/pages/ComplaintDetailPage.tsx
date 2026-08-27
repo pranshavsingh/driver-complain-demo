@@ -68,6 +68,31 @@ export function ComplaintDetailPage(): ReactElement {
   const [transcribing, setTranscribing] = useState(false);
   const [transcribeError, setTranscribeError] = useState<unknown>(null);
 
+  const [selectedLang, setSelectedLang] = useState<'ENGLISH' | 'BENGALI' | 'HINDI'>('ENGLISH');
+  const [translationsCache, setTranslationsCache] = useState<Record<string, string>>({});
+  const [translatingLang, setTranslatingLang] = useState<string | null>(null);
+
+  const handleLanguageChange = (lang: 'ENGLISH' | 'BENGALI' | 'HINDI'): void => {
+    setSelectedLang(lang);
+    if (!complaint) return;
+    const baseText =
+      complaint.description && complaint.description !== 'Voice note attached'
+        ? complaint.description
+        : complaint.transcription ?? '';
+    if (!baseText || lang === 'ENGLISH' || translationsCache[lang]) return;
+
+    setTranslatingLang(lang);
+    api.complaints.translate(baseText, lang).then(
+      (res) => {
+        setTranslationsCache((prev) => ({ ...prev, [lang]: res.translatedText }));
+        setTranslatingLang(null);
+      },
+      () => {
+        setTranslatingLang(null);
+      },
+    );
+  };
+
   const handleTranscribe = (): void => {
     if (!complaint) return;
     setTranscribeError(null);
@@ -371,11 +396,39 @@ export function ComplaintDetailPage(): ReactElement {
 
             <ErrorBanner error={transcribeError} />
 
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, marginBottom: 12 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#64748b' }}>Language:</span>
+              {(['ENGLISH', 'BENGALI', 'HINDI'] as const).map((lang) => (
+                <button
+                  key={lang}
+                  type="button"
+                  onClick={() => handleLanguageChange(lang)}
+                  disabled={translatingLang === lang}
+                  style={{
+                    padding: '4px 14px',
+                    borderRadius: 16,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    border: selectedLang === lang ? '1px solid #1d4ed8' : '1px solid #cbd5e1',
+                    background: selectedLang === lang ? '#1d4ed8' : '#ffffff',
+                    color: selectedLang === lang ? '#ffffff' : '#475569',
+                    cursor: 'pointer',
+                    boxShadow: selectedLang === lang ? '0 1px 2px rgba(29, 78, 216, 0.2)' : 'none',
+                    transition: 'all 0.15s ease-in-out',
+                  }}
+                >
+                  {translatingLang === lang ? `Translating…` : lang}
+                </button>
+              ))}
+            </div>
+
             <div className="driver-statement-box">
               <p className="statement-text">
-                {complaint.description && complaint.description !== 'Voice note attached'
-                  ? complaint.description
-                  : complaint.transcription ?? 'Voice note attached'}
+                {selectedLang === 'ENGLISH'
+                  ? (complaint.description && complaint.description !== 'Voice note attached'
+                      ? complaint.description
+                      : complaint.transcription ?? 'Voice note attached')
+                  : translationsCache[selectedLang] ?? (translatingLang === selectedLang ? 'Translating statement…' : (complaint.description && complaint.description !== 'Voice note attached' ? complaint.description : complaint.transcription ?? 'Voice note attached'))}
               </p>
             </div>
           </div>

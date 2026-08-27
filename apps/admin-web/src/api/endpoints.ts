@@ -162,6 +162,17 @@ export const complaints = {
   transcribe: (id: string): Promise<ComplaintPublic> =>
     request(ComplaintPublicSchema, `/complaints/${id}/transcribe`, { method: 'POST' }),
 
+  translate: (
+    text: string,
+    targetLang: 'ENGLISH' | 'HINDI' | 'BENGALI',
+  ): Promise<{ text: string; translatedText: string; targetLang: string }> =>
+    request(
+      z.object({ text: z.string(), translatedText: z.string(), targetLang: z.string() }),
+      '/complaints/translate',
+      { method: 'POST', body: { text, targetLang } },
+    ),
+
+
   /** Streams the filtered result set as .xlsx — the same filters the list is showing. */
   exportXlsx: (filter: ComplaintFilterInput): Promise<void> =>
     download('/complaints/export', { query: toQuery(filter) }, 'complaints.xlsx'),
