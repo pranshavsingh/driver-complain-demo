@@ -70,14 +70,9 @@ export async function create(
   const driver = await prisma.driver.findUnique({ where: { userId: driverUserId } });
   if (!driver) throw ApiError.badRequest('Your account has no driver profile');
 
-  let vehicleIdToUse = input.vehicleId ?? null;
+  let vehicleIdToUse: string | null = null;
 
-  if (input.vehicleId) {
-    const vehicle = await prisma.vehicle.findUnique({ where: { id: input.vehicleId } });
-    if (!vehicle || vehicle.driverId !== driver.id) {
-      throw ApiError.badRequest('Vehicle does not belong to you');
-    }
-  } else if (input.vehicleNumber?.trim()) {
+  if (input.vehicleNumber?.trim()) {
     const rawNumber = input.vehicleNumber.trim();
     let vehicle = await prisma.vehicle.findFirst({
       where: {
@@ -95,6 +90,12 @@ export async function create(
           plateNumber: rawNumber,
         },
       });
+    }
+    vehicleIdToUse = vehicle.id;
+  } else if (input.vehicleId) {
+    const vehicle = await prisma.vehicle.findUnique({ where: { id: input.vehicleId } });
+    if (!vehicle || vehicle.driverId !== driver.id) {
+      throw ApiError.badRequest('Vehicle does not belong to you');
     }
     vehicleIdToUse = vehicle.id;
   }

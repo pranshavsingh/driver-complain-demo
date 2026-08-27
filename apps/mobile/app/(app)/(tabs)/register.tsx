@@ -165,7 +165,18 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
     ]);
   };
 
+  const activeVehicleNumber =
+    manualVehicleInput.trim() || (selectedVehicle ? describeVehicle(selectedVehicle) : '');
+
   const submitComplaint = (): void => {
+    if (!activeVehicleNumber) {
+      Alert.alert(
+        'Vehicle Number Mandatory',
+        'Please enter or select your vehicle number before sending a complaint.',
+      );
+      return;
+    }
+
     const trimmed = textInput.trim();
 
     if (!trimmed && !evidence.photo && !evidence.voice && !evidence.video) {
@@ -191,8 +202,7 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
       description: descriptionText,
       priority,
       category: category ? (category as any) : undefined,
-      ...(selectedVehicleId ? { vehicleId: selectedVehicleId } : {}),
-      ...(manualVehicleInput.trim() ? { vehicleNumber: manualVehicleInput.trim() } : {}),
+      vehicleNumber: activeVehicleNumber,
     });
 
     if (!parsed.success) {
@@ -330,7 +340,8 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
       {/* 3. WhatsApp Chat Timeline Area */}
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
         <ScrollView
           contentContainerStyle={styles.chatTimeline}
@@ -435,10 +446,23 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
             <Ionicons name="camera-outline" size={22} color="#64748B" />
           </Pressable>
 
+          <Pressable
+            style={styles.actionIconBtn}
+            onPress={recorder.start}
+            disabled={submitting || recorder.isRecording}
+            accessibilityLabel="Record voice note"
+          >
+            <Ionicons
+              name={evidence.voice ? 'mic' : 'mic-outline'}
+              size={22}
+              color={evidence.voice ? '#075E54' : '#64748B'}
+            />
+          </Pressable>
+
           <View style={styles.chatInputWrapper}>
             <TextInput
               style={styles.chatTextInput}
-              placeholder={`Type problem for ${cardName || 'department'}...`}
+              placeholder="Type Problem !"
               placeholderTextColor="#94A3B8"
               value={textInput}
               onChangeText={setTextInput}
@@ -448,23 +472,19 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
             />
           </View>
 
-          {!textInput.trim() && !hasAttachments ? (
-            <Pressable
-              style={styles.micCircleBtn}
-              onPress={recorder.start}
-              disabled={submitting || recorder.isRecording}
-            >
-              <Ionicons name="mic" size={20} color="#FFFFFF" />
-            </Pressable>
-          ) : (
-            <Pressable
-              style={[styles.sendCircleBtn, submitting && styles.sendBtnDisabled]}
-              onPress={submitComplaint}
-              disabled={submitting}
-            >
-              <Ionicons name="send" size={16} color="#FFFFFF" />
-            </Pressable>
-          )}
+          <Pressable
+            style={[
+              styles.sendCircleBtn,
+              (!textInput.trim() && !hasAttachments) || !activeVehicleNumber || submitting
+                ? styles.sendBtnDisabled
+                : null,
+            ]}
+            onPress={submitComplaint}
+            disabled={(!textInput.trim() && !hasAttachments) || !activeVehicleNumber || submitting}
+            accessibilityLabel="Send complaint"
+          >
+            <Ionicons name="send" size={16} color="#FFFFFF" />
+          </Pressable>
         </View>
       </KeyboardAvoidingView>
     </View>
