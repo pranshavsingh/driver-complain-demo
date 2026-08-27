@@ -13,43 +13,25 @@ function stripThinkTags(text: string): string {
   return cleaned.trim();
 }
 
-/** Check if text contains mostly non-Latin characters (Hindi, Bengali, etc.) */
-function looksNonEnglish(text: string): boolean {
-  const nonLatin = text.replace(/[\s\p{P}\p{N}]/gu, '').replace(/[\x00-\x7F]/g, '');
-  const total = text.replace(/[\s\p{P}\p{N}]/gu, '');
-  return total.length > 0 && nonLatin.length / total.length > 0.3;
-}
-
 /**
- * Transcribe an audio buffer into ENGLISH:
- * 1. Groq / OpenAI / HuggingFace API if key set (0MB RAM, sub-second on Render)
- * 2. Local Python faster-whisper fallback (for local dev)
- * 3. If result is non-English, auto-translate to English via Chat API
+ * Transcribe an audio buffer — ALWAYS returns English text.
+ * Strategy:
+ *   1. Groq /audio/translations (any language → English, most reliable)
+ *   2. Groq /audio/transcriptions + Chat API to force English
+ *   3. OpenAI /audio/translations
+ *   4. Local Python faster-whisper (dev only)
  */
 export async function transcribeAudio(
   buffer: Buffer,
   originalName?: string,
 ): Promise<string | null> {
-  // 1. Try Cloud APIs if API keys are configured
   const cloudResult = await transcribeViaCloudApi(buffer, originalName);
-  if (cloudResult) return await ensureEnglish(cloudResult);
+  if (cloudResult) return cloudResult;
 
-  // 2. Try local Python faster-whisper (for local dev)
   const localResult = await transcribeViaLocalPython(buffer, originalName);
-  if (localResult) return await ensureEnglish(localResult);
+  if (localResult) return localResult;
 
   return null;
-}
-
-/** If text is non-English, translate it to English via Chat API */
-async function ensureEnglish(text: string): Promise<string> {
-  if (!looksNonEnglish(text)) return text;
-  try {
-    const translated = await translateText(text, 'ENGLISH');
-    return translated || text;
-  } catch {
-    return text;
-  }
 }
 
 async function transcribeViaCloudApi(
@@ -58,31 +40,61 @@ async function transcribeViaCloudApi(
 ): Promise<string | null> {
   const filename = originalName ? path.basename(originalName) : 'voice.mp3';
 
-  // 1. Groq Whisper API — fast, reliable transcription
+  // 1. Groq /audio/translations — transcribes ANY language directly to English
   if (process.env.GROQ_API_KEY) {
     try {
-      const formData = new FormData();
-      const fileBlob = new Blob([buffer], { type: 'audio/mp3' });
-      formData.append('file', fileBlob, filename);
-      formData.append('model', 'whisper-large-v3-turbo');
+      const fd1 = new FormData();
+      fd1.append('file', new Blob([buffer], { type: 'audio/mp3' }), filename);
+      fd1.append('model', 'whisper-large-v3');
+      // Prompt hint: tells whisper the output should be English
+      fd1.append('prompt', 'Transcribe this audio in English.');
 
-      const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+      const res1 = await fetch('https://api.groq.com/openai/v1/audio/translations', {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-        },
-        body: formData,
+        headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
+        body: fd1,
       });
 
-      if (res.ok) {
-        const data = (await res.json()) as { text?: string };
-        if (data.text?.trim()) return data.text.trim();
+      if (res1.ok) {
+        const data = (await res1.json()) as { text?: string };
+        if (data.text?.trim()) {
+          logger.info('Groq /translations succeeded');
+          return data.text.trim();
+        }
       } else {
-        const errText = await res.text();
-        logger.warn({ status: res.status, errText }, 'Groq API failed');
+        logger.warn({ status: res1.status }, 'Groq /translations failed, trying /transcriptions');
       }
     } catch (err) {
-      logger.warn({ err }, 'Groq Whisper API call error');
+      logger.warn({ err }, 'Groq /translations error');
+    }
+
+    // 2. Fallback: /transcriptions + Chat API translation to English
+    try {
+      const fd2 = new FormData();
+      fd2.append('file', new Blob([buffer], { type: 'audio/mp3' }), filename);
+      fd2.append('model', 'whisper-large-v3-turbo');
+
+      const res2 = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
+        body: fd2,
+      });
+
+      if (res2.ok) {
+        const data = (await res2.json()) as { text?: string };
+        const rawText = data.text?.trim();
+        if (rawText) {
+          logger.info({ rawText }, 'Got transcription, now translating to English via Chat');
+          // Always translate to English via Chat API to guarantee English output
+          const english = await translateText(rawText, 'ENGLISH');
+          return english || rawText;
+        }
+      } else {
+        const errText = await res2.text();
+        logger.warn({ status: res2.status, errText }, 'Groq /transcriptions also failed');
+      }
+    } catch (err) {
+      logger.warn({ err }, 'Groq /transcriptions error');
     }
   }
 
