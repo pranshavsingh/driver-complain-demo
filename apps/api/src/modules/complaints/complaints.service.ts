@@ -771,7 +771,7 @@ export async function transcribeComplaint(id: string): Promise<ComplaintPublic> 
   const transcribedText = await transcribeAudioFromUrl(voiceAttachment.url);
   if (!transcribedText) {
     throw ApiError.badRequest(
-      'Could not transcribe audio recording. Please ensure python/faster-whisper or GROQ_API_KEY / OPENAI_API_KEY is configured on the server.',
+      'Could not transcribe audio recording. Please ensure Python and faster-whisper are installed on the server (pip install faster-whisper).',
     );
   }
 
