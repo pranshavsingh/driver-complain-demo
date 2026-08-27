@@ -4,24 +4,52 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import { logger } from './logger';
 
+/** Strip <think>...</think> blocks from Qwen model outputs */
+function stripThinkTags(text: string): string {
+  // Remove complete <think>...</think> blocks
+  let cleaned = text.replace(/<think>[\s\S]*?<\/think>/gi, '');
+  // Remove incomplete <think> blocks (when </think> is cut off)
+  cleaned = cleaned.replace(/<think>[\s\S]*/gi, '');
+  return cleaned.trim();
+}
+
+/** Check if text contains mostly non-Latin characters (Hindi, Bengali, etc.) */
+function looksNonEnglish(text: string): boolean {
+  const nonLatin = text.replace(/[\s\p{P}\p{N}]/gu, '').replace(/[\x00-\x7F]/g, '');
+  const total = text.replace(/[\s\p{P}\p{N}]/gu, '');
+  return total.length > 0 && nonLatin.length / total.length > 0.3;
+}
+
 /**
- * Transcribe an audio buffer directly into ENGLISH:
- * 1. Groq / OpenAI / HuggingFace API if key set (0MB RAM overhead, sub-second response on cloud hosts like Render)
- * 2. Local Python faster-whisper fallback (for local PC dev)
+ * Transcribe an audio buffer into ENGLISH:
+ * 1. Groq / OpenAI / HuggingFace API if key set (0MB RAM, sub-second on Render)
+ * 2. Local Python faster-whisper fallback (for local dev)
+ * 3. If result is non-English, auto-translate to English via Chat API
  */
 export async function transcribeAudio(
   buffer: Buffer,
   originalName?: string,
 ): Promise<string | null> {
-  // 1. Try Cloud APIs if API keys are configured (Fast & light — avoids 512MB OOM on Render)
+  // 1. Try Cloud APIs if API keys are configured
   const cloudResult = await transcribeViaCloudApi(buffer, originalName);
-  if (cloudResult) return cloudResult;
+  if (cloudResult) return await ensureEnglish(cloudResult);
 
   // 2. Try local Python faster-whisper (for local dev)
   const localResult = await transcribeViaLocalPython(buffer, originalName);
-  if (localResult) return localResult;
+  if (localResult) return await ensureEnglish(localResult);
 
   return null;
+}
+
+/** If text is non-English, translate it to English via Chat API */
+async function ensureEnglish(text: string): Promise<string> {
+  if (!looksNonEnglish(text)) return text;
+  try {
+    const translated = await translateText(text, 'ENGLISH');
+    return translated || text;
+  } catch {
+    return text;
+  }
 }
 
 async function transcribeViaCloudApi(
@@ -30,37 +58,21 @@ async function transcribeViaCloudApi(
 ): Promise<string | null> {
   const filename = originalName ? path.basename(originalName) : 'voice.mp3';
 
-  // 1. Groq Whisper API - use /translations endpoint to transcribe directly to English
+  // 1. Groq Whisper API — fast, reliable transcription
   if (process.env.GROQ_API_KEY) {
     try {
       const formData = new FormData();
       const fileBlob = new Blob([buffer], { type: 'audio/mp3' });
       formData.append('file', fileBlob, filename);
-      formData.append('model', 'whisper-large-v3');
+      formData.append('model', 'whisper-large-v3-turbo');
 
-      // Try translations endpoint (translates audio in any language to English)
-      let res = await fetch('https://api.groq.com/openai/v1/audio/translations', {
+      const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
         },
         body: formData,
       });
-
-      // Fallback to transcriptions if translations fails
-      if (!res.ok) {
-        const formData2 = new FormData();
-        formData2.append('file', new Blob([buffer], { type: 'audio/mp3' }), filename);
-        formData2.append('model', 'whisper-large-v3-turbo');
-
-        res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-          },
-          body: formData2,
-        });
-      }
 
       if (res.ok) {
         const data = (await res.json()) as { text?: string };
@@ -225,9 +237,10 @@ export async function translateText(
   text: string,
   targetLang: 'ENGLISH' | 'HINDI' | 'BENGALI',
 ): Promise<string> {
-  if (!text.trim() || targetLang === 'ENGLISH') {
-    return text;
-  }
+  if (!text.trim()) return text;
+
+  const langName =
+    targetLang === 'HINDI' ? 'Hindi' : targetLang === 'BENGALI' ? 'Bengali' : 'English';
 
   // 1. Groq Chat API translation
   if (process.env.GROQ_API_KEY) {
@@ -243,7 +256,7 @@ export async function translateText(
           messages: [
             {
               role: 'user',
-              content: `Translate the following text into ${targetLang === 'HINDI' ? 'Hindi' : 'Bengali'}. Return ONLY the final translated text, without extra explanation, markdown tags, or thinking:\n\n${text}`,
+              content: `/no_think\nTranslate the following text into ${langName}. Return ONLY the translated text, nothing else:\n\n${text}`,
             },
           ],
           temperature: 0.1,
@@ -254,10 +267,8 @@ export async function translateText(
         const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
         let content = data.choices?.[0]?.message?.content?.trim();
         if (content) {
-          if (content.includes('</think>')) {
-            content = content.split('</think>').pop()?.trim() || content;
-          }
-          return content;
+          content = stripThinkTags(content);
+          if (content) return content;
         }
       }
     } catch (err) {
@@ -266,19 +277,21 @@ export async function translateText(
   }
 
   // 2. MyMemory Free API fallback
-  try {
-    const langCode = targetLang === 'HINDI' ? 'hi' : 'bn';
-    const res = await fetch(
-      `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=autodetect|${langCode}`,
-    );
-    if (res.ok) {
-      const data = (await res.json()) as { responseData?: { translatedText?: string } };
-      if (data.responseData?.translatedText?.trim()) {
-        return data.responseData.translatedText.trim();
+  if (targetLang !== 'ENGLISH') {
+    try {
+      const langCode = targetLang === 'HINDI' ? 'hi' : 'bn';
+      const res = await fetch(
+        `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=en|${langCode}`,
+      );
+      if (res.ok) {
+        const data = (await res.json()) as { responseData?: { translatedText?: string } };
+        if (data.responseData?.translatedText?.trim()) {
+          return data.responseData.translatedText.trim();
+        }
       }
+    } catch (err) {
+      logger.warn({ err }, 'MyMemory translation failed');
     }
-  } catch (err) {
-    logger.warn({ err }, 'MyMemory translation failed');
   }
 
   return text;
