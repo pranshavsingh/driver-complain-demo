@@ -14,6 +14,7 @@ import {
   CompleteTripSchema,
 } from '@driver-complaint/shared-types';
 import { ApiError } from '../../errors/api-error';
+import { sendSuccess } from '../../lib/http';
 
 export async function handleReachedLoadingPoint(req: Request, res: Response): Promise<void> {
   const userId = req.user?.id;
@@ -35,7 +36,7 @@ export async function handleReachedLoadingPoint(req: Request, res: Response): Pr
     complaintId: parsed.complaintId,
   });
 
-  res.status(201).json(record);
+  sendSuccess(res, record, 201);
 }
 
 export async function handleCompleteLoading(req: Request, res: Response): Promise<void> {
@@ -58,7 +59,7 @@ export async function handleCompleteLoading(req: Request, res: Response): Promis
     address: parsed.address,
   });
 
-  res.json(record);
+  sendSuccess(res, record);
 }
 
 export async function handleStartTrip(req: Request, res: Response): Promise<void> {
@@ -76,7 +77,7 @@ export async function handleStartTrip(req: Request, res: Response): Promise<void
     address: parsed.address,
   });
 
-  res.json(record);
+  sendSuccess(res, record);
 }
 
 export async function handleCompleteTrip(req: Request, res: Response): Promise<void> {
@@ -99,7 +100,7 @@ export async function handleCompleteTrip(req: Request, res: Response): Promise<v
     address: parsed.address,
   });
 
-  res.json(record);
+  sendSuccess(res, record);
 }
 
 export async function handleGetActiveLoading(req: Request, res: Response): Promise<void> {
@@ -107,7 +108,7 @@ export async function handleGetActiveLoading(req: Request, res: Response): Promi
   if (!userId) throw ApiError.unauthorized();
 
   const record = await getActiveLoadingRecord(userId);
-  res.json({ active: record });
+  sendSuccess(res, { active: record });
 }
 
 export async function handleListLoadingRecords(req: Request, res: Response): Promise<void> {
@@ -116,5 +117,5 @@ export async function handleListLoadingRecords(req: Request, res: Response): Pro
   const limit = req.query.limit ? Number(req.query.limit) : 50;
 
   const records = await listLoadingRecords({ driverId, status, limit });
-  res.json({ data: records });
+  sendSuccess(res, { data: records });
 }

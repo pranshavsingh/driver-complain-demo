@@ -39,9 +39,9 @@ export const LoadingRecordSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
 
-  driverName: z.string().optional(),
-  vehiclePlate: z.string().optional(),
-  completedTripsCount: z.number().optional(),
+  driverName: z.string().nullable().optional(),
+  vehiclePlate: z.string().nullable().optional(),
+  completedTripsCount: z.number().nullable().optional(),
 });
 export type LoadingRecord = z.infer<typeof LoadingRecordSchema>;
 
