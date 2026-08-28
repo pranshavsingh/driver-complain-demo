@@ -423,13 +423,58 @@ export function ComplaintDetailPage(): ReactElement {
             </div>
 
             <div className="driver-statement-box">
-              <p className="statement-text">
-                {selectedLang === 'ENGLISH'
-                  ? (complaint.description && complaint.description !== 'Voice note attached'
-                      ? complaint.description
-                      : complaint.transcription ?? 'Voice note attached')
-                  : translationsCache[selectedLang] ?? (translatingLang === selectedLang ? 'Translating statement…' : (complaint.description && complaint.description !== 'Voice note attached' ? complaint.description : complaint.transcription ?? 'Voice note attached'))}
-              </p>
+              {(() => {
+                const isPlaceholder = !complaint.description || complaint.description === 'Photo attached' || complaint.description === 'Voice note attached';
+                const hasUserText = !isPlaceholder;
+                const hasTranscription = Boolean(complaint.transcription);
+                const isPhotoOnly = complaint.description === 'Photo attached' && !hasTranscription;
+
+                // Determine what text to show for the current language
+                const getDisplayText = (text: string): string => {
+                  if (selectedLang === 'ENGLISH') return text;
+                  return translationsCache[selectedLang] ?? (translatingLang === selectedLang ? 'Translating…' : text);
+                };
+
+                if (isPhotoOnly) {
+                  // Case 1: Photo only — no voice, no text
+                  return (
+                    <p className="statement-text" style={{ color: '#64748b', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: 8 }}>
+                      📷 Photo attached
+                    </p>
+                  );
+                }
+
+                if (hasUserText && hasTranscription) {
+                  // Case 3: User typed text + voice note transcription
+                  return (
+                    <>
+                      <p className="statement-text">{getDisplayText(complaint.description)}</p>
+                      <div style={{ borderTop: '1px dashed #cbd5e1', marginTop: 10, paddingTop: 10 }}>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: '#64748b', display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+                          <Mic size={12} color="#1d4ed8" /> Voice Note Transcription:
+                        </span>
+                        <p className="statement-text" style={{ fontSize: 13, color: '#475569' }}>
+                          {getDisplayText(complaint.transcription!)}
+                        </p>
+                      </div>
+                    </>
+                  );
+                }
+
+                if (hasTranscription) {
+                  // Case 2: Voice (with or without photo) — show transcription as main text
+                  return (
+                    <p className="statement-text">{getDisplayText(complaint.transcription!)}</p>
+                  );
+                }
+
+                // Fallback: show description or placeholder
+                return (
+                  <p className="statement-text">
+                    {getDisplayText(complaint.description || 'No description provided')}
+                  </p>
+                );
+              })()}
             </div>
           </div>
 

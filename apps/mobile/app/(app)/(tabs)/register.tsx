@@ -195,7 +195,7 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
         : evidence.voice
           ? `${cardName || 'Voice note'} report`
           : `${cardName || 'Vehicle'} Complaint`);
-    const descriptionText = trimmed || (evidence.photo ? 'Photo attached' : 'Voice note attached');
+    const descriptionText = trimmed || (evidence.voice ? 'Voice note attached' : evidence.photo ? 'Photo attached' : 'Voice note attached');
 
     const parsed = CreateComplaintSchema.safeParse({
       title: titleText,

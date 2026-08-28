@@ -144,9 +144,12 @@ export async function create(
     })),
   );
 
+  const isPlaceholderDescription =
+    !input.description.trim() ||
+    input.description === 'Voice note attached' ||
+    input.description === 'Photo attached';
   const finalDescription =
-    voiceTranscription &&
-    (input.description === 'Voice note attached' || !input.description.trim())
+    voiceTranscription && isPlaceholderDescription
       ? voiceTranscription
       : input.description;
 
@@ -782,7 +785,9 @@ export async function transcribeComplaint(id: string): Promise<ComplaintPublic> 
       data: {
         transcription: transcribedText,
         description:
-          existing.description === 'Voice note attached' || !existing.description.trim()
+          existing.description === 'Voice note attached' ||
+          existing.description === 'Photo attached' ||
+          !existing.description.trim()
             ? transcribedText
             : existing.description,
       },

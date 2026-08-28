@@ -14,12 +14,12 @@ function stripThinkTags(text: string): string {
 }
 
 /**
- * Transcribe an audio buffer — ALWAYS returns English text.
+ * Transcribe an audio buffer — returns text in the ORIGINAL spoken language.
  * Strategy:
- *   1. Groq /audio/translations (any language → English, most reliable)
- *   2. Groq /audio/transcriptions + Chat API to force English
- *   3. OpenAI /audio/translations
- *   4. Local Python faster-whisper (dev only)
+ *   1. Groq /audio/transcriptions with whisper-large-v3 (best accuracy, free)
+ *   2. OpenAI /audio/transcriptions with whisper-1
+ *   3. Hugging Face Inference API
+ *   4. Local Python faster-whisper (unlimited, no API dependency)
  */
 export async function transcribeAudio(
   buffer: Buffer,
@@ -40,73 +40,60 @@ async function transcribeViaCloudApi(
 ): Promise<string | null> {
   const filename = originalName ? path.basename(originalName) : 'voice.mp3';
 
-  // 1. Groq /audio/translations — transcribes ANY language directly to English
+  // Determine correct MIME type from filename extension
+  const ext = path.extname(filename).toLowerCase();
+  const mimeType =
+    ext === '.wav' ? 'audio/wav' :
+    ext === '.webm' ? 'audio/webm' :
+    ext === '.ogg' ? 'audio/ogg' :
+    ext === '.m4a' ? 'audio/m4a' :
+    ext === '.mp4' ? 'audio/mp4' :
+    ext === '.flac' ? 'audio/flac' :
+    'audio/mpeg';
+
+  // 1. Groq /audio/transcriptions — accurate transcription in the original language
   if (process.env.GROQ_API_KEY) {
     try {
-      const fd1 = new FormData();
-      fd1.append('file', new Blob([buffer], { type: 'audio/mp3' }), filename);
-      fd1.append('model', 'whisper-large-v3');
-      // Prompt hint: tells whisper the output should be English
-      fd1.append('prompt', 'Transcribe this audio in English.');
+      const fd = new FormData();
+      fd.append('file', new Blob([buffer], { type: mimeType }), filename);
+      fd.append('model', 'whisper-large-v3');
+      fd.append('response_format', 'verbose_json');
+      // Temperature 0 = most deterministic/accurate output
+      fd.append('temperature', '0');
+      // Prompt hint: helps Whisper understand context and punctuate correctly
+      fd.append('prompt', 'This is a driver complaint about a vehicle issue. Transcribe accurately with proper punctuation.');
 
-      const res1 = await fetch('https://api.groq.com/openai/v1/audio/translations', {
+      const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
         method: 'POST',
         headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
-        body: fd1,
+        body: fd,
       });
 
-      if (res1.ok) {
-        const data = (await res1.json()) as { text?: string };
+      if (res.ok) {
+        const data = (await res.json()) as { text?: string; language?: string };
         if (data.text?.trim()) {
-          logger.info('Groq /translations succeeded');
+          logger.info({ language: data.language }, 'Groq /transcriptions succeeded');
           return data.text.trim();
         }
       } else {
-        logger.warn({ status: res1.status }, 'Groq /translations failed, trying /transcriptions');
-      }
-    } catch (err) {
-      logger.warn({ err }, 'Groq /translations error');
-    }
-
-    // 2. Fallback: /transcriptions + Chat API translation to English
-    try {
-      const fd2 = new FormData();
-      fd2.append('file', new Blob([buffer], { type: 'audio/mp3' }), filename);
-      fd2.append('model', 'whisper-large-v3-turbo');
-
-      const res2 = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
-        body: fd2,
-      });
-
-      if (res2.ok) {
-        const data = (await res2.json()) as { text?: string };
-        const rawText = data.text?.trim();
-        if (rawText) {
-          logger.info({ rawText }, 'Got transcription, now translating to English via Chat');
-          // Always translate to English via Chat API to guarantee English output
-          const english = await translateText(rawText, 'ENGLISH');
-          return english || rawText;
-        }
-      } else {
-        const errText = await res2.text();
-        logger.warn({ status: res2.status, errText }, 'Groq /transcriptions also failed');
+        const errBody = await res.text();
+        logger.warn({ status: res.status, errBody }, 'Groq /transcriptions failed');
       }
     } catch (err) {
       logger.warn({ err }, 'Groq /transcriptions error');
     }
   }
 
-  // 2. OpenAI Whisper API - translations endpoint
+  // 2. OpenAI Whisper API — transcriptions endpoint (not translations)
   if (process.env.OPENAI_API_KEY) {
     try {
       const formData = new FormData();
-      const fileBlob = new Blob([buffer], { type: 'audio/mp3' });
-      formData.append('file', fileBlob, filename);
+      formData.append('file', new Blob([buffer], { type: mimeType }), filename);
       formData.append('model', 'whisper-1');
+      formData.append('response_format', 'verbose_json');
+      formData.append('temperature', '0');
 
-      const res = await fetch('https://api.openai.com/v1/audio/translations', {
+      const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
@@ -115,8 +102,11 @@ async function transcribeViaCloudApi(
       });
 
       if (res.ok) {
-        const data = (await res.json()) as { text?: string };
-        if (data.text?.trim()) return data.text.trim();
+        const data = (await res.json()) as { text?: string; language?: string };
+        if (data.text?.trim()) {
+          logger.info({ language: data.language }, 'OpenAI /transcriptions succeeded');
+          return data.text.trim();
+        }
       }
     } catch (err) {
       logger.warn({ err }, 'OpenAI Whisper API call error');
@@ -132,7 +122,7 @@ async function transcribeViaCloudApi(
           method: 'POST',
           headers: {
             Authorization: `Bearer ${process.env.HF_TOKEN}`,
-            'Content-Type': 'audio/mpeg',
+            'Content-Type': mimeType,
           },
           body: buffer,
         },
@@ -140,7 +130,10 @@ async function transcribeViaCloudApi(
 
       if (res.ok) {
         const data = (await res.json()) as { text?: string };
-        if (data.text?.trim()) return data.text.trim();
+        if (data.text?.trim()) {
+          logger.info('Hugging Face transcription succeeded');
+          return data.text.trim();
+        }
       }
     } catch (err) {
       logger.warn({ err }, 'Hugging Face API call error');
@@ -169,7 +162,7 @@ async function transcribeViaLocalPython(
     for (const cmd of pyCmds) {
       const result = await new Promise<string | null>((resolve) => {
         const child = spawn(cmd, [scriptPath, tempPath], {
-          timeout: 60_000,
+          timeout: 120_000,
         });
 
         let stdout = '';
