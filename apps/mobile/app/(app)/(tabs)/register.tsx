@@ -75,8 +75,6 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
     return vehicleList[0];
   }, [vehicleId, vehicleList]);
 
-  const selectedVehicleId = selectedVehicle?.id ?? null;
-
   const driverDisplayName = user?.firstName
     ? `${user.firstName} ${user.lastName ?? ''}`.trim()
     : 'Driver';

@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactElement } from 'react';
-import { ActivityIndicator, Alert, Image, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
 import type { LoadingRecord } from '@driver-complaint/shared-types';
@@ -8,6 +8,7 @@ import { Button } from './Button';
 import { Card } from './Card';
 import { PHOTO_QUALITY } from '../media/limits';
 import { colors, fontSize, radius, spacing } from '../theme';
+import { Ionicons } from '@expo/vector-icons';
 
 export function LoadingAssistantCard(): ReactElement {
   const [activeRecord, setActiveRecord] = useState<LoadingRecord | null>(null);
@@ -35,14 +36,20 @@ export function LoadingAssistantCard(): ReactElement {
     };
   }, []);
 
-  // Timer tick for active loading session
+  // Timer tick for active loading or trip session
   useEffect(() => {
     if (!activeRecord) return;
-    const reachedTime = new Date(activeRecord.reachedAt).getTime();
-    
+
+    let startTime = Date.now();
+    if (activeRecord.status === 'TRIP_STARTED' && activeRecord.tripStartedAt) {
+      startTime = new Date(activeRecord.tripStartedAt).getTime();
+    } else if (activeRecord.reachedAt) {
+      startTime = new Date(activeRecord.reachedAt).getTime();
+    }
+
     const updateElapsed = () => {
       const now = Date.now();
-      const diff = Math.max(0, Math.floor((now - reachedTime) / 1000));
+      const diff = Math.max(0, Math.floor((now - startTime) / 1000));
       setElapsedSec(diff);
     };
 
@@ -62,15 +69,13 @@ export function LoadingAssistantCard(): ReactElement {
     return `${pad(mins)}m ${pad(secs)}s`;
   };
 
-  const captureGpsAndPhoto = async (): Promise<{
+  const getGpsLocation = async (): Promise<{
     coords: { latitude: number; longitude: number };
     address?: string;
-    photo: FileToUpload;
   } | null> => {
-    // 1. Request Location Permission & Fetch GPS
     const locPerm = await Location.requestForegroundPermissionsAsync();
     if (!locPerm.granted) {
-      Alert.alert('Location Required', 'Location permission is needed to verify your arrival at the loading point.');
+      Alert.alert('Location Required', 'Location permission is needed to verify your position.');
       return null;
     }
 
@@ -90,7 +95,23 @@ export function LoadingAssistantCard(): ReactElement {
       // Non-fatal geocode failure
     }
 
-    // 2. Request Camera Permission & Launch Camera automatically
+    return {
+      coords: {
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+      },
+      address: addressStr,
+    };
+  };
+
+  const captureGpsAndPhoto = async (): Promise<{
+    coords: { latitude: number; longitude: number };
+    address?: string;
+    photo: FileToUpload;
+  } | null> => {
+    const gpsData = await getGpsLocation();
+    if (!gpsData) return null;
+
     const camPerm = await ImagePicker.requestCameraPermissionsAsync();
     if (!camPerm.granted) {
       Alert.alert('Camera Required', 'Camera permission is required to capture proof photo.');
@@ -109,16 +130,13 @@ export function LoadingAssistantCard(): ReactElement {
     const asset = result.assets[0];
     const photo: FileToUpload = {
       uri: asset.uri,
-      name: asset.fileName ?? 'loading_proof.jpg',
+      name: asset.fileName ?? 'proof.jpg',
       type: asset.mimeType ?? 'image/jpeg',
     };
 
     return {
-      coords: {
-        latitude: pos.coords.latitude,
-        longitude: pos.coords.longitude,
-      },
-      address: addressStr,
+      coords: gpsData.coords,
+      address: gpsData.address,
       photo,
     };
   };
@@ -140,7 +158,7 @@ export function LoadingAssistantCard(): ReactElement {
 
       setActiveRecord(record);
       setCompletedRecord(null);
-      Alert.alert('📍 Reached Loading Point', 'Arrival milestone recorded and live waiting timer started!');
+      Alert.alert('📍 Reached Loading Point', 'Arrival milestone recorded! Loading timer started.');
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to record loading arrival');
     } finally {
@@ -148,14 +166,55 @@ export function LoadingAssistantCard(): ReactElement {
     }
   };
 
-  const handleCompleted = async (): Promise<void> => {
+  const handleLoadingDone = async (): Promise<void> => {
     if (!activeRecord) return;
     try {
       setSubmitting(true);
+      // 1. Fetch Location and open camera for photo proof
       const data = await captureGpsAndPhoto();
       if (!data) return;
 
-      const record = await loading.completed(
+      // 2. Mark loading completed
+      const completedRecordData = await loading.completed(
+        activeRecord.id,
+        {
+          latitude: data.coords.latitude,
+          longitude: data.coords.longitude,
+          address: data.address,
+        },
+        data.photo,
+      );
+
+      // 3. Auto-start trip immediately after loading completion (fetch GPS only)
+      const gpsData = await getGpsLocation();
+      const tripStartedRecord = await loading.startTrip(completedRecordData.id, {
+        latitude: gpsData ? gpsData.coords.latitude : data.coords.latitude,
+        longitude: gpsData ? gpsData.coords.longitude : data.coords.longitude,
+        address: gpsData ? gpsData.address : data.address,
+      });
+
+      setActiveRecord(tripStartedRecord);
+      setCompletedRecord(null);
+      Alert.alert(
+        '✅ Loading Done & 🚛 Trip Started',
+        `Loading completed in ${completedRecordData.formattedWaitingTime || '< 1 min'}. Your trip timer has started!`,
+      );
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to complete loading / start trip');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleCompleteTrip = async (): Promise<void> => {
+    if (!activeRecord) return;
+    try {
+      setSubmitting(true);
+      // Fetch location and open camera to submit photo for trip completion
+      const data = await captureGpsAndPhoto();
+      if (!data) return;
+
+      const record = await loading.completeTrip(
         activeRecord.id,
         {
           latitude: data.coords.latitude,
@@ -167,9 +226,9 @@ export function LoadingAssistantCard(): ReactElement {
 
       setActiveRecord(null);
       setCompletedRecord(record);
-      Alert.alert('✅ Loading Completed', `Total Waiting Time: ${record.formattedWaitingTime || '< 1 min'}`);
+      Alert.alert('🏁 Trip Completed!', `Trip completed in ${record.formattedTripDuration || '< 1 min'}. Total Trips: ${record.completedTripsCount ?? 1}`);
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to complete loading milestone');
+      Alert.alert('Error', err.message || 'Failed to complete trip');
     } finally {
       setSubmitting(false);
     }
@@ -177,56 +236,118 @@ export function LoadingAssistantCard(): ReactElement {
 
   if (loadingInitial) {
     return (
-      <Card title="Loading Point Assistant">
+      <Card title="Loading & Trip Assistant">
         <ActivityIndicator color={colors.primary} size="small" />
       </Card>
     );
   }
 
+  const isTripStarted = activeRecord?.status === 'TRIP_STARTED';
+
   return (
-    <Card title="Loading Point Assistant 🚛">
+    <Card title="Loading & Trip Assistant 🚛">
       {activeRecord ? (
         <View style={styles.activeContainer}>
-          <View style={styles.statusBadge}>
-            <View style={styles.pulsingDot} />
-            <Text style={styles.statusBadgeText}>LOADING IN PROGRESS</Text>
-          </View>
+          {isTripStarted ? (
+            <View style={styles.tripStatusBadge}>
+              <View style={styles.pulsingGreenDot} />
+              <Ionicons name="bus-outline" size={16} color="#065F46" style={{ marginRight: 2 }} />
+              <Text style={styles.tripStatusBadgeText}>YOUR TRIP IS STARTED</Text>
+            </View>
+          ) : (
+            <View style={styles.statusBadge}>
+              <View style={styles.pulsingDot} />
+              <Ionicons name="time-outline" size={16} color="#92400E" style={{ marginRight: 2 }} />
+              <Text style={styles.statusBadgeText}>LOADING IN PROGRESS</Text>
+            </View>
+          )}
 
-          <Text style={styles.timerTitle}>Current Waiting Duration</Text>
-          <Text style={styles.timerText}>{formatElapsed(elapsedSec)}</Text>
+          <Text style={styles.timerTitle}>
+            {isTripStarted ? 'Live Trip Duration' : 'Loading Duration'}
+          </Text>
+          <Text style={isTripStarted ? styles.tripTimerText : styles.timerText}>
+            {formatElapsed(elapsedSec)}
+          </Text>
 
           <View style={styles.infoBox}>
-            <Text style={styles.infoLabel}>Arrived At:</Text>
-            <Text style={styles.infoValue}>
-              {new Date(activeRecord.reachedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            <Text style={styles.infoLabel}>
+              {isTripStarted ? 'Trip Started At:' : 'Arrived At:'}
             </Text>
-            {activeRecord.reachedAddress ? (
+            <Text style={styles.infoValue}>
+              {new Date(
+                isTripStarted && activeRecord.tripStartedAt
+                  ? activeRecord.tripStartedAt
+                  : activeRecord.reachedAt,
+              ).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </Text>
+            {(isTripStarted ? activeRecord.tripStartAddress : activeRecord.reachedAddress) ? (
               <>
                 <Text style={styles.infoLabel}>Location:</Text>
                 <Text style={styles.infoValue} numberOfLines={2}>
-                  {activeRecord.reachedAddress}
+                  {isTripStarted ? activeRecord.tripStartAddress : activeRecord.reachedAddress}
                 </Text>
               </>
             ) : null}
           </View>
 
-          {activeRecord.reachedPhotoUrl ? (
-            <Image source={{ uri: activeRecord.reachedPhotoUrl }} style={styles.previewImage} />
-          ) : null}
-
-          <Button
-            label={submitting ? 'Capturing GPS & Camera...' : '✅ Mark Loading Completed'}
-            disabled={submitting}
-            onPress={handleCompleted}
-          />
+          {isTripStarted ? (
+            <Pressable
+              style={[styles.actionBtn, styles.completeTripBtn, submitting && styles.btnDisabled]}
+              onPress={handleCompleteTrip}
+              disabled={submitting}
+            >
+              {submitting ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <>
+                  <Ionicons name="flag" size={20} color="#FFFFFF" />
+                  <Text style={styles.actionBtnText}>Complete Trip</Text>
+                </>
+              )}
+            </Pressable>
+          ) : (
+            <Pressable
+              style={[styles.actionBtn, styles.loadingDoneBtn, submitting && styles.btnDisabled]}
+              onPress={handleLoadingDone}
+              disabled={submitting}
+            >
+              {submitting ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <>
+                  <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+                  <Text style={styles.actionBtnText}>Loading Done</Text>
+                </>
+              )}
+            </Pressable>
+          )}
         </View>
       ) : completedRecord ? (
         <View style={styles.completedContainer}>
-          <Text style={styles.completedTitle}>🎉 Loading Finished!</Text>
-          <View style={styles.resultBox}>
-            <Text style={styles.resultLabel}>Total Driver Waiting Time:</Text>
-            <Text style={styles.resultValue}>{completedRecord.formattedWaitingTime || '< 1 min'}</Text>
+          <Text style={styles.completedTitle}>🎉 Trip Completed Successfully!</Text>
+
+          <View style={styles.tripCountBadge}>
+            <Ionicons name="trophy" size={20} color="#D97706" />
+            <Text style={styles.tripCountText}>
+              Total Completed Trips: <Text style={styles.tripCountNumber}>{completedRecord.completedTripsCount ?? 1}</Text>
+            </Text>
           </View>
+
+          <View style={styles.resultBox}>
+            {completedRecord.formattedWaitingTime ? (
+              <View style={styles.summaryRow}>
+                <Text style={styles.resultLabel}>Loading Time:</Text>
+                <Text style={styles.summaryValue}>{completedRecord.formattedWaitingTime}</Text>
+              </View>
+            ) : null}
+            <View style={styles.summaryRow}>
+              <Text style={styles.resultLabel}>Trip Duration:</Text>
+              <Text style={styles.resultValue}>
+                {completedRecord.formattedTripDuration || '< 1 min'}
+              </Text>
+            </View>
+          </View>
+
           <Button
             label="Start New Loading Session"
             variant="secondary"
@@ -236,13 +357,22 @@ export function LoadingAssistantCard(): ReactElement {
       ) : (
         <View style={styles.idleContainer}>
           <Text style={styles.idleDescription}>
-            Upon arrival at the warehouse or loading location, tap below to verify GPS, capture proof photo, and start automated waiting time analytics.
+            Upon arrival at the warehouse or loading location, tap below to verify GPS, capture proof photo, and start automated timer analytics.
           </Text>
-          <Button
-            label={submitting ? 'Fetching Location & Camera...' : '📍 Reached Loading Point'}
-            disabled={submitting}
+          <Pressable
+            style={[styles.actionBtn, styles.reachedBtn, submitting && styles.btnDisabled]}
             onPress={handleReached}
-          />
+            disabled={submitting}
+          >
+            {submitting ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <>
+                <Ionicons name="location" size={20} color="#FFFFFF" />
+                <Text style={styles.actionBtnText}>Reached Loading Point</Text>
+              </>
+            )}
+          </Pressable>
         </View>
       )}
     </Card>
@@ -278,6 +408,27 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#92400E',
   },
+  tripStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#D1FAE5',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.sm,
+    alignSelf: 'flex-start',
+    gap: spacing.xs,
+  },
+  pulsingGreenDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#059669',
+  },
+  tripStatusBadgeText: {
+    fontSize: fontSize.small,
+    fontWeight: '800',
+    color: '#065F46',
+  },
   timerTitle: {
     fontSize: fontSize.small,
     color: colors.textMuted,
@@ -287,6 +438,12 @@ const styles = StyleSheet.create({
     fontSize: 32,
     fontWeight: '800',
     color: colors.primary,
+    letterSpacing: 1,
+  },
+  tripTimerText: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: '#059669',
     letterSpacing: 1,
   },
   infoBox: {
@@ -305,16 +462,60 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.text,
   },
-  previewImage: {
-    width: '100%',
-    height: 140,
-    borderRadius: radius.sm,
+  actionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs + 2,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.md,
+    elevation: 2,
+  },
+  reachedBtn: {
+    backgroundColor: '#075E54',
+  },
+  loadingDoneBtn: {
+    backgroundColor: '#2563EB',
+  },
+  completeTripBtn: {
+    backgroundColor: '#059669',
+  },
+  actionBtnText: {
+    color: '#FFFFFF',
+    fontSize: fontSize.body,
+    fontWeight: '700',
+  },
+  btnDisabled: {
+    opacity: 0.6,
   },
   completedContainer: { gap: spacing.md, alignItems: 'center' },
   completedTitle: {
     fontSize: fontSize.large,
     fontWeight: '800',
     color: colors.success,
+    textAlign: 'center',
+  },
+  tripCountBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: spacing.md,
+    paddingVertical: 8,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  tripCountText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#92400E',
+  },
+  tripCountNumber: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#B45309',
   },
   resultBox: {
     alignItems: 'center',
@@ -322,15 +523,27 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     borderRadius: radius.md,
     width: '100%',
+    gap: spacing.xs,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
   },
   resultLabel: {
     fontSize: fontSize.small,
     color: '#065F46',
+    fontWeight: '600',
+  },
+  summaryValue: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#047857',
   },
   resultValue: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: '800',
     color: '#047857',
-    marginTop: 4,
   },
 });

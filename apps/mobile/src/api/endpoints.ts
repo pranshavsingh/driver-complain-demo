@@ -156,5 +156,31 @@ export const loading = {
       body: form,
     });
   },
+
+  startTrip: (
+    loadingId: string,
+    input: { latitude: number; longitude: number; address?: string },
+  ): Promise<LoadingRecord> => {
+    return request(LoadingRecordSchema, `/loading/${encodeURIComponent(loadingId)}/start-trip`, {
+      method: 'POST',
+      body: input,
+    });
+  },
+
+  completeTrip: (
+    loadingId: string,
+    input: { latitude: number; longitude: number; address?: string },
+    photo: FileToUpload,
+  ): Promise<LoadingRecord> => {
+    const form = new FormData();
+    form.append('latitude', String(input.latitude));
+    form.append('longitude', String(input.longitude));
+    if (input.address) form.append('address', input.address);
+    form.append('photo', photo as unknown as Blob);
+    return request(LoadingRecordSchema, `/loading/${encodeURIComponent(loadingId)}/complete-trip`, {
+      method: 'PATCH',
+      body: form,
+    });
+  },
 };
 

@@ -4,7 +4,7 @@ import { emitToUsers } from '../../realtime/socket';
 import { REALTIME_EVENTS, type LoadingRecord, type LoadingStatus } from '@driver-complaint/shared-types';
 import { ApiError } from '../../errors/api-error';
 
-export function formatWaitingTime(minutes: number | null | undefined): string | null {
+export function formatDurationText(minutes: number | null | undefined): string | null {
   if (minutes === null || minutes === undefined) return null;
   if (minutes < 1) return '< 1 min';
   const hrs = Math.floor(minutes / 60);
@@ -14,11 +14,22 @@ export function formatWaitingTime(minutes: number | null | undefined): string | 
   return `${hrs}h ${mins}m`;
 }
 
-function serializeLoadingRecord(rec: any): LoadingRecord {
+async function getCompletedTripsCountForDriver(driverId: string): Promise<number> {
+  return await prisma.loadingRecord.count({
+    where: {
+      driverId,
+      status: { in: ['TRIP_COMPLETED', 'COMPLETED'] },
+    },
+  });
+}
+
+async function serializeLoadingRecord(rec: any): Promise<LoadingRecord> {
   const driverUser = rec.driver?.user;
   const driverName = driverUser ? `${driverUser.firstName} ${driverUser.lastName}` : undefined;
   const vehicle = rec.driver?.vehicles?.[0];
   const vehiclePlate = vehicle ? vehicle.plateNumber : undefined;
+
+  const count = rec.driverId ? await getCompletedTripsCountForDriver(rec.driverId) : 0;
 
   return {
     id: rec.id,
@@ -35,13 +46,28 @@ function serializeLoadingRecord(rec: any): LoadingRecord {
     completedLongitude: rec.completedLongitude ?? null,
     completedAddress: rec.completedAddress ?? null,
     completedPhotoUrl: rec.completedPhotoUrl ?? null,
+
+    tripStartedAt: rec.tripStartedAt ? rec.tripStartedAt.toISOString() : null,
+    tripStartLatitude: rec.tripStartLatitude ?? null,
+    tripStartLongitude: rec.tripStartLongitude ?? null,
+    tripStartAddress: rec.tripStartAddress ?? null,
+
+    tripCompletedAt: rec.tripCompletedAt ? rec.tripCompletedAt.toISOString() : null,
+    tripCompletedLatitude: rec.tripCompletedLatitude ?? null,
+    tripCompletedLongitude: rec.tripCompletedLongitude ?? null,
+    tripCompletedAddress: rec.tripCompletedAddress ?? null,
+    tripCompletedPhotoUrl: rec.tripCompletedPhotoUrl ?? null,
+    tripDurationMinutes: rec.tripDurationMinutes ?? null,
+    formattedTripDuration: formatDurationText(rec.tripDurationMinutes),
+
     waitingTimeMinutes: rec.waitingTimeMinutes ?? null,
-    formattedWaitingTime: formatWaitingTime(rec.waitingTimeMinutes),
+    formattedWaitingTime: formatDurationText(rec.waitingTimeMinutes),
     status: rec.status as LoadingStatus,
     createdAt: rec.createdAt.toISOString(),
     updatedAt: rec.updatedAt.toISOString(),
     driverName,
     vehiclePlate,
+    completedTripsCount: count,
   };
 }
 
@@ -61,12 +87,12 @@ export async function markReachedLoadingPoint(opts: {
     throw ApiError.forbidden('Only registered drivers can record loading point milestones');
   }
 
-  // Check if there is already an active (REACHED) loading record for this driver
+  // Check if there is already an active loading session for this driver
   const existingActive = await prisma.loadingRecord.findFirst({
-    where: { driverId: driver.id, status: 'REACHED' },
+    where: { driverId: driver.id, status: { in: ['REACHED', 'TRIP_STARTED'] } },
   });
   if (existingActive) {
-    throw ApiError.badRequest('You already have an active loading session in progress');
+    throw ApiError.badRequest('You already have an active loading/trip session in progress');
   }
 
   // Upload photo proof
@@ -98,7 +124,7 @@ export async function markReachedLoadingPoint(opts: {
     },
   });
 
-  const serialized = serializeLoadingRecord(record);
+  const serialized = await serializeLoadingRecord(record);
 
   // Broadcast realtime event to all admins
   const admins = await prisma.user.findMany({
@@ -144,7 +170,7 @@ export async function markLoadingCompleted(opts: {
     });
   }
 
-  if (!recordToUpdate || recordToUpdate.status === 'COMPLETED') {
+  if (!recordToUpdate || recordToUpdate.status === 'COMPLETED' || recordToUpdate.status === 'TRIP_STARTED' || recordToUpdate.status === 'TRIP_COMPLETED') {
     throw ApiError.notFound('No active loading session found to complete');
   }
 
@@ -180,7 +206,7 @@ export async function markLoadingCompleted(opts: {
     },
   });
 
-  const serialized = serializeLoadingRecord(updated);
+  const serialized = await serializeLoadingRecord(updated);
 
   // Broadcast realtime event to admins
   const admins = await prisma.user.findMany({
@@ -199,15 +225,46 @@ export async function markLoadingCompleted(opts: {
   return serialized;
 }
 
-export async function getActiveLoadingRecord(userId: string): Promise<LoadingRecord | null> {
+export async function startTrip(opts: {
+  userId: string;
+  loadingId?: string;
+  latitude: number;
+  longitude: number;
+  address?: string;
+}): Promise<LoadingRecord> {
   const driver = await prisma.driver.findUnique({
-    where: { userId },
+    where: { userId: opts.userId },
   });
-  if (!driver) return null;
+  if (!driver) {
+    throw ApiError.forbidden('Only registered drivers can start trips');
+  }
 
-  const record = await prisma.loadingRecord.findFirst({
-    where: { driverId: driver.id, status: 'REACHED' },
-    orderBy: { reachedAt: 'desc' },
+  let recordToUpdate;
+  if (opts.loadingId) {
+    recordToUpdate = await prisma.loadingRecord.findFirst({
+      where: { id: opts.loadingId, driverId: driver.id },
+    });
+  } else {
+    recordToUpdate = await prisma.loadingRecord.findFirst({
+      where: { driverId: driver.id, status: { in: ['COMPLETED', 'REACHED'] } },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  if (!recordToUpdate) {
+    throw ApiError.notFound('No loading session found to start trip');
+  }
+
+  const tripStartedAt = new Date();
+  const updated = await prisma.loadingRecord.update({
+    where: { id: recordToUpdate.id },
+    data: {
+      tripStartedAt,
+      tripStartLatitude: opts.latitude,
+      tripStartLongitude: opts.longitude,
+      tripStartAddress: opts.address || null,
+      status: 'TRIP_STARTED',
+    },
     include: {
       driver: {
         include: {
@@ -218,7 +275,94 @@ export async function getActiveLoadingRecord(userId: string): Promise<LoadingRec
     },
   });
 
-  return record ? serializeLoadingRecord(record) : null;
+  return await serializeLoadingRecord(updated);
+}
+
+export async function completeTrip(opts: {
+  userId: string;
+  loadingId?: string;
+  fileBuffer: Buffer;
+  latitude: number;
+  longitude: number;
+  address?: string;
+}): Promise<LoadingRecord> {
+  const driver = await prisma.driver.findUnique({
+    where: { userId: opts.userId },
+  });
+  if (!driver) {
+    throw ApiError.forbidden('Only registered drivers can complete trips');
+  }
+
+  let recordToUpdate;
+  if (opts.loadingId) {
+    recordToUpdate = await prisma.loadingRecord.findFirst({
+      where: { id: opts.loadingId, driverId: driver.id },
+    });
+  } else {
+    recordToUpdate = await prisma.loadingRecord.findFirst({
+      where: { driverId: driver.id, status: 'TRIP_STARTED' },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  if (!recordToUpdate || !recordToUpdate.tripStartedAt) {
+    throw ApiError.notFound('No active trip session found to complete');
+  }
+
+  const asset = await uploadBuffer(opts.fileBuffer, {
+    folder: `${cloudinaryFolder}/trips`,
+    resourceType: 'image',
+  });
+
+  const tripCompletedAt = new Date();
+  const diffMs = tripCompletedAt.getTime() - recordToUpdate.tripStartedAt.getTime();
+  const tripDurationMinutes = Math.max(0, Math.round(diffMs / 60000));
+
+  const updated = await prisma.loadingRecord.update({
+    where: { id: recordToUpdate.id },
+    data: {
+      tripCompletedAt,
+      tripCompletedLatitude: opts.latitude,
+      tripCompletedLongitude: opts.longitude,
+      tripCompletedAddress: opts.address || null,
+      tripCompletedPhotoUrl: asset.url,
+      tripCompletedPublicId: asset.publicId,
+      tripDurationMinutes,
+      status: 'TRIP_COMPLETED',
+    },
+    include: {
+      driver: {
+        include: {
+          user: true,
+          vehicles: true,
+        },
+      },
+    },
+  });
+
+  return await serializeLoadingRecord(updated);
+}
+
+export async function getActiveLoadingRecord(userId: string): Promise<LoadingRecord | null> {
+  const driver = await prisma.driver.findUnique({
+    where: { userId },
+  });
+  if (!driver) return null;
+
+  const record = await prisma.loadingRecord.findFirst({
+    where: { driverId: driver.id, status: { in: ['REACHED', 'COMPLETED', 'TRIP_STARTED'] } },
+    orderBy: { createdAt: 'desc' },
+    include: {
+      driver: {
+        include: {
+          user: true,
+          vehicles: true,
+        },
+      },
+    },
+  });
+
+  return record ? await serializeLoadingRecord(record) : null;
 }
 
 export async function listLoadingRecords(opts: {
@@ -243,5 +387,5 @@ export async function listLoadingRecords(opts: {
     },
   });
 
-  return records.map(serializeLoadingRecord);
+  return await Promise.all(records.map(serializeLoadingRecord));
 }

@@ -2,10 +2,17 @@ import type { Request, Response } from 'express';
 import {
   markReachedLoadingPoint,
   markLoadingCompleted,
+  startTrip,
+  completeTrip,
   getActiveLoadingRecord,
   listLoadingRecords,
 } from './loading.service';
-import { CreateReachedLoadingSchema, CompleteLoadingSchema } from '@driver-complaint/shared-types';
+import {
+  CreateReachedLoadingSchema,
+  CompleteLoadingSchema,
+  StartTripSchema,
+  CompleteTripSchema,
+} from '@driver-complaint/shared-types';
 import { ApiError } from '../../errors/api-error';
 
 export async function handleReachedLoadingPoint(req: Request, res: Response): Promise<void> {
@@ -43,6 +50,47 @@ export async function handleCompleteLoading(req: Request, res: Response): Promis
   const loadingId = typeof req.params.id === 'string' ? req.params.id : undefined;
 
   const record = await markLoadingCompleted({
+    userId,
+    loadingId,
+    fileBuffer: req.file.buffer,
+    latitude: parsed.latitude,
+    longitude: parsed.longitude,
+    address: parsed.address,
+  });
+
+  res.json(record);
+}
+
+export async function handleStartTrip(req: Request, res: Response): Promise<void> {
+  const userId = req.user?.id;
+  if (!userId) throw ApiError.unauthorized();
+
+  const parsed = StartTripSchema.parse(req.body);
+  const loadingId = typeof req.params.id === 'string' ? req.params.id : undefined;
+
+  const record = await startTrip({
+    userId,
+    loadingId,
+    latitude: parsed.latitude,
+    longitude: parsed.longitude,
+    address: parsed.address,
+  });
+
+  res.json(record);
+}
+
+export async function handleCompleteTrip(req: Request, res: Response): Promise<void> {
+  const userId = req.user?.id;
+  if (!userId) throw ApiError.unauthorized();
+
+  if (!req.file) {
+    throw ApiError.badRequest('Photo proof is required when completing trip');
+  }
+
+  const parsed = CompleteTripSchema.parse(req.body);
+  const loadingId = typeof req.params.id === 'string' ? req.params.id : undefined;
+
+  const record = await completeTrip({
     userId,
     loadingId,
     fileBuffer: req.file.buffer,

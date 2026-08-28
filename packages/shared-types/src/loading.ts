@@ -19,6 +19,19 @@ export const LoadingRecordSchema = z.object({
   completedAddress: z.string().nullable().optional(),
   completedPhotoUrl: z.string().nullable().optional(),
 
+  tripStartedAt: z.string().nullable().optional(),
+  tripStartLatitude: z.number().nullable().optional(),
+  tripStartLongitude: z.number().nullable().optional(),
+  tripStartAddress: z.string().nullable().optional(),
+
+  tripCompletedAt: z.string().nullable().optional(),
+  tripCompletedLatitude: z.number().nullable().optional(),
+  tripCompletedLongitude: z.number().nullable().optional(),
+  tripCompletedAddress: z.string().nullable().optional(),
+  tripCompletedPhotoUrl: z.string().nullable().optional(),
+  tripDurationMinutes: z.number().nullable().optional(),
+  formattedTripDuration: z.string().nullable().optional(),
+
   waitingTimeMinutes: z.number().nullable().optional(),
   formattedWaitingTime: z.string().nullable().optional(),
   status: LoadingStatusSchema,
@@ -28,6 +41,7 @@ export const LoadingRecordSchema = z.object({
 
   driverName: z.string().optional(),
   vehiclePlate: z.string().optional(),
+  completedTripsCount: z.number().optional(),
 });
 export type LoadingRecord = z.infer<typeof LoadingRecordSchema>;
 
@@ -46,3 +60,17 @@ export const CompleteLoadingSchema = z.object({
   address: z.string().optional(),
 });
 export type CompleteLoadingInput = z.infer<typeof CompleteLoadingSchema>;
+
+export const StartTripSchema = z.object({
+  latitude: z.coerce.number(),
+  longitude: z.coerce.number(),
+  address: z.string().optional(),
+});
+export type StartTripInput = z.infer<typeof StartTripSchema>;
+
+export const CompleteTripSchema = z.object({
+  latitude: z.coerce.number(),
+  longitude: z.coerce.number(),
+  address: z.string().optional(),
+});
+export type CompleteTripInput = z.infer<typeof CompleteTripSchema>;

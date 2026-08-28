@@ -69,22 +69,51 @@ export function ComplaintDetailPage(): ReactElement {
   const [transcribeError, setTranscribeError] = useState<unknown>(null);
 
   const [selectedLang, setSelectedLang] = useState<'ENGLISH' | 'BENGALI' | 'HINDI'>('ENGLISH');
-  const [translationsCache, setTranslationsCache] = useState<Record<string, string>>({});
+  const [translationsCache, setTranslationsCache] = useState<
+    Record<string, { description?: string; transcription?: string }>
+  >({});
   const [translatingLang, setTranslatingLang] = useState<string | null>(null);
 
   const handleLanguageChange = (lang: 'ENGLISH' | 'BENGALI' | 'HINDI'): void => {
     setSelectedLang(lang);
-    if (!complaint) return;
-    const baseText =
-      complaint.description && complaint.description !== 'Voice note attached'
-        ? complaint.description
-        : complaint.transcription ?? '';
-    if (!baseText || lang === 'ENGLISH' || translationsCache[lang]) return;
+    if (!complaint || lang === 'ENGLISH' || translationsCache[lang]) return;
+
+    const isDescPlaceholder =
+      !complaint.description ||
+      complaint.description === 'Photo attached' ||
+      complaint.description === 'Voice note attached';
+    const textToTranslateDesc = !isDescPlaceholder ? complaint.description : null;
+    const textToTranslateTrans = complaint.transcription || null;
+
+    if (!textToTranslateDesc && !textToTranslateTrans) return;
 
     setTranslatingLang(lang);
-    api.complaints.translate(baseText, lang).then(
-      (res) => {
-        setTranslationsCache((prev) => ({ ...prev, [lang]: res.translatedText }));
+    const promises: Promise<void>[] = [];
+    let newDescTrans: string | undefined;
+    let newAudioTrans: string | undefined;
+
+    if (textToTranslateDesc) {
+      promises.push(
+        api.complaints.translate(textToTranslateDesc, lang).then((res) => {
+          newDescTrans = res.translatedText;
+        }),
+      );
+    }
+
+    if (textToTranslateTrans) {
+      promises.push(
+        api.complaints.translate(textToTranslateTrans, lang).then((res) => {
+          newAudioTrans = res.translatedText;
+        }),
+      );
+    }
+
+    Promise.all(promises).then(
+      () => {
+        setTranslationsCache((prev) => ({
+          ...prev,
+          [lang]: { description: newDescTrans, transcription: newAudioTrans },
+        }));
         setTranslatingLang(null);
       },
       () => {
@@ -430,9 +459,13 @@ export function ComplaintDetailPage(): ReactElement {
                 const isPhotoOnly = complaint.description === 'Photo attached' && !hasTranscription;
 
                 // Determine what text to show for the current language
-                const getDisplayText = (text: string): string => {
+                const getDisplayText = (
+                  text: string,
+                  type: 'description' | 'transcription' = 'description',
+                ): string => {
                   if (selectedLang === 'ENGLISH') return text;
-                  return translationsCache[selectedLang] ?? (translatingLang === selectedLang ? 'Translating…' : text);
+                  const cached = translationsCache[selectedLang]?.[type];
+                  return cached ?? (translatingLang === selectedLang ? 'Translating…' : text);
                 };
 
                 if (isPhotoOnly) {
@@ -448,13 +481,13 @@ export function ComplaintDetailPage(): ReactElement {
                   // Case 3: User typed text + voice note transcription
                   return (
                     <>
-                      <p className="statement-text">{getDisplayText(complaint.description)}</p>
+                      <p className="statement-text">{getDisplayText(complaint.description, 'description')}</p>
                       <div style={{ borderTop: '1px dashed #cbd5e1', marginTop: 10, paddingTop: 10 }}>
                         <span style={{ fontSize: 11, fontWeight: 600, color: '#64748b', display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
                           <Mic size={12} color="#1d4ed8" /> Voice Note Transcription:
                         </span>
                         <p className="statement-text" style={{ fontSize: 13, color: '#475569' }}>
-                          {getDisplayText(complaint.transcription!)}
+                          {getDisplayText(complaint.transcription!, 'transcription')}
                         </p>
                       </div>
                     </>
@@ -464,14 +497,14 @@ export function ComplaintDetailPage(): ReactElement {
                 if (hasTranscription) {
                   // Case 2: Voice (with or without photo) — show transcription as main text
                   return (
-                    <p className="statement-text">{getDisplayText(complaint.transcription!)}</p>
+                    <p className="statement-text">{getDisplayText(complaint.transcription!, 'transcription')}</p>
                   );
                 }
 
                 // Fallback: show description or placeholder
                 return (
                   <p className="statement-text">
-                    {getDisplayText(complaint.description || 'No description provided')}
+                    {getDisplayText(complaint.description || 'No description provided', 'description')}
                   </p>
                 );
               })()}

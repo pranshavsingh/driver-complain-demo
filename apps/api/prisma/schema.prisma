@@ -284,35 +284,50 @@ model Counter {
 enum LoadingStatus {
   REACHED
   COMPLETED
+  TRIP_STARTED
+  TRIP_COMPLETED
 }
 
 model LoadingRecord {
-  id                 String        @id @default(uuid(7)) @db.Uuid
-  driverId           String        @db.Uuid
-  driver             Driver        @relation(fields: [driverId], references: [id], onDelete: Cascade)
-  complaintId        String?       @db.Uuid
-  complaint          Complaint?    @relation(fields: [complaintId], references: [id], onDelete: SetNull)
-  locationName       String?
+  id                     String        @id @default(uuid(7)) @db.Uuid
+  driverId               String        @db.Uuid
+  driver                 Driver        @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  complaintId            String?       @db.Uuid
+  complaint              Complaint?    @relation(fields: [complaintId], references: [id], onDelete: SetNull)
+  locationName           String?
 
-  reachedAt          DateTime      @default(now())
-  reachedLatitude    Float
-  reachedLongitude   Float
-  reachedAddress     String?
-  reachedPhotoUrl    String
-  reachedPublicId    String?
+  reachedAt              DateTime      @default(now())
+  reachedLatitude        Float
+  reachedLongitude       Float
+  reachedAddress         String?
+  reachedPhotoUrl        String
+  reachedPublicId        String?
 
-  completedAt        DateTime?
-  completedLatitude  Float?
-  completedLongitude Float?
-  completedAddress   String?
-  completedPhotoUrl  String?
-  completedPublicId  String?
+  completedAt            DateTime?
+  completedLatitude      Float?
+  completedLongitude     Float?
+  completedAddress       String?
+  completedPhotoUrl      String?
+  completedPublicId      String?
 
-  waitingTimeMinutes Int?
-  status             LoadingStatus @default(REACHED)
+  tripStartedAt          DateTime?
+  tripStartLatitude      Float?
+  tripStartLongitude     Float?
+  tripStartAddress       String?
 
-  createdAt          DateTime      @default(now())
-  updatedAt          DateTime      @updatedAt
+  tripCompletedAt        DateTime?
+  tripCompletedLatitude  Float?
+  tripCompletedLongitude Float?
+  tripCompletedAddress   String?
+  tripCompletedPhotoUrl  String?
+  tripCompletedPublicId  String?
+  tripDurationMinutes    Int?
+
+  waitingTimeMinutes     Int?
+  status                 LoadingStatus @default(REACHED)
+
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
 
   @@index([driverId])
   @@index([complaintId])

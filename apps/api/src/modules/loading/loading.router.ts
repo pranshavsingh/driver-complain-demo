@@ -3,6 +3,8 @@ import multer from 'multer';
 import {
   handleReachedLoadingPoint,
   handleCompleteLoading,
+  handleStartTrip,
+  handleCompleteTrip,
   handleGetActiveLoading,
   handleListLoadingRecords,
 } from './loading.controller';
@@ -22,8 +24,14 @@ loadingRouter.use(authenticate);
 loadingRouter.post('/reached', singlePhotoUpload, handleReachedLoadingPoint);
 loadingRouter.patch('/:id/complete', singlePhotoUpload, handleCompleteLoading);
 loadingRouter.post('/complete', singlePhotoUpload, handleCompleteLoading);
+
+loadingRouter.post('/:id/start-trip', handleStartTrip);
+loadingRouter.post('/start-trip', handleStartTrip);
+
+loadingRouter.patch('/:id/complete-trip', singlePhotoUpload, handleCompleteTrip);
+loadingRouter.post('/complete-trip', singlePhotoUpload, handleCompleteTrip);
+
 loadingRouter.get('/active', handleGetActiveLoading);
 
 // Admin & Operations dashboard listing endpoint
 loadingRouter.get('/', requireRole('ADMIN', 'SUPER_ADMIN'), handleListLoadingRecords);
-

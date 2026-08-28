@@ -249,35 +249,42 @@ export async function translateText(
 
   // 1. Groq Chat API translation
   if (process.env.GROQ_API_KEY) {
-    try {
-      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'qwen/qwen3.6-27b',
-          messages: [
-            {
-              role: 'user',
-              content: `/no_think\nTranslate the following text into ${langName}. Return ONLY the translated text, nothing else:\n\n${text}`,
-            },
-          ],
-          temperature: 0.1,
-        }),
-      });
+    const models = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
+    for (const model of models) {
+      try {
+        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              {
+                role: 'system',
+                content: `You are a professional translator. Translate the text into ${langName}. Do NOT summarize, comment, reformat, or add anything. Return ONLY the translated text.`,
+              },
+              {
+                role: 'user',
+                content: text,
+              },
+            ],
+            temperature: 0.1,
+          }),
+        });
 
-      if (res.ok) {
-        const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
-        let content = data.choices?.[0]?.message?.content?.trim();
-        if (content) {
-          content = stripThinkTags(content);
-          if (content) return content;
+        if (res.ok) {
+          const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+          let content = data.choices?.[0]?.message?.content?.trim();
+          if (content) {
+            content = stripThinkTags(content);
+            if (content) return content;
+          }
         }
+      } catch (err) {
+        logger.warn({ err, model }, 'Groq translation failed');
       }
-    } catch (err) {
-      logger.warn({ err }, 'Groq translation failed');
     }
   }
 
