@@ -14,7 +14,7 @@
     "test:watch": "vitest",
     "prisma:generate": "prisma generate",
     "migrate:dev": "prisma migrate dev",
-    "migrate:deploy": "prisma migrate deploy",
+    "migrate:deploy": "prisma migrate resolve --rolled-back 20260829_scalability_indexes || true && prisma migrate deploy",
     "seed": "prisma db seed"
   },
   "prisma": {
