@@ -18,6 +18,10 @@ import { toComplaintPublic, toComplaintDetail } from '../../lib/serializers';
 import { uploadBuffer, cloudinaryFolder } from '../../lib/cloudinary';
 import { dispatchComplaintEvent } from '../../lib/notify';
 import { transcribeAudio, transcribeAudioFromUrl, translateText } from '../../lib/transcribe';
+import { getActiveAdminUserIds } from '../../lib/admin-cache';
+import { findLeastLoadedAdmin } from '../../lib/admin-load-balancer';
+import { TimedBloomFilter } from '../../lib/bloom-filter';
+import { enqueueComplaintMedia } from '../../jobs/queue';
 import { ApiError } from '../../errors/api-error';
 
 /** The authenticated caller, as far as the complaint layer is concerned. */
@@ -36,6 +40,9 @@ export interface EvidenceFile {
 export type ComplaintEvidence = Partial<Record<AttachmentKind, EvidenceFile>>;
 
 const ADMIN_ROLES: Role[] = ['ADMIN', 'SUPER_ADMIN'];
+
+/** Bloom filter to detect duplicate complaint submissions within a 5-minute window. */
+const recentComplaints = new TimedBloomFilter(5 * 60_000, 4096, 5);
 
 /**
  * Photos go to Cloudinary's image pipeline; voice notes and videos both go to its video
@@ -101,22 +108,11 @@ export async function create(
   }
 
   const categoryToUse = input.category ?? 'SUPPORT';
-  const matchingAdmin = await prisma.user.findFirst({
-    where: {
-      role: { in: ['ADMIN', 'SUPER_ADMIN', 'EXECUTIVE'] },
-      isActive: true,
-      approvalStatus: 'APPROVED',
-      category: categoryToUse,
-    },
-    select: { id: true },
-  });
-  const autoAssignedToId = matchingAdmin?.id ?? null;
+  // Load-balanced admin assignment — picks the admin with fewest active complaints.
+  const autoAssignedToId = await findLeastLoadedAdmin(categoryToUse);
 
   const year = new Date().getFullYear();
-  const admins = await prisma.user.findMany({
-    where: { role: { in: ADMIN_ROLES }, isActive: true },
-    select: { id: true },
-  });
+  const adminIds = await getActiveAdminUserIds();
 
   const voiceFile = evidence.VOICE;
   let voiceTranscription: string | null = null;
@@ -204,10 +200,10 @@ export async function create(
       },
     });
 
-    if (admins.length > 0) {
+    if (adminIds.length > 0) {
       await tx.notification.createMany({
-        data: admins.map((a) => ({
-          userId: a.id,
+        data: adminIds.map((id) => ({
+          userId: id,
           type: 'COMPLAINT_CREATED' as const,
           title: `New complaint ${complaintNo}`,
           body: input.title,
@@ -223,7 +219,7 @@ export async function create(
   // Live + push delivery, post-commit and best-effort — the admins' Notification rows
   // (written in the transaction above) are the durable record if this fails.
   dispatchComplaintEvent({
-    userIds: admins.map((a) => a.id),
+    userIds: adminIds,
     event: REALTIME_EVENTS.complaintCreated,
     payload: {
       complaintId: created.id,

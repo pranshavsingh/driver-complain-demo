@@ -4,6 +4,7 @@ import type { Role, ComplaintEventPayload, RealtimeEvent } from '@driver-complai
 import { corsOrigins } from '../config/env';
 import { verifyAccessToken } from '../lib/jwt';
 import { logger } from '../lib/logger';
+import { redis, duplicateRedis } from '../lib/redis';
 
 /** What we attach to each authenticated socket after the handshake. */
 interface SocketData {
@@ -85,6 +86,22 @@ export function initRealtime(server: HttpServer): RealtimeServer {
       logger.debug({ userId, socketId: socket.id, reason }, 'Realtime client disconnected');
     });
   });
+
+  // Attach Redis adapter for horizontal scaling — no-op when Redis is unavailable.
+  if (redis) {
+    const sub = duplicateRedis();
+    if (sub) {
+      // @ts-expect-error Optional dependency resolved dynamically at runtime
+      import('@socket.io/redis-adapter')
+        .then(({ createAdapter }: any) => {
+          instance.adapter(createAdapter(redis, sub));
+          logger.info('Socket.IO Redis adapter attached (horizontal scaling enabled)');
+        })
+        .catch(() => {
+          logger.info('Socket.IO Redis adapter not available — using in-memory (npm i @socket.io/redis-adapter)');
+        });
+    }
+  }
 
   io = instance;
   logger.info('Realtime (Socket.IO) attached');

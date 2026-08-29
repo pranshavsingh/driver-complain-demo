@@ -27,6 +27,7 @@ const EnvSchema = z.object({
   FIREBASE_SERVICE_ACCOUNT: z.string().optional(),
 
   CORS_ORIGINS: z.string().default('http://localhost:3000'),
+  REDIS_URL: z.string().optional(),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   LOGIN_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(5),
   LOGIN_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(900_000),

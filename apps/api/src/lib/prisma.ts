@@ -4,6 +4,10 @@ import { env } from '../config/env';
 /**
  * Reuse a single PrismaClient across hot-reloads in dev; a fresh one per process
  * in production. Prevents connection-pool exhaustion under tsx --watch.
+ *
+ * Connection pool size is controlled via DATABASE_URL query params:
+ *   ?connection_limit=20&pool_timeout=30
+ * See the scalability documentation for recommended values per load tier.
  */
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
@@ -16,3 +20,4 @@ export const prisma =
 if (env.NODE_ENV !== 'production') {
   globalForPrisma.prisma = prisma;
 }
+

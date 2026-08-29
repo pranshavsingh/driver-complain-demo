@@ -13,7 +13,11 @@ export function initSentry(): void {
   Sentry.init({
     dsn: env.SENTRY_DSN,
     environment: env.SENTRY_ENVIRONMENT,
-    tracesSampleRate: env.SENTRY_TRACES_SAMPLE_RATE,
+    // Use 0.5 in staging for bottleneck profiling; keep the configured rate in production.
+    tracesSampleRate:
+      env.SENTRY_ENVIRONMENT === 'staging'
+        ? Math.max(env.SENTRY_TRACES_SAMPLE_RATE, 0.5)
+        : env.SENTRY_TRACES_SAMPLE_RATE,
     enabled: sentryEnabled,
   });
 }

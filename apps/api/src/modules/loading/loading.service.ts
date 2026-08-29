@@ -1,6 +1,7 @@
 import { prisma } from '../../lib/prisma';
 import { uploadBuffer, cloudinaryFolder } from '../../lib/cloudinary';
 import { emitToUsers } from '../../realtime/socket';
+import { getActiveAdminUserIds } from '../../lib/admin-cache';
 import { REALTIME_EVENTS, type LoadingRecord, type LoadingStatus } from '@driver-complaint/shared-types';
 import { ApiError } from '../../errors/api-error';
 
@@ -23,13 +24,18 @@ async function getCompletedTripsCountForDriver(driverId: string): Promise<number
   });
 }
 
-async function serializeLoadingRecord(rec: any): Promise<LoadingRecord> {
+async function serializeLoadingRecord(
+  rec: any,
+  overrideCompletedTripsCount?: number,
+): Promise<LoadingRecord> {
   const driverUser = rec.driver?.user;
   const driverName = driverUser ? `${driverUser.firstName} ${driverUser.lastName}` : undefined;
   const vehicle = rec.driver?.vehicles?.[0];
   const vehiclePlate = vehicle ? vehicle.plateNumber : undefined;
 
-  const count = rec.driverId ? await getCompletedTripsCountForDriver(rec.driverId) : 0;
+  const count =
+    overrideCompletedTripsCount ??
+    (rec.driverId ? await getCompletedTripsCountForDriver(rec.driverId) : 0);
 
   return {
     id: rec.id,
@@ -127,11 +133,7 @@ export async function markReachedLoadingPoint(opts: {
   const serialized = await serializeLoadingRecord(record);
 
   // Broadcast realtime event to all admins
-  const admins = await prisma.user.findMany({
-    where: { role: { in: ['ADMIN', 'SUPER_ADMIN'] } },
-    select: { id: true },
-  });
-  const adminIds = admins.map((a) => a.id);
+  const adminIds = await getActiveAdminUserIds();
   emitToUsers(adminIds, REALTIME_EVENTS.loadingReached as any, {
     complaintId: record.id,
     complaintNo: 'LOADING-REACHED',
@@ -209,11 +211,7 @@ export async function markLoadingCompleted(opts: {
   const serialized = await serializeLoadingRecord(updated);
 
   // Broadcast realtime event to admins
-  const admins = await prisma.user.findMany({
-    where: { role: { in: ['ADMIN', 'SUPER_ADMIN'] } },
-    select: { id: true },
-  });
-  const adminIds = admins.map((a) => a.id);
+  const adminIds = await getActiveAdminUserIds();
   emitToUsers(adminIds, REALTIME_EVENTS.loadingCompleted as any, {
     complaintId: updated.id,
     complaintNo: 'LOADING-COMPLETED',
@@ -387,5 +385,26 @@ export async function listLoadingRecords(opts: {
     },
   });
 
-  return await Promise.all(records.map(serializeLoadingRecord));
+  if (records.length === 0) return [];
+
+  // Batch query completed trip counts for all distinct driverIds in the result set
+  const driverIds = Array.from(new Set(records.map((r) => r.driverId).filter(Boolean)));
+  const counts = await prisma.loadingRecord.groupBy({
+    by: ['driverId'],
+    where: {
+      driverId: { in: driverIds },
+      status: { in: ['TRIP_COMPLETED', 'COMPLETED'] },
+    },
+    _count: { id: true },
+  });
+
+  const countMap = new Map<string, number>(
+    counts.map((c) => [c.driverId, c._count.id]),
+  );
+
+  return Promise.all(
+    records.map((rec) =>
+      serializeLoadingRecord(rec, countMap.get(rec.driverId) ?? 0),
+    ),
+  );
 }
