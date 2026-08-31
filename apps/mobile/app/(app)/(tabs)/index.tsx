@@ -39,6 +39,11 @@ export default function DriverHomeDashboardScreen(): ReactElement {
   };
 
   const handleTilePress = (tile: GridTile): void => {
+    if (tile.id === 'TRIP_DETAILS') {
+      router.push('/(app)/trip-details');
+      return;
+    }
+
     // 1. Complaint / Status -> Navigates directly to Complaint Status tab
     if (tile.id === 'COMPLAINT_STATUS') {
       router.push('/(app)/(tabs)/history');

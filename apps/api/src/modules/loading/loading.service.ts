@@ -15,27 +15,47 @@ export function formatDurationText(minutes: number | null | undefined): string |
   return `${hrs}h ${mins}m`;
 }
 
-async function getCompletedTripsCountForDriver(driverId: string): Promise<number> {
-  return await prisma.loadingRecord.count({
-    where: {
-      driverId,
-      status: { in: ['TRIP_COMPLETED', 'COMPLETED'] },
-    },
-  });
+export async function getDriverTripStats(driverId: string): Promise<{
+  completedTripsCount: number;
+  monthlyTripsCount: number;
+}> {
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  const [completedTripsCount, monthlyTripsCount] = await Promise.all([
+    prisma.loadingRecord.count({
+      where: {
+        driverId,
+        status: { in: ['TRIP_COMPLETED', 'COMPLETED'] },
+      },
+    }),
+    prisma.loadingRecord.count({
+      where: {
+        driverId,
+        status: { in: ['TRIP_COMPLETED', 'COMPLETED'] },
+        createdAt: { gte: startOfMonth },
+      },
+    }),
+  ]);
+
+  return { completedTripsCount, monthlyTripsCount };
 }
 
 async function serializeLoadingRecord(
   rec: any,
-  overrideCompletedTripsCount?: number,
+  overrideStats?: { completedTripsCount?: number; monthlyTripsCount?: number },
 ): Promise<LoadingRecord> {
   const driverUser = rec.driver?.user;
   const driverName = driverUser ? `${driverUser.firstName} ${driverUser.lastName}` : undefined;
   const vehicle = rec.driver?.vehicles?.[0];
   const vehiclePlate = vehicle ? vehicle.plateNumber : undefined;
 
-  const count =
-    overrideCompletedTripsCount ??
-    (rec.driverId ? await getCompletedTripsCountForDriver(rec.driverId) : 0);
+  let stats = overrideStats;
+  if (!stats) {
+    stats = rec.driverId
+      ? await getDriverTripStats(rec.driverId)
+      : { completedTripsCount: 0, monthlyTripsCount: 0 };
+  }
 
   return {
     id: rec.id,
@@ -73,7 +93,8 @@ async function serializeLoadingRecord(
     updatedAt: rec.updatedAt.toISOString(),
     driverName,
     vehiclePlate,
-    completedTripsCount: count,
+    completedTripsCount: stats.completedTripsCount ?? 0,
+    monthlyTripsCount: stats.monthlyTripsCount ?? 0,
   };
 }
 
@@ -341,26 +362,51 @@ export async function completeTrip(opts: {
   return await serializeLoadingRecord(updated);
 }
 
-export async function getActiveLoadingRecord(userId: string): Promise<LoadingRecord | null> {
+export async function getActiveLoadingRecord(userId: string): Promise<{
+  active: LoadingRecord | null;
+  stats: { completedTripsCount: number; monthlyTripsCount: number };
+}> {
   const driver = await prisma.driver.findUnique({
     where: { userId },
   });
-  if (!driver) return null;
+  if (!driver) {
+    return { active: null, stats: { completedTripsCount: 0, monthlyTripsCount: 0 } };
+  }
 
-  const record = await prisma.loadingRecord.findFirst({
-    where: { driverId: driver.id, status: { in: ['REACHED', 'COMPLETED', 'TRIP_STARTED'] } },
-    orderBy: { createdAt: 'desc' },
-    include: {
-      driver: {
-        include: {
-          user: true,
-          vehicles: true,
+  const [record, stats] = await Promise.all([
+    prisma.loadingRecord.findFirst({
+      where: { driverId: driver.id, status: { in: ['REACHED', 'COMPLETED', 'TRIP_STARTED'] } },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        driver: {
+          include: {
+            user: true,
+            vehicles: true,
+          },
         },
       },
-    },
+    }),
+    getDriverTripStats(driver.id),
+  ]);
+
+  return {
+    active: record ? await serializeLoadingRecord(record, stats) : null,
+    stats,
+  };
+}
+
+export async function listDriverLoadingRecords(userId: string, limit = 50): Promise<LoadingRecord[]> {
+  const driver = await prisma.driver.findUnique({
+    where: { userId },
+    select: { id: true },
   });
 
-  return record ? await serializeLoadingRecord(record) : null;
+  if (!driver) return [];
+
+  return listLoadingRecords({
+    driverId: driver.id,
+    limit: Math.min(Math.max(limit, 1), 100),
+  });
 }
 
 export async function listLoadingRecords(opts: {
@@ -389,22 +435,38 @@ export async function listLoadingRecords(opts: {
 
   // Batch query completed trip counts for all distinct driverIds in the result set
   const driverIds = Array.from(new Set(records.map((r) => r.driverId).filter(Boolean)));
-  const counts = await prisma.loadingRecord.groupBy({
-    by: ['driverId'],
-    where: {
-      driverId: { in: driverIds },
-      status: { in: ['TRIP_COMPLETED', 'COMPLETED'] },
-    },
-    _count: { id: true },
-  });
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-  const countMap = new Map<string, number>(
-    counts.map((c) => [c.driverId, c._count.id]),
-  );
+  const [totalCounts, monthlyCounts] = await Promise.all([
+    prisma.loadingRecord.groupBy({
+      by: ['driverId'],
+      where: {
+        driverId: { in: driverIds },
+        status: { in: ['TRIP_COMPLETED', 'COMPLETED'] },
+      },
+      _count: { id: true },
+    }),
+    prisma.loadingRecord.groupBy({
+      by: ['driverId'],
+      where: {
+        driverId: { in: driverIds },
+        status: { in: ['TRIP_COMPLETED', 'COMPLETED'] },
+        createdAt: { gte: startOfMonth },
+      },
+      _count: { id: true },
+    }),
+  ]);
+
+  const totalMap = new Map<string, number>(totalCounts.map((c) => [c.driverId, c._count.id]));
+  const monthlyMap = new Map<string, number>(monthlyCounts.map((c) => [c.driverId, c._count.id]));
 
   return Promise.all(
     records.map((rec) =>
-      serializeLoadingRecord(rec, countMap.get(rec.driverId) ?? 0),
+      serializeLoadingRecord(rec, {
+        completedTripsCount: totalMap.get(rec.driverId) ?? 0,
+        monthlyTripsCount: monthlyMap.get(rec.driverId) ?? 0,
+      }),
     ),
   );
 }

@@ -5,6 +5,7 @@ import {
   startTrip,
   completeTrip,
   getActiveLoadingRecord,
+  listDriverLoadingRecords,
   listLoadingRecords,
 } from './loading.service';
 import {
@@ -107,8 +108,18 @@ export async function handleGetActiveLoading(req: Request, res: Response): Promi
   const userId = req.user?.id;
   if (!userId) throw ApiError.unauthorized();
 
-  const record = await getActiveLoadingRecord(userId);
-  sendSuccess(res, { active: record });
+  const { active, stats } = await getActiveLoadingRecord(userId);
+  sendSuccess(res, { active, stats });
+}
+
+export async function handleListMyLoadingRecords(req: Request, res: Response): Promise<void> {
+  const userId = req.user?.id;
+  if (!userId) throw ApiError.unauthorized();
+
+  const requestedLimit = req.query.limit ? Number(req.query.limit) : 50;
+  const limit = Number.isFinite(requestedLimit) ? requestedLimit : 50;
+  const records = await listDriverLoadingRecords(userId, limit);
+  sendSuccess(res, records);
 }
 
 export async function handleListLoadingRecords(req: Request, res: Response): Promise<void> {

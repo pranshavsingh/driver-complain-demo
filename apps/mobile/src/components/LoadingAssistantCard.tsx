@@ -2,10 +2,11 @@ import { useEffect, useState, type ReactElement } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
-import type { LoadingRecord } from '@driver-complaint/shared-types';
+import type { LoadingRecord, LoadingStats } from '@driver-complaint/shared-types';
 import { loading, type FileToUpload } from '../api/endpoints';
 import { Button } from './Button';
 import { Card } from './Card';
+import { TotalTripCard } from './TotalTripCard';
 import { PHOTO_QUALITY } from '../media/limits';
 import { colors, fontSize, radius, spacing } from '../theme';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,17 +17,35 @@ export function LoadingAssistantCard(): ReactElement {
   const [loadingInitial, setLoadingInitial] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [elapsedSec, setElapsedSec] = useState(0);
+  const [tripStats, setTripStats] = useState<LoadingStats>({
+    completedTripsCount: 0,
+    monthlyTripsCount: 0,
+  });
+
+  const fetchActiveAndStats = async () => {
+    try {
+      const res = await loading.active();
+      if (res.active) {
+        setActiveRecord(res.active);
+      }
+      if (res.stats) {
+        setTripStats(res.stats);
+      } else if (res.active?.completedTripsCount !== undefined) {
+        setTripStats({
+          completedTripsCount: res.active.completedTripsCount ?? 0,
+          monthlyTripsCount: res.active.monthlyTripsCount ?? 0,
+        });
+      }
+    } catch (err) {
+      console.warn('Failed to fetch active loading session:', err);
+    }
+  };
 
   useEffect(() => {
     let mounted = true;
     void (async () => {
       try {
-        const res = await loading.active();
-        if (mounted && res.active) {
-          setActiveRecord(res.active);
-        }
-      } catch (err) {
-        console.warn('Failed to fetch active loading session:', err);
+        await fetchActiveAndStats();
       } finally {
         if (mounted) setLoadingInitial(false);
       }
@@ -158,6 +177,7 @@ export function LoadingAssistantCard(): ReactElement {
 
       setActiveRecord(record);
       setCompletedRecord(null);
+      await fetchActiveAndStats();
       Alert.alert('📍 Reached Loading Point', 'Arrival milestone recorded! Loading timer started.');
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to record loading arrival');
@@ -195,6 +215,7 @@ export function LoadingAssistantCard(): ReactElement {
 
       setActiveRecord(tripStartedRecord);
       setCompletedRecord(null);
+      await fetchActiveAndStats();
       Alert.alert(
         '✅ Loading Done & 🚛 Trip Started',
         `Loading completed in ${completedRecordData.formattedWaitingTime || '< 1 min'}. Your trip timer has started!`,
@@ -226,6 +247,14 @@ export function LoadingAssistantCard(): ReactElement {
 
       setActiveRecord(null);
       setCompletedRecord(record);
+      if (record.completedTripsCount !== undefined || record.monthlyTripsCount !== undefined) {
+        setTripStats({
+          completedTripsCount: record.completedTripsCount ?? tripStats.completedTripsCount + 1,
+          monthlyTripsCount: record.monthlyTripsCount ?? tripStats.monthlyTripsCount + 1,
+        });
+      } else {
+        await fetchActiveAndStats();
+      }
       Alert.alert('🏁 Trip Completed!', `Trip completed in ${record.formattedTripDuration || '< 1 min'}. Total Trips: ${record.completedTripsCount ?? 1}`);
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to complete trip');
@@ -245,137 +274,145 @@ export function LoadingAssistantCard(): ReactElement {
   const isTripStarted = activeRecord?.status === 'TRIP_STARTED';
 
   return (
-    <Card title="Loading & Trip Assistant 🚛">
-      {activeRecord ? (
-        <View style={styles.activeContainer}>
-          {isTripStarted ? (
-            <View style={styles.tripStatusBadge}>
-              <View style={styles.pulsingGreenDot} />
-              <Ionicons name="bus-outline" size={16} color="#065F46" style={{ marginRight: 2 }} />
-              <Text style={styles.tripStatusBadgeText}>YOUR TRIP IS STARTED</Text>
-            </View>
-          ) : (
-            <View style={styles.statusBadge}>
-              <View style={styles.pulsingDot} />
-              <Ionicons name="time-outline" size={16} color="#92400E" style={{ marginRight: 2 }} />
-              <Text style={styles.statusBadgeText}>LOADING IN PROGRESS</Text>
-            </View>
-          )}
-
-          <Text style={styles.timerTitle}>
-            {isTripStarted ? 'Live Trip Duration' : 'Loading Duration'}
-          </Text>
-          <Text style={isTripStarted ? styles.tripTimerText : styles.timerText}>
-            {formatElapsed(elapsedSec)}
-          </Text>
-
-          <View style={styles.infoBox}>
-            <Text style={styles.infoLabel}>
-              {isTripStarted ? 'Trip Started At:' : 'Arrived At:'}
-            </Text>
-            <Text style={styles.infoValue}>
-              {new Date(
-                isTripStarted && activeRecord.tripStartedAt
-                  ? activeRecord.tripStartedAt
-                  : activeRecord.reachedAt,
-              ).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </Text>
-            {(isTripStarted ? activeRecord.tripStartAddress : activeRecord.reachedAddress) ? (
-              <>
-                <Text style={styles.infoLabel}>Location:</Text>
-                <Text style={styles.infoValue} numberOfLines={2}>
-                  {isTripStarted ? activeRecord.tripStartAddress : activeRecord.reachedAddress}
-                </Text>
-              </>
-            ) : null}
-          </View>
-
-          {isTripStarted ? (
-            <Pressable
-              style={[styles.actionBtn, styles.completeTripBtn, submitting && styles.btnDisabled]}
-              onPress={handleCompleteTrip}
-              disabled={submitting}
-            >
-              {submitting ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
-              ) : (
-                <>
-                  <Ionicons name="flag" size={20} color="#FFFFFF" />
-                  <Text style={styles.actionBtnText}>Complete Trip</Text>
-                </>
-              )}
-            </Pressable>
-          ) : (
-            <Pressable
-              style={[styles.actionBtn, styles.loadingDoneBtn, submitting && styles.btnDisabled]}
-              onPress={handleLoadingDone}
-              disabled={submitting}
-            >
-              {submitting ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
-              ) : (
-                <>
-                  <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
-                  <Text style={styles.actionBtnText}>Loading Done</Text>
-                </>
-              )}
-            </Pressable>
-          )}
-        </View>
-      ) : completedRecord ? (
-        <View style={styles.completedContainer}>
-          <Text style={styles.completedTitle}>🎉 Trip Completed Successfully!</Text>
-
-          <View style={styles.tripCountBadge}>
-            <Ionicons name="trophy" size={20} color="#D97706" />
-            <Text style={styles.tripCountText}>
-              Total Completed Trips: <Text style={styles.tripCountNumber}>{completedRecord.completedTripsCount ?? 1}</Text>
-            </Text>
-          </View>
-
-          <View style={styles.resultBox}>
-            {completedRecord.formattedWaitingTime ? (
-              <View style={styles.summaryRow}>
-                <Text style={styles.resultLabel}>Loading Time:</Text>
-                <Text style={styles.summaryValue}>{completedRecord.formattedWaitingTime}</Text>
+    <View style={{ gap: spacing.md }}>
+      <Card title="Loading & Trip Assistant 🚛">
+        {activeRecord ? (
+          <View style={styles.activeContainer}>
+            {isTripStarted ? (
+              <View style={styles.tripStatusBadge}>
+                <View style={styles.pulsingGreenDot} />
+                <Ionicons name="bus-outline" size={16} color="#065F46" style={{ marginRight: 2 }} />
+                <Text style={styles.tripStatusBadgeText}>YOUR TRIP IS STARTED</Text>
               </View>
-            ) : null}
-            <View style={styles.summaryRow}>
-              <Text style={styles.resultLabel}>Trip Duration:</Text>
-              <Text style={styles.resultValue}>
-                {completedRecord.formattedTripDuration || '< 1 min'}
+            ) : (
+              <View style={styles.statusBadge}>
+                <View style={styles.pulsingDot} />
+                <Ionicons name="time-outline" size={16} color="#92400E" style={{ marginRight: 2 }} />
+                <Text style={styles.statusBadgeText}>LOADING IN PROGRESS</Text>
+              </View>
+            )}
+
+            <Text style={styles.timerTitle}>
+              {isTripStarted ? 'Live Trip Duration' : 'Loading Duration'}
+            </Text>
+            <Text style={isTripStarted ? styles.tripTimerText : styles.timerText}>
+              {formatElapsed(elapsedSec)}
+            </Text>
+
+            <View style={styles.infoBox}>
+              <Text style={styles.infoLabel}>
+                {isTripStarted ? 'Trip Started At:' : 'Arrived At:'}
+              </Text>
+              <Text style={styles.infoValue}>
+                {new Date(
+                  isTripStarted && activeRecord.tripStartedAt
+                    ? activeRecord.tripStartedAt
+                    : activeRecord.reachedAt,
+                ).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </Text>
+              {(isTripStarted ? activeRecord.tripStartAddress : activeRecord.reachedAddress) ? (
+                <>
+                  <Text style={styles.infoLabel}>Location:</Text>
+                  <Text style={styles.infoValue} numberOfLines={2}>
+                    {isTripStarted ? activeRecord.tripStartAddress : activeRecord.reachedAddress}
+                  </Text>
+                </>
+              ) : null}
+            </View>
+
+            {isTripStarted ? (
+              <Pressable
+                style={[styles.actionBtn, styles.completeTripBtn, submitting && styles.btnDisabled]}
+                onPress={handleCompleteTrip}
+                disabled={submitting}
+              >
+                {submitting ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <>
+                    <Ionicons name="flag" size={20} color="#FFFFFF" />
+                    <Text style={styles.actionBtnText}>Complete Trip</Text>
+                  </>
+                )}
+              </Pressable>
+            ) : (
+              <Pressable
+                style={[styles.actionBtn, styles.loadingDoneBtn, submitting && styles.btnDisabled]}
+                onPress={handleLoadingDone}
+                disabled={submitting}
+              >
+                {submitting ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <>
+                    <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+                    <Text style={styles.actionBtnText}>Loading Done</Text>
+                  </>
+                )}
+              </Pressable>
+            )}
+          </View>
+        ) : completedRecord ? (
+          <View style={styles.completedContainer}>
+            <Text style={styles.completedTitle}>🎉 Trip Completed Successfully!</Text>
+
+            <View style={styles.tripCountBadge}>
+              <Ionicons name="trophy" size={20} color="#D97706" />
+              <Text style={styles.tripCountText}>
+                Total Completed Trips: <Text style={styles.tripCountNumber}>{completedRecord.completedTripsCount ?? 1}</Text>
               </Text>
             </View>
-          </View>
 
-          <Button
-            label="Start New Loading Session"
-            variant="secondary"
-            onPress={() => setCompletedRecord(null)}
-          />
-        </View>
-      ) : (
-        <View style={styles.idleContainer}>
-          <Text style={styles.idleDescription}>
-            Upon arrival at the warehouse or loading location, tap below to verify GPS, capture proof photo, and start automated timer analytics.
-          </Text>
-          <Pressable
-            style={[styles.actionBtn, styles.reachedBtn, submitting && styles.btnDisabled]}
-            onPress={handleReached}
-            disabled={submitting}
-          >
-            {submitting ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
-            ) : (
-              <>
-                <Ionicons name="location" size={20} color="#FFFFFF" />
-                <Text style={styles.actionBtnText}>Reached Loading Point</Text>
-              </>
-            )}
-          </Pressable>
-        </View>
-      )}
-    </Card>
+            <View style={styles.resultBox}>
+              {completedRecord.formattedWaitingTime ? (
+                <View style={styles.summaryRow}>
+                  <Text style={styles.resultLabel}>Loading Time:</Text>
+                  <Text style={styles.summaryValue}>{completedRecord.formattedWaitingTime}</Text>
+                </View>
+              ) : null}
+              <View style={styles.summaryRow}>
+                <Text style={styles.resultLabel}>Trip Duration:</Text>
+                <Text style={styles.resultValue}>
+                  {completedRecord.formattedTripDuration || '< 1 min'}
+                </Text>
+              </View>
+            </View>
+
+            <Button
+              label="Start New Loading Session"
+              variant="secondary"
+              onPress={() => setCompletedRecord(null)}
+            />
+          </View>
+        ) : (
+          <View style={styles.idleContainer}>
+            <Text style={styles.idleDescription}>
+              Upon arrival at the warehouse or loading location, tap below to verify GPS, capture proof photo, and start automated timer analytics.
+            </Text>
+            <Pressable
+              style={[styles.actionBtn, styles.reachedBtn, submitting && styles.btnDisabled]}
+              onPress={handleReached}
+              disabled={submitting}
+            >
+              {submitting ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <>
+                  <Ionicons name="location" size={20} color="#FFFFFF" />
+                  <Text style={styles.actionBtnText}>Reached Loading Point</Text>
+                </>
+              )}
+            </Pressable>
+          </View>
+        )}
+      </Card>
+
+      {/* Total Trip Card under Loading Assistant Card */}
+      <TotalTripCard
+        monthlyTripsCount={tripStats.monthlyTripsCount}
+        completedTripsCount={tripStats.completedTripsCount}
+      />
+    </View>
   );
 }
 

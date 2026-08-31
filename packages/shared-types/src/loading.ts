@@ -42,8 +42,16 @@ export const LoadingRecordSchema = z.object({
   driverName: z.string().nullable().optional(),
   vehiclePlate: z.string().nullable().optional(),
   completedTripsCount: z.number().nullable().optional(),
+  monthlyTripsCount: z.number().nullable().optional(),
 });
 export type LoadingRecord = z.infer<typeof LoadingRecordSchema>;
+
+export const LoadingStatsSchema = z.object({
+  completedTripsCount: z.number(),
+  monthlyTripsCount: z.number(),
+});
+export type LoadingStats = z.infer<typeof LoadingStatsSchema>;
+
 
 export const CreateReachedLoadingSchema = z.object({
   latitude: z.coerce.number(),

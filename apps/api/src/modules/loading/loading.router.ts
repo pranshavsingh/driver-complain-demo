@@ -6,6 +6,7 @@ import {
   handleStartTrip,
   handleCompleteTrip,
   handleGetActiveLoading,
+  handleListMyLoadingRecords,
   handleListLoadingRecords,
 } from './loading.controller';
 import { authenticate } from '../../middleware/authenticate';
@@ -32,6 +33,7 @@ loadingRouter.patch('/:id/complete-trip', singlePhotoUpload, handleCompleteTrip)
 loadingRouter.post('/complete-trip', singlePhotoUpload, handleCompleteTrip);
 
 loadingRouter.get('/active', handleGetActiveLoading);
+loadingRouter.get('/mine', handleListMyLoadingRecords);
 
 // Admin & Operations dashboard listing endpoint
 loadingRouter.get('/', requireRole('ADMIN', 'SUPER_ADMIN'), handleListLoadingRecords);
