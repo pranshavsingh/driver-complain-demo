@@ -78,6 +78,14 @@ export function Layout(): ReactElement {
             <Truck size={18} className="nav-icon" />
             <span className="nav-label">Loading & Waiting</span>
           </NavLink>
+
+          <NavLink
+            to="/trips"
+            className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
+          >
+            <Truck size={18} className="nav-icon" />
+            <span className="nav-label">Trip Analytics & Details</span>
+          </NavLink>
         </nav>
 
         <div className="sidebar-footer">

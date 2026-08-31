@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { ComplaintCategory } from '@driver-complaint/shared-types';
 
 export interface GridTile {
-  id: ComplaintCategory | 'TRIP_DETAILS';
+  id: ComplaintCategory;
   title: string;
   subtitle?: string;
   icon: keyof typeof Ionicons.glyphMap;
@@ -64,16 +64,6 @@ export const DASHBOARD_TILES: GridTile[] = [
     bgColor: '#FFE4E6', // Pink (matching diagram)
     borderColor: '#FDA4AF',
     textColor: '#9F1239',
-    iconBgColor: '#FFFFFF',
-  },
-  {
-    id: 'TRIP_DETAILS',
-    title: 'Trip Details',
-    subtitle: 'Routes, Time & History',
-    icon: 'map',
-    bgColor: '#E0F2FE',
-    borderColor: '#7DD3FC',
-    textColor: '#075985',
     iconBgColor: '#FFFFFF',
   },
   {

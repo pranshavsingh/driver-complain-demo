@@ -6,8 +6,10 @@ import {
   handleStartTrip,
   handleCompleteTrip,
   handleGetActiveLoading,
-  handleListMyLoadingRecords,
   handleListLoadingRecords,
+  handleExportTrips,
+  handleGetMonthlyTripSummaries,
+  handleExportTripsCsv,
 } from './loading.controller';
 import { authenticate } from '../../middleware/authenticate';
 import { requireRole } from '../../middleware/authorize';
@@ -33,7 +35,10 @@ loadingRouter.patch('/:id/complete-trip', singlePhotoUpload, handleCompleteTrip)
 loadingRouter.post('/complete-trip', singlePhotoUpload, handleCompleteTrip);
 
 loadingRouter.get('/active', handleGetActiveLoading);
-loadingRouter.get('/mine', handleListMyLoadingRecords);
 
 // Admin & Operations dashboard listing endpoint
+loadingRouter.get('/monthly-summary', requireRole('ADMIN', 'SUPER_ADMIN'), handleGetMonthlyTripSummaries);
+loadingRouter.get('/export-csv', requireRole('ADMIN', 'SUPER_ADMIN'), handleExportTripsCsv);
+loadingRouter.get('/trips/export', requireRole('ADMIN', 'SUPER_ADMIN'), handleExportTrips);
+loadingRouter.get('/trips', requireRole('ADMIN', 'SUPER_ADMIN'), handleListLoadingRecords);
 loadingRouter.get('/', requireRole('ADMIN', 'SUPER_ADMIN'), handleListLoadingRecords);

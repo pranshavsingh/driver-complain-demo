@@ -52,6 +52,21 @@ export const LoadingStatsSchema = z.object({
 });
 export type LoadingStats = z.infer<typeof LoadingStatsSchema>;
 
+export const DriverMonthlyTripSummarySchema = z.object({
+  driverId: z.string(),
+  driverName: z.string(),
+  licenseNumber: z.string(),
+  vehiclePlate: z.string(),
+  year: z.number(),
+  month: z.number(),
+  monthLabel: z.string(),
+  completedTripsCount: z.number(),
+  totalTripDurationMinutes: z.number(),
+  avgTripDurationMinutes: z.number(),
+  totalWaitingTimeMinutes: z.number(),
+});
+export type DriverMonthlyTripSummary = z.infer<typeof DriverMonthlyTripSummarySchema>;
+
 
 export const CreateReachedLoadingSchema = z.object({
   latitude: z.coerce.number(),

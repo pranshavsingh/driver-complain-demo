@@ -20,6 +20,8 @@ import {
   type VehiclePublic,
   LoadingRecordSchema,
   type LoadingRecord,
+  DriverMonthlyTripSummarySchema,
+  type DriverMonthlyTripSummary,
 } from '@driver-complaint/shared-types';
 import { download, request, requestNoContent, type QueryValue } from './client';
 import { clearTokens, getRefreshToken } from './tokens';
@@ -178,8 +180,22 @@ export const complaints = {
     download('/complaints/export', { query: toQuery(filter) }, 'complaints.xlsx'),
 };
 
+export interface TripFilterQuery {
+  driverId?: string;
+  status?: string;
+  year?: number;
+  month?: number;
+  search?: string;
+}
+
 export const loading = {
-  list: (): Promise<{ data: LoadingRecord[] }> =>
-    request(z.object({ data: z.array(LoadingRecordSchema) }), '/loading'),
+  list: (query?: TripFilterQuery): Promise<{ data: LoadingRecord[] }> =>
+    request(z.object({ data: z.array(LoadingRecordSchema) }), '/loading', { query: query as any }),
+
+  monthlySummary: (query?: TripFilterQuery): Promise<{ data: DriverMonthlyTripSummary[] }> =>
+    request(z.object({ data: z.array(DriverMonthlyTripSummarySchema as any) }), '/loading/monthly-summary', { query: query as any }),
+
+  exportCsv: (query?: TripFilterQuery): Promise<void> =>
+    download('/loading/export-csv', { query: query as any }, `trips-report-${Date.now()}.csv`),
 };
 

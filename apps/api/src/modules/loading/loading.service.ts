@@ -395,20 +395,6 @@ export async function getActiveLoadingRecord(userId: string): Promise<{
   };
 }
 
-export async function listDriverLoadingRecords(userId: string, limit = 50): Promise<LoadingRecord[]> {
-  const driver = await prisma.driver.findUnique({
-    where: { userId },
-    select: { id: true },
-  });
-
-  if (!driver) return [];
-
-  return listLoadingRecords({
-    driverId: driver.id,
-    limit: Math.min(Math.max(limit, 1), 100),
-  });
-}
-
 export async function listLoadingRecords(opts: {
   driverId?: string;
   status?: LoadingStatus;
@@ -469,4 +455,279 @@ export async function listLoadingRecords(opts: {
       }),
     ),
   );
+}
+
+export interface TripFilters {
+  search?: string;
+  driverId?: string;
+  status?: string;
+  from?: Date;
+  to?: Date;
+  year?: number;
+  month?: number;
+}
+
+function tripWhere(filters: TripFilters): any {
+  const search = filters.search?.trim();
+
+  let fromDate = filters.from;
+  let toDate = filters.to;
+
+  if (!fromDate && filters.year) {
+    if (filters.month && filters.month >= 1 && filters.month <= 12) {
+      fromDate = new Date(filters.year, filters.month - 1, 1, 0, 0, 0, 0);
+      toDate = new Date(filters.year, filters.month, 0, 23, 59, 59, 999);
+    } else {
+      fromDate = new Date(filters.year, 0, 1, 0, 0, 0, 0);
+      toDate = new Date(filters.year, 11, 31, 23, 59, 59, 999);
+    }
+  }
+
+  return {
+    ...(fromDate || toDate
+      ? {
+          reachedAt: {
+            ...(fromDate ? { gte: fromDate } : {}),
+            ...(toDate ? { lte: toDate } : {}),
+          },
+        }
+      : {}),
+    ...(filters.driverId ? { driverId: filters.driverId } : {}),
+    ...(filters.status === 'ACTIVE' ? { status: 'TRIP_STARTED' } : {}),
+    ...(filters.status === 'COMPLETED' ? { status: 'TRIP_COMPLETED' } : {}),
+    ...(filters.status && filters.status !== 'ALL' && filters.status !== 'ACTIVE' && filters.status !== 'COMPLETED'
+      ? { status: filters.status as any }
+      : {}),
+    ...(search
+      ? {
+          OR: [
+            { locationName: { contains: search, mode: 'insensitive' } },
+            { reachedAddress: { contains: search, mode: 'insensitive' } },
+            { tripStartAddress: { contains: search, mode: 'insensitive' } },
+            { tripCompletedAddress: { contains: search, mode: 'insensitive' } },
+            { driver: { user: { firstName: { contains: search, mode: 'insensitive' } } } },
+            { driver: { user: { lastName: { contains: search, mode: 'insensitive' } } } },
+            { driver: { user: { employeeId: { contains: search, mode: 'insensitive' } } } },
+            { driver: { licenseNumber: { contains: search, mode: 'insensitive' } } },
+            { driver: { vehicles: { some: { plateNumber: { contains: search, mode: 'insensitive' } } } } },
+          ],
+        }
+      : {}),
+  };
+}
+
+const tripInclude = {
+  driver: { include: { user: true, vehicles: true } },
+} as const;
+
+export async function listTripRecords(opts: TripFilters & { page: number; pageSize: number }) {
+  const where = tripWhere(opts);
+  const [rows, total] = await Promise.all([
+    prisma.loadingRecord.findMany({
+      where,
+      include: tripInclude,
+      orderBy: { reachedAt: 'desc' },
+      skip: (opts.page - 1) * opts.pageSize,
+      take: opts.pageSize,
+    }),
+    prisma.loadingRecord.count({ where }),
+  ]);
+
+  return {
+    data: await Promise.all(rows.map((row) => serializeLoadingRecord(row))),
+    meta: { page: opts.page, pageSize: opts.pageSize, total, totalPages: Math.ceil(total / opts.pageSize) },
+  };
+}
+
+export async function* iterateTripRecords(filters: TripFilters) {
+  const batchSize = 500;
+  let cursor: string | undefined;
+  for (;;) {
+    const rows = await prisma.loadingRecord.findMany({
+      where: tripWhere(filters),
+      include: tripInclude,
+      orderBy: [{ reachedAt: 'desc' }, { id: 'desc' }],
+      take: batchSize,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    });
+    if (rows.length === 0) return;
+    yield rows;
+    cursor = rows.at(-1)?.id;
+    if (rows.length < batchSize) return;
+  }
+}
+
+export async function getDriverMonthlyTripSummaries(opts: {
+  year?: number;
+  month?: number;
+  driverId?: string;
+  search?: string;
+}): Promise<any[]> {
+  const currentYear = opts.year || new Date().getFullYear();
+
+  let fromDate: Date;
+  let toDate: Date;
+
+  if (opts.month && opts.month >= 1 && opts.month <= 12) {
+    fromDate = new Date(currentYear, opts.month - 1, 1, 0, 0, 0, 0);
+    toDate = new Date(currentYear, opts.month, 0, 23, 59, 59, 999);
+  } else {
+    fromDate = new Date(currentYear, 0, 1, 0, 0, 0, 0);
+    toDate = new Date(currentYear, 11, 31, 23, 59, 59, 999);
+  }
+
+  const search = opts.search?.trim();
+
+  const records = await prisma.loadingRecord.findMany({
+    where: {
+      status: { in: ['TRIP_COMPLETED', 'COMPLETED'] },
+      reachedAt: { gte: fromDate, lte: toDate },
+      ...(opts.driverId ? { driverId: opts.driverId } : {}),
+      ...(search
+        ? {
+            OR: [
+              { driver: { user: { firstName: { contains: search, mode: 'insensitive' } } } },
+              { driver: { user: { lastName: { contains: search, mode: 'insensitive' } } } },
+              { driver: { user: { employeeId: { contains: search, mode: 'insensitive' } } } },
+              { driver: { licenseNumber: { contains: search, mode: 'insensitive' } } },
+              { driver: { vehicles: { some: { plateNumber: { contains: search, mode: 'insensitive' } } } } },
+            ],
+          }
+        : {}),
+    },
+    include: {
+      driver: {
+        include: {
+          user: true,
+          vehicles: true,
+        },
+      },
+    },
+    orderBy: { reachedAt: 'desc' },
+  });
+
+  const groupMap = new Map<
+    string,
+    {
+      driverId: string;
+      driverName: string;
+      licenseNumber: string;
+      vehiclePlate: string;
+      year: number;
+      month: number;
+      completedTripsCount: number;
+      totalTripDurationMinutes: number;
+      totalWaitingTimeMinutes: number;
+    }
+  >();
+
+  for (const rec of records) {
+    const d = rec.reachedAt;
+    const recYear = d.getFullYear();
+    const recMonth = d.getMonth() + 1;
+    const key = `${rec.driverId}_${recYear}_${recMonth}`;
+
+    const driverUser = rec.driver?.user;
+    const driverName = driverUser ? `${driverUser.firstName} ${driverUser.lastName}` : 'Unknown Driver';
+    const licenseNumber = rec.driver?.licenseNumber ?? 'N/A';
+    const vehiclePlate = rec.driver?.vehicles?.[0]?.plateNumber ?? 'N/A';
+
+    if (!groupMap.has(key)) {
+      groupMap.set(key, {
+        driverId: rec.driverId,
+        driverName,
+        licenseNumber,
+        vehiclePlate,
+        year: recYear,
+        month: recMonth,
+        completedTripsCount: 0,
+        totalTripDurationMinutes: 0,
+        totalWaitingTimeMinutes: 0,
+      });
+    }
+
+    const group = groupMap.get(key)!;
+    group.completedTripsCount += 1;
+    group.totalTripDurationMinutes += rec.tripDurationMinutes ?? 0;
+    group.totalWaitingTimeMinutes += rec.waitingTimeMinutes ?? 0;
+  }
+
+  const MONTH_NAMES = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December',
+  ];
+
+  const result = Array.from(groupMap.values()).map((g) => ({
+    ...g,
+    monthLabel: `${MONTH_NAMES[g.month - 1]} ${g.year}`,
+    avgTripDurationMinutes: g.completedTripsCount > 0 ? Math.round(g.totalTripDurationMinutes / g.completedTripsCount) : 0,
+  }));
+
+  result.sort((a, b) => b.year - a.year || b.month - a.month || b.completedTripsCount - a.completedTripsCount);
+
+  return result;
+}
+
+export async function exportTripsToCsv(filters: TripFilters): Promise<string> {
+  const where = tripWhere(filters);
+  const rows = await prisma.loadingRecord.findMany({
+    where,
+    include: tripInclude,
+    orderBy: { reachedAt: 'desc' },
+    take: 5000,
+  });
+
+  const headers = [
+    'Trip ID',
+    'Driver Name',
+    'Employee ID',
+    'License Number',
+    'Vehicle Plate',
+    'Status',
+    'Reached Time',
+    'Trip Started Time',
+    'Trip Completed Time',
+    'Trip Duration (mins)',
+    'Waiting Time (mins)',
+    'Reached Location',
+    'Start Address',
+    'Completion Address',
+  ];
+
+  const escapeCsv = (val: any) => {
+    if (val === null || val === undefined) return '""';
+    const str = String(val).replace(/"/g, '""');
+    return `"${str}"`;
+  };
+
+  const csvRows = [headers.join(',')];
+
+  for (const rec of rows) {
+    const driverUser = rec.driver?.user;
+    const driverName = driverUser ? `${driverUser.firstName} ${driverUser.lastName}` : 'Unknown';
+    const employeeId = driverUser?.employeeId ?? '';
+    const licenseNumber = rec.driver?.licenseNumber ?? '';
+    const vehiclePlate = rec.driver?.vehicles?.[0]?.plateNumber ?? '';
+
+    csvRows.push(
+      [
+        escapeCsv(rec.id),
+        escapeCsv(driverName),
+        escapeCsv(employeeId),
+        escapeCsv(licenseNumber),
+        escapeCsv(vehiclePlate),
+        escapeCsv(rec.status),
+        escapeCsv(rec.reachedAt ? rec.reachedAt.toISOString() : ''),
+        escapeCsv(rec.tripStartedAt ? rec.tripStartedAt.toISOString() : ''),
+        escapeCsv(rec.tripCompletedAt ? rec.tripCompletedAt.toISOString() : ''),
+        escapeCsv(rec.tripDurationMinutes ?? ''),
+        escapeCsv(rec.waitingTimeMinutes ?? ''),
+        escapeCsv(rec.reachedAddress || rec.locationName || ''),
+        escapeCsv(rec.tripStartAddress || ''),
+        escapeCsv(rec.tripCompletedAddress || ''),
+      ].join(','),
+    );
+  }
+
+  return csvRows.join('\n');
 }

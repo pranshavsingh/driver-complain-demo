@@ -8,6 +8,7 @@ import { DriversPage } from './pages/DriversPage';
 import { ComplaintsListPage } from './pages/ComplaintsListPage';
 import { ComplaintDetailPage } from './pages/ComplaintDetailPage';
 import { LoadingTrackerPage } from './pages/LoadingTrackerPage';
+import { TripDetailsPage } from './pages/TripDetailsPage';
 import { UsersPage } from './pages/UsersPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 
@@ -38,6 +39,7 @@ export function App(): ReactElement {
         <Route path="/complaints" element={<ComplaintsListPage />} />
         <Route path="/complaints/:id" element={<ComplaintDetailPage />} />
         <Route path="/loading" element={<LoadingTrackerPage />} />
+        <Route path="/trips" element={<TripDetailsPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>

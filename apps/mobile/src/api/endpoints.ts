@@ -125,9 +125,6 @@ export const notifications = {
 };
 
 export const loading = {
-  mine: (limit = 50): Promise<LoadingRecord[]> =>
-    request(z.array(LoadingRecordSchema as any) as any, '/loading/mine', { query: { limit } }),
-
   active: (): Promise<{ active: LoadingRecord | null; stats?: LoadingStats }> =>
     request(z.object({ active: z.any(), stats: z.any().optional() }) as any, '/loading/active'),
 
