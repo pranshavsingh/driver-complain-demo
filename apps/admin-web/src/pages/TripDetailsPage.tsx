@@ -10,15 +10,30 @@ import {
   Search,
   Download,
   Truck,
-  Users,
   Calendar,
   X,
+  Trophy,
+  BarChart3,
+  Timer,
+  AlertTriangle,
 } from '../components/Icons';
 import * as api from '../api/endpoints';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { useApiResource } from '../hooks/useApiResource';
 import { formatDateTime } from '../lib/format';
 import { useRealtime } from '../realtime/RealtimeProvider';
+
+const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** Human-readable "Hh Mm" for a raw minute total (e.g. 125 -> "2h 5m"). */
+function formatMinutes(total: number): string {
+  if (!total || total <= 0) return '0m';
+  const h = Math.floor(total / 60);
+  const m = Math.round(total % 60);
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
+}
 
 export function TripDetailsPage(): ReactElement {
   const [selectedPhoto, setSelectedPhoto] = useState<{ url: string; title: string; address?: string | null } | null>(null);
@@ -93,10 +108,61 @@ export function TripDetailsPage(): ReactElement {
     return Math.round(sum / completed.length);
   }, [records]);
 
-  const topDriver = useMemo(() => {
-    if (summaries.length === 0) return null;
-    return [...summaries].sort((a, b) => b.completedTripsCount - a.completedTripsCount)[0];
+  // Total detention (sum of monthly waiting time across driver-months in view)
+  const totalDetentionMins = useMemo(
+    () => summaries.reduce((acc, s) => acc + s.totalWaitingTimeMinutes, 0),
+    [summaries],
+  );
+
+  // Trips whose individual detention exceeded 2h (matches the logs-tab threshold)
+  const highDetentionCount = useMemo(
+    () => records.filter((r) => (r.waitingTimeMinutes ?? 0) > 120).length,
+    [records],
+  );
+
+  // Top drivers by completed trips, aggregated across every driver-month in view
+  const topDrivers = useMemo(() => {
+    const map = new Map<string, { driverId: string; driverName: string; trips: number }>();
+    for (const s of summaries) {
+      const cur = map.get(s.driverId);
+      if (cur) cur.trips += s.completedTripsCount;
+      else map.set(s.driverId, { driverId: s.driverId, driverName: s.driverName, trips: s.completedTripsCount });
+    }
+    return [...map.values()].sort((a, b) => b.trips - a.trips);
   }, [summaries]);
+
+  const topDriversTop = useMemo(() => topDrivers.slice(0, 8), [topDrivers]);
+  const maxDriverTrips = topDriversTop[0]?.trips ?? 0;
+
+  // Completed trips per calendar month (index 0 = Jan), for the column chart
+  const monthlyVolume = useMemo(() => {
+    const arr = new Array<number>(12).fill(0);
+    for (const s of summaries) {
+      if (s.month >= 1 && s.month <= 12) arr[s.month - 1] = (arr[s.month - 1] ?? 0) + s.completedTripsCount;
+    }
+    return arr;
+  }, [summaries]);
+
+  const distinctMonthsWithData = useMemo(() => monthlyVolume.filter((v) => v > 0).length, [monthlyVolume]);
+  const maxMonthly = useMemo(() => monthlyVolume.reduce((m, v) => Math.max(m, v), 0), [monthlyVolume]);
+
+  // Per-trip fleet averages (weighted by trip counts), shown when a single month is filtered
+  const fleetAvg = useMemo(() => {
+    const trips = summaries.reduce((a, s) => a + s.completedTripsCount, 0);
+    const transit = summaries.reduce((a, s) => a + s.totalTripDurationMinutes, 0);
+    const detention = summaries.reduce((a, s) => a + s.totalWaitingTimeMinutes, 0);
+    return {
+      avgTransit: trips > 0 ? Math.round(transit / trips) : 0,
+      avgDetention: trips > 0 ? Math.round(detention / trips) : 0,
+      driverMonths: summaries.length,
+    };
+  }, [summaries]);
+
+  // Largest single driver-month trip count, for the matrix share bars
+  const maxSummaryTrips = useMemo(
+    () => summaries.reduce((m, s) => Math.max(m, s.completedTripsCount), 0),
+    [summaries],
+  );
 
   const handleExportCsv = async () => {
     try {
@@ -175,7 +241,7 @@ export function TripDetailsPage(): ReactElement {
             <CheckCircle2 size={22} color="#16a34a" />
           </div>
           <div className="stat-card-value">{totalCompletedTrips}</div>
-          <div className="stat-card-footer">Total trips in selected period</div>
+          <div className="stat-card-footer">Across {summaries.length} driver-month{summaries.length === 1 ? '' : 's'}</div>
         </div>
 
         <div className="stat-card stat-warning">
@@ -189,24 +255,116 @@ export function TripDetailsPage(): ReactElement {
 
         <div className="stat-card">
           <div className="stat-card-header">
-            <span className="stat-card-title">Avg Trip Duration</span>
+            <span className="stat-card-title">Avg Transit Time</span>
             <Clock size={22} color="#2563eb" />
           </div>
-          <div className="stat-card-value">{avgDurationMins} <span style={{ fontSize: 16 }}>mins</span></div>
-          <div className="stat-card-footer">Average duration per trip</div>
+          <div className="stat-card-value">{formatMinutes(avgDurationMins)}</div>
+          <div className="stat-card-footer">Per completed trip in view</div>
         </div>
 
-        <div className="stat-card stat-success">
+        <div className="stat-card">
           <div className="stat-card-header">
-            <span className="stat-card-title">Top Monthly Driver</span>
-            <Users size={22} color="#059669" />
+            <span className="stat-card-title">Total Detention Time</span>
+            <Timer size={22} color="#d97706" />
           </div>
-          <div className="stat-card-value" style={{ fontSize: 20, paddingTop: 4 }}>
-            {topDriver ? topDriver.driverName : 'N/A'}
-          </div>
+          <div className="stat-card-value">{formatMinutes(totalDetentionMins)}</div>
           <div className="stat-card-footer">
-            {topDriver ? `${topDriver.completedTripsCount} trips completed (${topDriver.monthLabel})` : 'No data'}
+            {highDetentionCount > 0 ? (
+              <span className="stat-delta alert">
+                <AlertTriangle size={12} /> {highDetentionCount} trip{highDetentionCount === 1 ? '' : 's'} over 2h wait
+              </span>
+            ) : (
+              'Total waiting across driver-months'
+            )}
           </div>
+        </div>
+      </div>
+
+      {/* Analytics Panel — hand-rolled CSS/SVG charts (no chart library) */}
+      <div className="analytics-grid" style={{ marginBottom: 20 }}>
+        {/* Left: Top drivers by completed trips (single-hue magnitude, #1 emphasized) */}
+        <div className="analytics-card">
+          <h3 className="chart-title">
+            <Trophy size={16} color="#1d4ed8" /> Top Drivers by Completed Trips
+          </h3>
+          <p className="chart-subtitle">Ranked across all driver-months in the current view</p>
+          {topDriversTop.length === 0 ? (
+            <div className="chart-empty">No completed trips match the current filters.</div>
+          ) : (
+            <div className="bar-list">
+              {topDriversTop.map((d, i) => {
+                const pct = maxDriverTrips > 0 ? Math.max(4, Math.round((d.trips / maxDriverTrips) * 100)) : 0;
+                return (
+                  <div className="bar-row" key={d.driverId} title={`${d.driverName}: ${d.trips} completed trips`}>
+                    <div className="bar-head">
+                      <span className="bar-name">
+                        <span className="bar-rank">#{i + 1}</span>
+                        {d.driverName}
+                      </span>
+                      <span className="bar-value">{d.trips}</span>
+                    </div>
+                    <div className="bar-track">
+                      <div className={`bar-fill ${i === 0 ? 'is-top' : ''}`} style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+              {topDrivers.length > topDriversTop.length ? (
+                <div className="chart-note">+{topDrivers.length - topDriversTop.length} more drivers</div>
+              ) : null}
+            </div>
+          )}
+        </div>
+
+        {/* Right: Monthly volume column chart when spanning >=2 months, else fleet averages */}
+        <div className="analytics-card">
+          {distinctMonthsWithData >= 2 ? (
+            <>
+              <h3 className="chart-title">
+                <BarChart3 size={16} color="#1d4ed8" /> Monthly Trip Volume
+              </h3>
+              <p className="chart-subtitle">Completed trips per month · {selectedYear}</p>
+              <div className="column-chart">
+                {monthlyVolume.map((v, i) => {
+                  const h = maxMonthly > 0 && v > 0 ? Math.max(6, Math.round((v / maxMonthly) * 100)) : 0;
+                  const isSel = selectedMonth !== '' && selectedMonth === i + 1;
+                  return (
+                    <div className="col" key={MONTH_SHORT[i]} title={`${MONTH_SHORT[i]}: ${v} completed trips`}>
+                      <div className="col-bar-wrap">
+                        {v > 0 ? (
+                          <div className={`col-bar ${isSel ? 'is-selected' : ''}`} style={{ height: `${h}%` }}>
+                            <span className="col-value">{v}</span>
+                          </div>
+                        ) : null}
+                      </div>
+                      <span className="col-label">{MONTH_SHORT[i]}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
+            <>
+              <h3 className="chart-title">
+                <Timer size={16} color="#1d4ed8" /> Fleet Averages
+              </h3>
+              <p className="chart-subtitle">Per-trip averages across the current view</p>
+              <div className="fleet-avg-grid">
+                <div className="fleet-avg-item">
+                  <span className="fleet-avg-value">{formatMinutes(fleetAvg.avgTransit)}</span>
+                  <span className="fleet-avg-label">Avg transit / trip</span>
+                </div>
+                <div className="fleet-avg-item">
+                  <span className="fleet-avg-value">{formatMinutes(fleetAvg.avgDetention)}</span>
+                  <span className="fleet-avg-label">Avg detention / trip</span>
+                </div>
+                <div className="fleet-avg-item">
+                  <span className="fleet-avg-value">{fleetAvg.driverMonths}</span>
+                  <span className="fleet-avg-label">Driver-months</span>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -371,18 +529,24 @@ export function TripDetailsPage(): ReactElement {
                         </div>
                       </td>
                       <td>
-                        <span
-                          style={{
-                            fontSize: '16px',
-                            fontWeight: '800',
-                            color: '#15803d',
-                            backgroundColor: '#dcce7',
-                            padding: '3px 10px',
-                            borderRadius: 12,
-                          }}
-                        >
-                          {s.completedTripsCount} Trips
-                        </span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          <span className="trips-count-pill">{s.completedTripsCount} Trips</span>
+                          <div
+                            className="share-bar"
+                            title={`${s.completedTripsCount} of ${maxSummaryTrips} (busiest driver-month in view)`}
+                          >
+                            <div
+                              className="share-fill"
+                              style={{
+                                width: `${
+                                  maxSummaryTrips > 0
+                                    ? Math.max(4, Math.round((s.completedTripsCount / maxSummaryTrips) * 100))
+                                    : 0
+                                }%`,
+                              }}
+                            />
+                          </div>
+                        </div>
                       </td>
                       <td>
                         <span className="duration-pill">
@@ -432,7 +596,7 @@ export function TripDetailsPage(): ReactElement {
               <p>No trip records found matching your filters.</p>
             </div>
           ) : (
-            <div className="table-responsive">
+            <div className="table-responsive table-scroll">
               <table className="admin-table">
                 <thead>
                   <tr>
