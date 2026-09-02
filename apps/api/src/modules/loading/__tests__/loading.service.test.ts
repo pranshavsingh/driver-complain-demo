@@ -171,7 +171,7 @@ describe('loading.service — completeUnloading', () => {
     });
 
     expect(done.unloadingDurationMinutes).toBe(90);
-    expect(done.formattedUnloadingDuration).toBe('1h 30m');
+    expect(done.formattedUnloadingDuration).toBe('01:30:00');
   });
 
   it('never reports a negative duration', async () => {

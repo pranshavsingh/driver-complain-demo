@@ -7,12 +7,24 @@ import { ApiError } from '../../errors/api-error';
 
 export function formatDurationText(minutes: number | null | undefined): string | null {
   if (minutes === null || minutes === undefined) return null;
-  if (minutes < 1) return '< 1 min';
-  const hrs = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  if (hrs === 0) return `${mins}m`;
-  if (mins === 0) return `${hrs}h`;
-  return `${hrs}h ${mins}m`;
+  const totalSec = Math.max(0, Math.round(minutes * 60));
+  const hrs = Math.floor(totalSec / 3600);
+  const mins = Math.floor((totalSec % 3600) / 60);
+  const secs = totalSec % 60;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(hrs)}:${pad(mins)}:${pad(secs)}`;
+}
+
+export function formatHmsFromDates(start?: Date | null, end?: Date | null, fallbackMinutes?: number | null): string | null {
+  if (start && end) {
+    const diffSec = Math.max(0, Math.floor((end.getTime() - start.getTime()) / 1000));
+    const hrs = Math.floor(diffSec / 3600);
+    const mins = Math.floor((diffSec % 3600) / 60);
+    const secs = diffSec % 60;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${pad(hrs)}:${pad(mins)}:${pad(secs)}`;
+  }
+  return formatDurationText(fallbackMinutes);
 }
 
 export async function getDriverTripStats(driverId: string): Promise<{
@@ -84,7 +96,7 @@ async function serializeLoadingRecord(
     tripCompletedAddress: rec.tripCompletedAddress ?? null,
     tripCompletedPhotoUrl: rec.tripCompletedPhotoUrl ?? null,
     tripDurationMinutes: rec.tripDurationMinutes ?? null,
-    formattedTripDuration: formatDurationText(rec.tripDurationMinutes),
+    formattedTripDuration: formatHmsFromDates(rec.tripStartedAt, rec.tripCompletedAt, rec.tripDurationMinutes),
 
     unloadingCompletedAt: rec.unloadingCompletedAt ? rec.unloadingCompletedAt.toISOString() : null,
     unloadingLatitude: rec.unloadingLatitude ?? null,
@@ -92,7 +104,7 @@ async function serializeLoadingRecord(
     unloadingAddress: rec.unloadingAddress ?? null,
     unloadingPhotoUrl: rec.unloadingPhotoUrl ?? null,
     unloadingDurationMinutes: rec.unloadingDurationMinutes ?? null,
-    formattedUnloadingDuration: formatDurationText(rec.unloadingDurationMinutes),
+    formattedUnloadingDuration: formatHmsFromDates(rec.tripCompletedAt, rec.unloadingCompletedAt, rec.unloadingDurationMinutes),
 
     waitingTimeMinutes: rec.waitingTimeMinutes ?? null,
     formattedWaitingTime: formatDurationText(rec.waitingTimeMinutes),

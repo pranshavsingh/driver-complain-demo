@@ -69,15 +69,12 @@ describe('formatDurationText', () => {
     expect(formatDurationText(undefined)).toBeNull();
   });
 
-  it('reports sub-minute waits explicitly instead of rounding them to 0m', () => {
-    expect(formatDurationText(0)).toBe('< 1 min');
-    expect(formatDurationText(0.5)).toBe('< 1 min');
-  });
-
-  it('formats minutes, whole hours and mixed durations', () => {
-    expect(formatDurationText(45)).toBe('45m');
-    expect(formatDurationText(60)).toBe('1h');
-    expect(formatDurationText(125)).toBe('2h 5m');
+  it('formats minutes into HH:MM:SS format', () => {
+    expect(formatDurationText(0)).toBe('00:00:00');
+    expect(formatDurationText(0.5)).toBe('00:00:30');
+    expect(formatDurationText(45)).toBe('00:45:00');
+    expect(formatDurationText(60)).toBe('01:00:00');
+    expect(formatDurationText(125)).toBe('02:05:00');
   });
 });
 

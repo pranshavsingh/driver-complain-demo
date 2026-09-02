@@ -36,6 +36,39 @@ function formatMinutes(total: number): string {
   return `${h}h ${m}m`;
 }
 
+/** Formats start/end ISO dates or duration fallback into HH:MM:SS (e.g. 01:15:30). */
+function formatHms(startISO?: string | null, endISO?: string | null, fallbackFormatted?: string | null): string | null {
+  if (startISO && endISO) {
+    const s = new Date(startISO).getTime();
+    const e = new Date(endISO).getTime();
+    if (!isNaN(s) && !isNaN(e) && e >= s) {
+      const diffSec = Math.floor((e - s) / 1000);
+      const h = Math.floor(diffSec / 3600);
+      const m = Math.floor((diffSec % 3600) / 60);
+      const sec = diffSec % 60;
+      const pad = (n: number) => String(n).padStart(2, '0');
+      return `${pad(h)}:${pad(m)}:${pad(sec)}`;
+    }
+  }
+  if (!fallbackFormatted) return null;
+  if (/^\d{2}:\d{2}:\d{2}$/.test(fallbackFormatted)) return fallbackFormatted;
+  const matchHours = fallbackFormatted.match(/(\d+)h/);
+  const matchMins = fallbackFormatted.match(/(\d+)m/);
+  let totalSec = 0;
+  if (matchHours || matchMins) {
+    const h = matchHours && matchHours[1] ? parseInt(matchHours[1], 10) : 0;
+    const m = matchMins && matchMins[1] ? parseInt(matchMins[1], 10) : 0;
+    totalSec = (h * 3600) + (m * 60);
+  } else if (!isNaN(Number(fallbackFormatted))) {
+    totalSec = Math.round(Number(fallbackFormatted) * 60);
+  }
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const sec = totalSec % 60;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(h)}:${pad(m)}:${pad(sec)}`;
+}
+
 export function TripDetailsPage(): ReactElement {
   const [selectedPhoto, setSelectedPhoto] = useState<{ url: string; title: string; address?: string | null } | null>(null);
   const [activeTab, setActiveTab] = useState<'matrix' | 'logs'>('matrix');
@@ -659,7 +692,6 @@ export function TripDetailsPage(): ReactElement {
                 <tbody>
                   {records.map((rec) => {
                     const isLongTrip = (rec.tripDurationMinutes ?? 0) > 240;
-                    const isHighDetention = (rec.waitingTimeMinutes ?? 0) > 120;
                     const isHighUnloading = (rec.unloadingDurationMinutes ?? 0) > 120;
                     const mapsStartUrl = rec.tripStartLatitude
                       ? `https://www.google.com/maps?q=${rec.tripStartLatitude},${rec.tripStartLongitude}`
@@ -765,22 +797,16 @@ export function TripDetailsPage(): ReactElement {
 
                         <td>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                            {rec.formattedTripDuration ? (
+                            {formatHms(rec.tripStartedAt, rec.tripCompletedAt, rec.formattedTripDuration) ? (
                               <span className={`duration-pill ${isLongTrip ? 'high-detention' : ''}`}>
                                 <Clock size={12} style={{ marginRight: 4 }} />
-                                Trip: {rec.formattedTripDuration}
+                                Trip: {formatHms(rec.tripStartedAt, rec.tripCompletedAt, rec.formattedTripDuration)}
                               </span>
                             ) : null}
 
-                            {rec.formattedWaitingTime ? (
-                              <span className={`duration-pill ${isHighDetention ? 'high-detention' : ''}`}>
-                                Wait: {rec.formattedWaitingTime}
-                              </span>
-                            ) : null}
-
-                            {rec.formattedUnloadingDuration ? (
+                            {formatHms(rec.tripCompletedAt, rec.unloadingCompletedAt, rec.formattedUnloadingDuration) ? (
                               <span className={`duration-pill ${isHighUnloading ? 'high-detention' : ''}`}>
-                                Unload: {rec.formattedUnloadingDuration}
+                                Unload: {formatHms(rec.tripCompletedAt, rec.unloadingCompletedAt, rec.formattedUnloadingDuration)}
                               </span>
                             ) : null}
                           </div>
