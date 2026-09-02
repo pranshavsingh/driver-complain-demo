@@ -24,6 +24,8 @@ export const LoadingRecordSchema = z.object({
   tripStartLongitude: z.number().nullable().optional(),
   tripStartAddress: z.string().nullable().optional(),
 
+  // tripCompletedAt is when the driver reached the unloading point: the end of transit and
+  // the start of the unloading wait.
   tripCompletedAt: z.string().nullable().optional(),
   tripCompletedLatitude: z.number().nullable().optional(),
   tripCompletedLongitude: z.number().nullable().optional(),
@@ -32,6 +34,16 @@ export const LoadingRecordSchema = z.object({
   tripDurationMinutes: z.number().nullable().optional(),
   formattedTripDuration: z.string().nullable().optional(),
 
+  // Unloading finished at the destination.
+  unloadingCompletedAt: z.string().nullable().optional(),
+  unloadingLatitude: z.number().nullable().optional(),
+  unloadingLongitude: z.number().nullable().optional(),
+  unloadingAddress: z.string().nullable().optional(),
+  unloadingPhotoUrl: z.string().nullable().optional(),
+  unloadingDurationMinutes: z.number().nullable().optional(),
+  formattedUnloadingDuration: z.string().nullable().optional(),
+
+  /** Wait at the loading point: completedAt - reachedAt. */
   waitingTimeMinutes: z.number().nullable().optional(),
   formattedWaitingTime: z.string().nullable().optional(),
   status: LoadingStatusSchema,
@@ -64,6 +76,8 @@ export const DriverMonthlyTripSummarySchema = z.object({
   totalTripDurationMinutes: z.number(),
   avgTripDurationMinutes: z.number(),
   totalWaitingTimeMinutes: z.number(),
+  totalUnloadingTimeMinutes: z.number(),
+  avgUnloadingTimeMinutes: z.number(),
 });
 export type DriverMonthlyTripSummary = z.infer<typeof DriverMonthlyTripSummarySchema>;
 
@@ -97,3 +111,11 @@ export const CompleteTripSchema = z.object({
   address: z.string().optional(),
 });
 export type CompleteTripInput = z.infer<typeof CompleteTripSchema>;
+
+/** Driver taps "Unloading Done" at the destination — closes out the trip cycle. */
+export const CompleteUnloadingSchema = z.object({
+  latitude: z.coerce.number(),
+  longitude: z.coerce.number(),
+  address: z.string().optional(),
+});
+export type CompleteUnloadingInput = z.infer<typeof CompleteUnloadingSchema>;

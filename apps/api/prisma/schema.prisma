@@ -281,10 +281,14 @@ model Counter {
   value Int    @default(0)
 }
 
+/// One loading/trip cycle runs REACHED -> COMPLETED -> TRIP_STARTED -> UNLOADING -> TRIP_COMPLETED.
+/// UNLOADING means the driver has arrived at the destination and unloading is under way;
+/// TRIP_COMPLETED is the single terminal state and only fires once unloading is done.
 enum LoadingStatus {
   REACHED
   COMPLETED
   TRIP_STARTED
+  UNLOADING
   TRIP_COMPLETED
 }
 
@@ -315,6 +319,8 @@ model LoadingRecord {
   tripStartLongitude     Float?
   tripStartAddress       String?
 
+  // tripCompletedAt is the moment the driver reached the unloading point, so it is
+  // both the end of transit (tripDurationMinutes) and the start of the unloading wait.
   tripCompletedAt        DateTime?
   tripCompletedLatitude  Float?
   tripCompletedLongitude Float?
@@ -323,6 +329,16 @@ model LoadingRecord {
   tripCompletedPublicId  String?
   tripDurationMinutes    Int?
 
+  // Unloading finished at the destination. unloadingDurationMinutes = unloadingCompletedAt - tripCompletedAt.
+  unloadingCompletedAt     DateTime?
+  unloadingLatitude        Float?
+  unloadingLongitude       Float?
+  unloadingAddress         String?
+  unloadingPhotoUrl        String?
+  unloadingPublicId        String?
+  unloadingDurationMinutes Int?
+
+  /// Wait at the loading point: completedAt - reachedAt.
   waitingTimeMinutes     Int?
   status                 LoadingStatus @default(REACHED)
 

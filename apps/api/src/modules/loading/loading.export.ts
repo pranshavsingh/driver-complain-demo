@@ -3,6 +3,12 @@ import ExcelJS from 'exceljs';
 
 export const XLSX_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
+/** Human-readable status column. Anything unmapped falls back to "In progress". */
+const STATUS_LABELS: Record<string, string> = {
+  TRIP_COMPLETED: 'Completed',
+  UNLOADING: 'Unloading',
+};
+
 export function exportTripFilename(now = new Date()): string {
   return `trip-details-${now.toISOString().slice(0, 10)}.xlsx`;
 }
@@ -21,9 +27,12 @@ export async function writeTripsXlsx(out: Writable, batches: AsyncIterable<any[]
     { header: 'Destination', key: 'destination', width: 45 },
     { header: 'Trip Duration (min)', key: 'tripDuration', width: 20 },
     { header: 'Loading Wait (min)', key: 'waitingTime', width: 20 },
+    { header: 'Unloading Done', key: 'unloadedAt', width: 20, style: { numFmt: 'yyyy-mm-dd hh:mm' } },
+    { header: 'Unloading Duration (min)', key: 'unloadingDuration', width: 24 },
     { header: 'Start GPS', key: 'startGps', width: 24 },
     { header: 'Destination GPS', key: 'destinationGps', width: 24 },
     { header: 'Completion Proof', key: 'proof', width: 45 },
+    { header: 'Unloading Proof', key: 'unloadingProof', width: 45 },
   ];
   sheet.getRow(1).font = { bold: true };
   sheet.getRow(1).commit();
@@ -35,16 +44,19 @@ export async function writeTripsXlsx(out: Writable, batches: AsyncIterable<any[]
         driver: `${user.firstName} ${user.lastName}`,
         employeeId: user.employeeId,
         vehicle: row.driver.vehicles[0]?.plateNumber ?? '',
-        status: row.status === 'TRIP_COMPLETED' ? 'Completed' : 'In progress',
+        status: STATUS_LABELS[row.status as string] ?? 'In progress',
         startedAt: row.tripStartedAt,
         completedAt: row.tripCompletedAt,
         startLocation: row.tripStartAddress ?? row.reachedAddress ?? '',
         destination: row.tripCompletedAddress ?? '',
         tripDuration: row.tripDurationMinutes,
         waitingTime: row.waitingTimeMinutes,
+        unloadedAt: row.unloadingCompletedAt,
+        unloadingDuration: row.unloadingDurationMinutes,
         startGps: row.tripStartLatitude != null ? `${row.tripStartLatitude}, ${row.tripStartLongitude}` : '',
         destinationGps: row.tripCompletedLatitude != null ? `${row.tripCompletedLatitude}, ${row.tripCompletedLongitude}` : '',
         proof: row.tripCompletedPhotoUrl ?? '',
+        unloadingProof: row.unloadingPhotoUrl ?? '',
       }).commit();
     }
   }

@@ -5,6 +5,7 @@ import {
   handleCompleteLoading,
   handleStartTrip,
   handleCompleteTrip,
+  handleCompleteUnloading,
   handleGetActiveLoading,
   handleListLoadingRecords,
   handleExportTrips,
@@ -31,8 +32,13 @@ loadingRouter.post('/complete', singlePhotoUpload, handleCompleteLoading);
 loadingRouter.post('/:id/start-trip', handleStartTrip);
 loadingRouter.post('/start-trip', handleStartTrip);
 
+// "Reached unloading point" — ends transit, parks the record in UNLOADING.
 loadingRouter.patch('/:id/complete-trip', singlePhotoUpload, handleCompleteTrip);
 loadingRouter.post('/complete-trip', singlePhotoUpload, handleCompleteTrip);
+
+// "Unloading done" — closes the cycle out to TRIP_COMPLETED.
+loadingRouter.patch('/:id/complete-unloading', singlePhotoUpload, handleCompleteUnloading);
+loadingRouter.post('/complete-unloading', singlePhotoUpload, handleCompleteUnloading);
 
 loadingRouter.get('/active', handleGetActiveLoading);
 

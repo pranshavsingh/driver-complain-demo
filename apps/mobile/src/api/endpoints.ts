@@ -168,6 +168,7 @@ export const loading = {
     });
   },
 
+  /** "Reached unloading point" — ends transit and starts the unloading clock. */
   completeTrip: (
     loadingId: string,
     input: { latitude: number; longitude: number; address?: string },
@@ -179,6 +180,23 @@ export const loading = {
     if (input.address) form.append('address', input.address);
     form.append('photo', photo as unknown as Blob);
     return request(LoadingRecordSchema, `/loading/${encodeURIComponent(loadingId)}/complete-trip`, {
+      method: 'PATCH',
+      body: form,
+    });
+  },
+
+  /** "Unloading done" — closes the cycle out and increments the completed-trip count. */
+  completeUnloading: (
+    loadingId: string,
+    input: { latitude: number; longitude: number; address?: string },
+    photo: FileToUpload,
+  ): Promise<LoadingRecord> => {
+    const form = new FormData();
+    form.append('latitude', String(input.latitude));
+    form.append('longitude', String(input.longitude));
+    if (input.address) form.append('address', input.address);
+    form.append('photo', photo as unknown as Blob);
+    return request(LoadingRecordSchema, `/loading/${encodeURIComponent(loadingId)}/complete-unloading`, {
       method: 'PATCH',
       body: form,
     });

@@ -444,4 +444,16 @@ export function Timer({ size = 20, color = 'currentColor', className, style }: I
   );
 }
 
+/** Open carton — used for the unloading milestone. */
+export function PackageOpen({ size = 20, color = 'currentColor', className, style }: IconProps): ReactElement {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
+      <path d="M12 22V10" />
+      <path d="M3.29 7.29 12 10l8.71-2.71" />
+      <path d="M20 10v9a1 1 0 0 1-.72.96l-6.55 1.87a2 2 0 0 1-1.46 0l-6.55-1.87A1 1 0 0 1 4 19v-9" />
+      <path d="M4.5 3.5 2 7.5 12 10l10-2.5-2.5-4" />
+    </svg>
+  );
+}
+
 

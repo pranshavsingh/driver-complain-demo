@@ -86,6 +86,14 @@ async function serializeLoadingRecord(
     tripDurationMinutes: rec.tripDurationMinutes ?? null,
     formattedTripDuration: formatDurationText(rec.tripDurationMinutes),
 
+    unloadingCompletedAt: rec.unloadingCompletedAt ? rec.unloadingCompletedAt.toISOString() : null,
+    unloadingLatitude: rec.unloadingLatitude ?? null,
+    unloadingLongitude: rec.unloadingLongitude ?? null,
+    unloadingAddress: rec.unloadingAddress ?? null,
+    unloadingPhotoUrl: rec.unloadingPhotoUrl ?? null,
+    unloadingDurationMinutes: rec.unloadingDurationMinutes ?? null,
+    formattedUnloadingDuration: formatDurationText(rec.unloadingDurationMinutes),
+
     waitingTimeMinutes: rec.waitingTimeMinutes ?? null,
     formattedWaitingTime: formatDurationText(rec.waitingTimeMinutes),
     status: rec.status as LoadingStatus,
@@ -114,9 +122,12 @@ export async function markReachedLoadingPoint(opts: {
     throw ApiError.forbidden('Only registered drivers can record loading point milestones');
   }
 
-  // Check if there is already an active loading session for this driver
+  // Check if there is already an active loading session for this driver.
+  // SAFETY-CRITICAL: UNLOADING must stay in this list — a driver who has arrived at the
+  // destination but not yet tapped "Unloading Done" still owns an open cycle, and letting
+  // them start a second one would orphan the unloading time on the first.
   const existingActive = await prisma.loadingRecord.findFirst({
-    where: { driverId: driver.id, status: { in: ['REACHED', 'TRIP_STARTED'] } },
+    where: { driverId: driver.id, status: { in: ['REACHED', 'TRIP_STARTED', 'UNLOADING'] } },
   });
   if (existingActive) {
     throw ApiError.badRequest('You already have an active loading/trip session in progress');
@@ -193,7 +204,7 @@ export async function markLoadingCompleted(opts: {
     });
   }
 
-  if (!recordToUpdate || recordToUpdate.status === 'COMPLETED' || recordToUpdate.status === 'TRIP_STARTED' || recordToUpdate.status === 'TRIP_COMPLETED') {
+  if (!recordToUpdate || recordToUpdate.status !== 'REACHED') {
     throw ApiError.notFound('No active loading session found to complete');
   }
 
@@ -297,6 +308,11 @@ export async function startTrip(opts: {
   return await serializeLoadingRecord(updated);
 }
 
+/**
+ * Driver reached the unloading point: transit ends here, so this writes tripCompletedAt and
+ * tripDurationMinutes, then parks the record in UNLOADING while the vehicle is unloaded.
+ * The cycle is closed later by completeUnloading().
+ */
 export async function completeTrip(opts: {
   userId: string;
   loadingId?: string;
@@ -347,7 +363,7 @@ export async function completeTrip(opts: {
       tripCompletedPhotoUrl: asset.url,
       tripCompletedPublicId: asset.publicId,
       tripDurationMinutes,
-      status: 'TRIP_COMPLETED',
+      status: 'UNLOADING',
     },
     include: {
       driver: {
@@ -360,6 +376,89 @@ export async function completeTrip(opts: {
   });
 
   return await serializeLoadingRecord(updated);
+}
+
+/**
+ * Driver tapped "Unloading Done" at the destination. Closes the cycle: records the unloading
+ * wait (unloadingCompletedAt - tripCompletedAt) and moves the record to TRIP_COMPLETED, which
+ * is the terminal state every completed-trip count keys off.
+ */
+export async function completeUnloading(opts: {
+  userId: string;
+  loadingId?: string;
+  fileBuffer: Buffer;
+  latitude: number;
+  longitude: number;
+  address?: string;
+}): Promise<LoadingRecord> {
+  const driver = await prisma.driver.findUnique({
+    where: { userId: opts.userId },
+  });
+  if (!driver) {
+    throw ApiError.forbidden('Only registered drivers can complete unloading');
+  }
+
+  let recordToUpdate;
+  if (opts.loadingId) {
+    recordToUpdate = await prisma.loadingRecord.findFirst({
+      where: { id: opts.loadingId, driverId: driver.id },
+    });
+  } else {
+    recordToUpdate = await prisma.loadingRecord.findFirst({
+      where: { driverId: driver.id, status: 'UNLOADING' },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  if (!recordToUpdate || recordToUpdate.status !== 'UNLOADING' || !recordToUpdate.tripCompletedAt) {
+    throw ApiError.notFound('No active unloading session found to complete');
+  }
+
+  const asset = await uploadBuffer(opts.fileBuffer, {
+    folder: `${cloudinaryFolder}/unloading`,
+    resourceType: 'image',
+  });
+
+  const unloadingCompletedAt = new Date();
+  const diffMs = unloadingCompletedAt.getTime() - recordToUpdate.tripCompletedAt.getTime();
+  const unloadingDurationMinutes = Math.max(0, Math.round(diffMs / 60000));
+
+  const updated = await prisma.loadingRecord.update({
+    where: { id: recordToUpdate.id },
+    data: {
+      unloadingCompletedAt,
+      unloadingLatitude: opts.latitude,
+      unloadingLongitude: opts.longitude,
+      unloadingAddress: opts.address || null,
+      unloadingPhotoUrl: asset.url,
+      unloadingPublicId: asset.publicId,
+      unloadingDurationMinutes,
+      status: 'TRIP_COMPLETED',
+    },
+    include: {
+      driver: {
+        include: {
+          user: true,
+          vehicles: true,
+        },
+      },
+    },
+  });
+
+  const serialized = await serializeLoadingRecord(updated);
+
+  // Reuses the existing loading:completed event so the admin Trip Analytics page — which
+  // already subscribes to it — refreshes without needing a new event type.
+  const adminIds = await getActiveAdminUserIds();
+  emitToUsers(adminIds, REALTIME_EVENTS.loadingCompleted as any, {
+    complaintId: updated.id,
+    complaintNo: 'UNLOADING-COMPLETED',
+    title: `Driver ${serialized.driverName || 'Driver'} finished unloading (Duration: ${serialized.formattedUnloadingDuration})`,
+    status: 'RESOLVED' as any,
+    at: unloadingCompletedAt.toISOString(),
+  });
+
+  return serialized;
 }
 
 export async function getActiveLoadingRecord(userId: string): Promise<{
@@ -375,7 +474,9 @@ export async function getActiveLoadingRecord(userId: string): Promise<{
 
   const [record, stats] = await Promise.all([
     prisma.loadingRecord.findFirst({
-      where: { driverId: driver.id, status: { in: ['REACHED', 'COMPLETED', 'TRIP_STARTED'] } },
+      // UNLOADING is included so the mobile card can resume the unloading timer after the
+      // app is force-closed and reopened mid-unload.
+      where: { driverId: driver.id, status: { in: ['REACHED', 'COMPLETED', 'TRIP_STARTED', 'UNLOADING'] } },
       orderBy: { createdAt: 'desc' },
       include: {
         driver: {
@@ -618,6 +719,7 @@ export async function getDriverMonthlyTripSummaries(opts: {
       completedTripsCount: number;
       totalTripDurationMinutes: number;
       totalWaitingTimeMinutes: number;
+      totalUnloadingTimeMinutes: number;
     }
   >();
 
@@ -643,6 +745,7 @@ export async function getDriverMonthlyTripSummaries(opts: {
         completedTripsCount: 0,
         totalTripDurationMinutes: 0,
         totalWaitingTimeMinutes: 0,
+        totalUnloadingTimeMinutes: 0,
       });
     }
 
@@ -650,6 +753,7 @@ export async function getDriverMonthlyTripSummaries(opts: {
     group.completedTripsCount += 1;
     group.totalTripDurationMinutes += rec.tripDurationMinutes ?? 0;
     group.totalWaitingTimeMinutes += rec.waitingTimeMinutes ?? 0;
+    group.totalUnloadingTimeMinutes += rec.unloadingDurationMinutes ?? 0;
   }
 
   const MONTH_NAMES = [
@@ -661,6 +765,8 @@ export async function getDriverMonthlyTripSummaries(opts: {
     ...g,
     monthLabel: `${MONTH_NAMES[g.month - 1]} ${g.year}`,
     avgTripDurationMinutes: g.completedTripsCount > 0 ? Math.round(g.totalTripDurationMinutes / g.completedTripsCount) : 0,
+    avgUnloadingTimeMinutes:
+      g.completedTripsCount > 0 ? Math.round(g.totalUnloadingTimeMinutes / g.completedTripsCount) : 0,
   }));
 
   result.sort((a, b) => b.year - a.year || b.month - a.month || b.completedTripsCount - a.completedTripsCount);
@@ -689,6 +795,9 @@ export async function exportTripsToCsv(filters: TripFilters): Promise<string> {
     'Trip Completed Time',
     'Trip Duration (mins)',
     'Waiting Time (mins)',
+    'Unloading Completed Time',
+    'Unloading Duration (mins)',
+    'Unloading Address',
     'Reached Location',
     'Start Address',
     'Completion Address',
@@ -722,6 +831,9 @@ export async function exportTripsToCsv(filters: TripFilters): Promise<string> {
         escapeCsv(rec.tripCompletedAt ? rec.tripCompletedAt.toISOString() : ''),
         escapeCsv(rec.tripDurationMinutes ?? ''),
         escapeCsv(rec.waitingTimeMinutes ?? ''),
+        escapeCsv(rec.unloadingCompletedAt ? rec.unloadingCompletedAt.toISOString() : ''),
+        escapeCsv(rec.unloadingDurationMinutes ?? ''),
+        escapeCsv(rec.unloadingAddress || ''),
         escapeCsv(rec.reachedAddress || rec.locationName || ''),
         escapeCsv(rec.tripStartAddress || ''),
         escapeCsv(rec.tripCompletedAddress || ''),

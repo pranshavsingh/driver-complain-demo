@@ -52,7 +52,18 @@ export const AttachmentKindSchema = z.enum(['PHOTO', 'VOICE', 'VIDEO']);
 export type AttachmentKind = z.infer<typeof AttachmentKindSchema>;
 export const ATTACHMENT_KINDS = AttachmentKindSchema.options;
 
-export const LoadingStatusSchema = z.enum(['REACHED', 'COMPLETED', 'TRIP_STARTED', 'TRIP_COMPLETED']);
+/**
+ * One loading/trip cycle: REACHED -> COMPLETED -> TRIP_STARTED -> UNLOADING -> TRIP_COMPLETED.
+ * UNLOADING = arrived at the destination, unloading under way. TRIP_COMPLETED is the single
+ * terminal state and only fires once unloading is done.
+ */
+export const LoadingStatusSchema = z.enum([
+  'REACHED',
+  'COMPLETED',
+  'TRIP_STARTED',
+  'UNLOADING',
+  'TRIP_COMPLETED',
+]);
 export type LoadingStatus = z.infer<typeof LoadingStatusSchema>;
 export const LOADING_STATUSES = LoadingStatusSchema.options;
 

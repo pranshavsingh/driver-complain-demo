@@ -16,6 +16,7 @@ import {
   BarChart3,
   Timer,
   AlertTriangle,
+  PackageOpen,
 } from '../components/Icons';
 import * as api from '../api/endpoints';
 import { ErrorBanner } from '../components/ErrorBanner';
@@ -120,6 +121,20 @@ export function TripDetailsPage(): ReactElement {
     [records],
   );
 
+  // Total unloading wait at the destination (tripCompletedAt -> unloadingCompletedAt), summed
+  // across driver-months. Sourced from `summaries` rather than `records` because the summary
+  // endpoint honours the year/month/driver filters — the logs endpoint does not.
+  const totalUnloadingMins = useMemo(
+    () => summaries.reduce((acc, s) => acc + s.totalUnloadingTimeMinutes, 0),
+    [summaries],
+  );
+
+  // Trips still sitting at the unloading bay right now
+  const unloadingNowCount = useMemo(
+    () => records.filter((r) => r.status === 'UNLOADING').length,
+    [records],
+  );
+
   // Top drivers by completed trips, aggregated across every driver-month in view
   const topDrivers = useMemo(() => {
     const map = new Map<string, { driverId: string; driverName: string; trips: number }>();
@@ -151,9 +166,11 @@ export function TripDetailsPage(): ReactElement {
     const trips = summaries.reduce((a, s) => a + s.completedTripsCount, 0);
     const transit = summaries.reduce((a, s) => a + s.totalTripDurationMinutes, 0);
     const detention = summaries.reduce((a, s) => a + s.totalWaitingTimeMinutes, 0);
+    const unloading = summaries.reduce((a, s) => a + s.totalUnloadingTimeMinutes, 0);
     return {
       avgTransit: trips > 0 ? Math.round(transit / trips) : 0,
       avgDetention: trips > 0 ? Math.round(detention / trips) : 0,
+      avgUnloading: trips > 0 ? Math.round(unloading / trips) : 0,
       driverMonths: summaries.length,
     };
   }, [summaries]);
@@ -233,8 +250,8 @@ export function TripDetailsPage(): ReactElement {
 
       <ErrorBanner error={logsResource.error || summaryResource.error} />
 
-      {/* 4 Key Stat Cards */}
-      <div className="stat-cards-grid">
+      {/* 5 Key Stat Cards */}
+      <div className="stat-cards-grid is-five">
         <div className="stat-card">
           <div className="stat-card-header">
             <span className="stat-card-title">Completed Trips</span>
@@ -275,6 +292,23 @@ export function TripDetailsPage(): ReactElement {
               </span>
             ) : (
               'Total waiting across driver-months'
+            )}
+          </div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-card-header">
+            <span className="stat-card-title">Total Unloading Time</span>
+            <PackageOpen size={22} color="#ea580c" />
+          </div>
+          <div className="stat-card-value">{formatMinutes(totalUnloadingMins)}</div>
+          <div className="stat-card-footer">
+            {unloadingNowCount > 0 ? (
+              <span className="stat-delta alert">
+                <AlertTriangle size={12} /> {unloadingNowCount} vehicle{unloadingNowCount === 1 ? '' : 's'} unloading now
+              </span>
+            ) : (
+              `${formatMinutes(fleetAvg.avgUnloading)} avg per trip`
             )}
           </div>
         </div>
@@ -349,7 +383,7 @@ export function TripDetailsPage(): ReactElement {
                 <Timer size={16} color="#1d4ed8" /> Fleet Averages
               </h3>
               <p className="chart-subtitle">Per-trip averages across the current view</p>
-              <div className="fleet-avg-grid">
+              <div className="fleet-avg-grid is-four">
                 <div className="fleet-avg-item">
                   <span className="fleet-avg-value">{formatMinutes(fleetAvg.avgTransit)}</span>
                   <span className="fleet-avg-label">Avg transit / trip</span>
@@ -357,6 +391,10 @@ export function TripDetailsPage(): ReactElement {
                 <div className="fleet-avg-item">
                   <span className="fleet-avg-value">{formatMinutes(fleetAvg.avgDetention)}</span>
                   <span className="fleet-avg-label">Avg detention / trip</span>
+                </div>
+                <div className="fleet-avg-item">
+                  <span className="fleet-avg-value">{formatMinutes(fleetAvg.avgUnloading)}</span>
+                  <span className="fleet-avg-label">Avg unloading / trip</span>
                 </div>
                 <div className="fleet-avg-item">
                   <span className="fleet-avg-value">{fleetAvg.driverMonths}</span>
@@ -445,6 +483,7 @@ export function TripDetailsPage(): ReactElement {
             >
               <option value="">All Statuses</option>
               <option value="TRIP_COMPLETED">Trip Completed</option>
+              <option value="UNLOADING">Unloading In Progress</option>
               <option value="TRIP_STARTED">Trip Started (Active)</option>
               <option value="COMPLETED">Loading Completed</option>
               <option value="REACHED">Reached Loading Point</option>
@@ -508,6 +547,7 @@ export function TripDetailsPage(): ReactElement {
                     <th>Completed Trips</th>
                     <th>Avg Trip Duration</th>
                     <th>Total Waiting Time</th>
+                    <th>Total Unloading Time</th>
                     <th>Action</th>
                   </tr>
                 </thead>
@@ -557,6 +597,14 @@ export function TripDetailsPage(): ReactElement {
                       <td>
                         <span className="duration-pill">
                           {s.totalWaitingTimeMinutes} mins
+                        </span>
+                      </td>
+                      <td>
+                        <span
+                          className="duration-pill"
+                          title={`${s.avgUnloadingTimeMinutes} mins average per completed trip`}
+                        >
+                          {s.totalUnloadingTimeMinutes} mins
                         </span>
                       </td>
                       <td>
@@ -612,6 +660,7 @@ export function TripDetailsPage(): ReactElement {
                   {records.map((rec) => {
                     const isLongTrip = (rec.tripDurationMinutes ?? 0) > 240;
                     const isHighDetention = (rec.waitingTimeMinutes ?? 0) > 120;
+                    const isHighUnloading = (rec.unloadingDurationMinutes ?? 0) > 120;
                     const mapsStartUrl = rec.tripStartLatitude
                       ? `https://www.google.com/maps?q=${rec.tripStartLatitude},${rec.tripStartLongitude}`
                       : null;
@@ -634,6 +683,10 @@ export function TripDetailsPage(): ReactElement {
                           {rec.status === 'TRIP_COMPLETED' ? (
                             <span className="status-badge badge-success">
                               <CheckCircle2 size={12} style={{ marginRight: 4 }} /> TRIP COMPLETED
+                            </span>
+                          ) : rec.status === 'UNLOADING' ? (
+                            <span className="status-badge badge-warning">
+                              <span className="pulsing-dot" /> UNLOADING
                             </span>
                           ) : rec.status === 'TRIP_STARTED' ? (
                             <span className="status-badge badge-warning">
@@ -662,6 +715,11 @@ export function TripDetailsPage(): ReactElement {
                                 <span className="muted">Arrived:</span> {formatDateTime(rec.reachedAt)}
                               </div>
                             )}
+                            {rec.unloadingCompletedAt ? (
+                              <div style={{ marginTop: 2 }}>
+                                <span className="muted">Unloaded:</span> {formatDateTime(rec.unloadingCompletedAt)}
+                              </div>
+                            ) : null}
                           </div>
                         </td>
 
@@ -719,6 +777,12 @@ export function TripDetailsPage(): ReactElement {
                                 Wait: {rec.formattedWaitingTime}
                               </span>
                             ) : null}
+
+                            {rec.formattedUnloadingDuration ? (
+                              <span className={`duration-pill ${isHighUnloading ? 'high-detention' : ''}`}>
+                                Unload: {rec.formattedUnloadingDuration}
+                              </span>
+                            ) : null}
                           </div>
                         </td>
 
@@ -756,7 +820,23 @@ export function TripDetailsPage(): ReactElement {
                               </button>
                             ) : null}
 
-                            {!rec.reachedPhotoUrl && !rec.tripCompletedPhotoUrl ? (
+                            {rec.unloadingPhotoUrl ? (
+                              <button
+                                type="button"
+                                className="photo-thumb-btn"
+                                onClick={() =>
+                                  setSelectedPhoto({
+                                    url: rec.unloadingPhotoUrl!,
+                                    title: `Unloading Proof — ${rec.driverName || 'Driver'}`,
+                                    address: rec.unloadingAddress,
+                                  })
+                                }
+                              >
+                                <ImageIcon size={11} /> Unloading
+                              </button>
+                            ) : null}
+
+                            {!rec.reachedPhotoUrl && !rec.tripCompletedPhotoUrl && !rec.unloadingPhotoUrl ? (
                               <span className="muted">—</span>
                             ) : null}
                           </div>

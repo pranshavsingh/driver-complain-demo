@@ -279,8 +279,17 @@ a:hover {
   gap: 20px;
 }
 
+/* Opt-in 5-across row (Trip Analytics). The breakpoints below still collapse it. */
+.stat-cards-grid.is-five {
+  grid-template-columns: repeat(5, 1fr);
+}
+
 @media (max-width: 1024px) {
   .stat-cards-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .stat-cards-grid.is-five {
     grid-template-columns: repeat(2, 1fr);
   }
 }
@@ -2118,6 +2127,11 @@ a:hover {
   grid-template-columns: repeat(3, 1fr);
   gap: 12px;
   align-content: center;
+}
+
+/* Four metrics go 2x2 — four across is too narrow inside a half-width analytics card. */
+.fleet-avg-grid.is-four {
+  grid-template-columns: repeat(2, 1fr);
 }
 
 .fleet-avg-item {

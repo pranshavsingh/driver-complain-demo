@@ -55,12 +55,17 @@ export function LoadingAssistantCard(): ReactElement {
     };
   }, []);
 
-  // Timer tick for active loading or trip session
+  // Timer tick for the active loading, transit or unloading session. The origin always comes
+  // from a server timestamp, never from Date.now() at mount, so the timer resumes correctly
+  // after the app is force-closed and reopened mid-cycle.
   useEffect(() => {
     if (!activeRecord) return;
 
     let startTime = Date.now();
-    if (activeRecord.status === 'TRIP_STARTED' && activeRecord.tripStartedAt) {
+    if (activeRecord.status === 'UNLOADING' && activeRecord.tripCompletedAt) {
+      // Unloading started the moment the driver reached the unloading point.
+      startTime = new Date(activeRecord.tripCompletedAt).getTime();
+    } else if (activeRecord.status === 'TRIP_STARTED' && activeRecord.tripStartedAt) {
       startTime = new Date(activeRecord.tripStartedAt).getTime();
     } else if (activeRecord.reachedAt) {
       startTime = new Date(activeRecord.reachedAt).getTime();
@@ -227,15 +232,52 @@ export function LoadingAssistantCard(): ReactElement {
     }
   };
 
+  /**
+   * "Reached Unloading Point" — ends transit and starts the unloading clock.
+   *
+   * Deliberately NOT terminal: the record moves to UNLOADING and stays the active session, so
+   * the card keeps a live timer running. The trip only closes out in handleCompleteUnloading.
+   */
   const handleCompleteTrip = async (): Promise<void> => {
     if (!activeRecord) return;
     try {
       setSubmitting(true);
-      // Fetch location and open camera to submit photo for trip completion
+      // Fetch location and open camera to submit photo for arrival at the unloading point
       const data = await captureGpsAndPhoto();
       if (!data) return;
 
       const record = await loading.completeTrip(
+        activeRecord.id,
+        {
+          latitude: data.coords.latitude,
+          longitude: data.coords.longitude,
+          address: data.address,
+        },
+        data.photo,
+      );
+
+      setActiveRecord(record);
+      setCompletedRecord(null);
+      Alert.alert(
+        '📦 Reached Unloading Point',
+        `Trip completed in ${record.formattedTripDuration || '< 1 min'}. Unloading timer started — tap "Unloading Done" once the vehicle is empty.`,
+      );
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to record arrival at unloading point');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  /** "Unloading Done" — the terminal milestone; closes the cycle and bumps the trip count. */
+  const handleCompleteUnloading = async (): Promise<void> => {
+    if (!activeRecord) return;
+    try {
+      setSubmitting(true);
+      const data = await captureGpsAndPhoto();
+      if (!data) return;
+
+      const record = await loading.completeUnloading(
         activeRecord.id,
         {
           latitude: data.coords.latitude,
@@ -255,9 +297,12 @@ export function LoadingAssistantCard(): ReactElement {
       } else {
         await fetchActiveAndStats();
       }
-      Alert.alert('🏁 Trip Completed!', `Trip completed in ${record.formattedTripDuration || '< 1 min'}. Total Trips: ${record.completedTripsCount ?? 1}`);
+      Alert.alert(
+        '🏁 Unloading Done!',
+        `Unloaded in ${record.formattedUnloadingDuration || '< 1 min'}. Total Trips: ${record.completedTripsCount ?? 1}`,
+      );
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to complete trip');
+      Alert.alert('Error', err.message || 'Failed to complete unloading');
     } finally {
       setSubmitting(false);
     }
@@ -272,13 +317,47 @@ export function LoadingAssistantCard(): ReactElement {
   }
 
   const isTripStarted = activeRecord?.status === 'TRIP_STARTED';
+  const isUnloading = activeRecord?.status === 'UNLOADING';
+
+  // Phase-dependent copy, kept as plain data instead of nested ternaries inside the JSX.
+  const timerTitle = isUnloading
+    ? 'Unloading Duration'
+    : isTripStarted
+      ? 'Live Trip Duration'
+      : 'Loading Duration';
+  const milestoneLabel = isUnloading
+    ? 'Reached Unloading At:'
+    : isTripStarted
+      ? 'Trip Started At:'
+      : 'Arrived At:';
+  const milestoneAt = isUnloading
+    ? activeRecord?.tripCompletedAt
+    : isTripStarted
+      ? activeRecord?.tripStartedAt
+      : null;
+  const milestoneAddress = isUnloading
+    ? activeRecord?.tripCompletedAddress
+    : isTripStarted
+      ? activeRecord?.tripStartAddress
+      : activeRecord?.reachedAddress;
+  const timerStyle = isUnloading
+    ? styles.unloadingTimerText
+    : isTripStarted
+      ? styles.tripTimerText
+      : styles.timerText;
 
   return (
     <View style={{ gap: spacing.md }}>
       <Card title="Loading & Trip Assistant 🚛">
         {activeRecord ? (
           <View style={styles.activeContainer}>
-            {isTripStarted ? (
+            {isUnloading ? (
+              <View style={styles.unloadingStatusBadge}>
+                <View style={styles.pulsingOrangeDot} />
+                <Ionicons name="cube-outline" size={16} color="#9A3412" style={{ marginRight: 2 }} />
+                <Text style={styles.unloadingStatusBadgeText}>UNLOADING IN PROGRESS</Text>
+              </View>
+            ) : isTripStarted ? (
               <View style={styles.tripStatusBadge}>
                 <View style={styles.pulsingGreenDot} />
                 <Ionicons name="bus-outline" size={16} color="#065F46" style={{ marginRight: 2 }} />
@@ -292,35 +371,43 @@ export function LoadingAssistantCard(): ReactElement {
               </View>
             )}
 
-            <Text style={styles.timerTitle}>
-              {isTripStarted ? 'Live Trip Duration' : 'Loading Duration'}
-            </Text>
-            <Text style={isTripStarted ? styles.tripTimerText : styles.timerText}>
-              {formatElapsed(elapsedSec)}
-            </Text>
+            <Text style={styles.timerTitle}>{timerTitle}</Text>
+            <Text style={timerStyle}>{formatElapsed(elapsedSec)}</Text>
 
             <View style={styles.infoBox}>
-              <Text style={styles.infoLabel}>
-                {isTripStarted ? 'Trip Started At:' : 'Arrived At:'}
-              </Text>
+              <Text style={styles.infoLabel}>{milestoneLabel}</Text>
               <Text style={styles.infoValue}>
-                {new Date(
-                  isTripStarted && activeRecord.tripStartedAt
-                    ? activeRecord.tripStartedAt
-                    : activeRecord.reachedAt,
-                ).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                {new Date(milestoneAt ?? activeRecord.reachedAt).toLocaleTimeString([], {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
               </Text>
-              {(isTripStarted ? activeRecord.tripStartAddress : activeRecord.reachedAddress) ? (
+              {milestoneAddress ? (
                 <>
                   <Text style={styles.infoLabel}>Location:</Text>
                   <Text style={styles.infoValue} numberOfLines={2}>
-                    {isTripStarted ? activeRecord.tripStartAddress : activeRecord.reachedAddress}
+                    {milestoneAddress}
                   </Text>
                 </>
               ) : null}
             </View>
 
-            {isTripStarted ? (
+            {isUnloading ? (
+              <Pressable
+                style={[styles.actionBtn, styles.unloadingDoneBtn, submitting && styles.btnDisabled]}
+                onPress={handleCompleteUnloading}
+                disabled={submitting}
+              >
+                {submitting ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <>
+                    <Ionicons name="checkmark-done-circle" size={20} color="#FFFFFF" />
+                    <Text style={styles.actionBtnText}>Unloading Done</Text>
+                  </>
+                )}
+              </Pressable>
+            ) : isTripStarted ? (
               <Pressable
                 style={[styles.actionBtn, styles.completeTripBtn, submitting && styles.btnDisabled]}
                 onPress={handleCompleteTrip}
@@ -331,7 +418,7 @@ export function LoadingAssistantCard(): ReactElement {
                 ) : (
                   <>
                     <Ionicons name="flag" size={20} color="#FFFFFF" />
-                    <Text style={styles.actionBtnText}>Complete Trip</Text>
+                    <Text style={styles.actionBtnText}>Reached Unloading Point</Text>
                   </>
                 )}
               </Pressable>
@@ -374,6 +461,12 @@ export function LoadingAssistantCard(): ReactElement {
                 <Text style={styles.resultLabel}>Trip Duration:</Text>
                 <Text style={styles.resultValue}>
                   {completedRecord.formattedTripDuration || '< 1 min'}
+                </Text>
+              </View>
+              <View style={styles.summaryRow}>
+                <Text style={styles.resultLabel}>Unloading Time:</Text>
+                <Text style={styles.summaryValue}>
+                  {completedRecord.formattedUnloadingDuration || '< 1 min'}
                 </Text>
               </View>
             </View>
@@ -466,6 +559,27 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#065F46',
   },
+  unloadingStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFEDD5',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.sm,
+    alignSelf: 'flex-start',
+    gap: spacing.xs,
+  },
+  pulsingOrangeDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#EA580C',
+  },
+  unloadingStatusBadgeText: {
+    fontSize: fontSize.small,
+    fontWeight: '800',
+    color: '#9A3412',
+  },
   timerTitle: {
     fontSize: fontSize.small,
     color: colors.textMuted,
@@ -481,6 +595,12 @@ const styles = StyleSheet.create({
     fontSize: 32,
     fontWeight: '800',
     color: '#059669',
+    letterSpacing: 1,
+  },
+  unloadingTimerText: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: '#EA580C',
     letterSpacing: 1,
   },
   infoBox: {
@@ -517,6 +637,9 @@ const styles = StyleSheet.create({
   },
   completeTripBtn: {
     backgroundColor: '#059669',
+  },
+  unloadingDoneBtn: {
+    backgroundColor: '#EA580C',
   },
   actionBtnText: {
     color: '#FFFFFF',

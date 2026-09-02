@@ -4,6 +4,7 @@ import {
   markLoadingCompleted,
   startTrip,
   completeTrip,
+  completeUnloading,
   getActiveLoadingRecord,
   listLoadingRecords,
   listTripRecords,
@@ -16,6 +17,7 @@ import {
   CompleteLoadingSchema,
   StartTripSchema,
   CompleteTripSchema,
+  CompleteUnloadingSchema,
 } from '@driver-complaint/shared-types';
 import { ApiError } from '../../errors/api-error';
 import { sendSuccess } from '../../lib/http';
@@ -97,6 +99,7 @@ export async function handleStartTrip(req: Request, res: Response): Promise<void
   sendSuccess(res, record);
 }
 
+/** Driver reached the unloading point — ends transit, starts the unloading clock. */
 export async function handleCompleteTrip(req: Request, res: Response): Promise<void> {
   const userId = req.user?.id;
   if (!userId) throw ApiError.unauthorized();
@@ -109,6 +112,30 @@ export async function handleCompleteTrip(req: Request, res: Response): Promise<v
   const loadingId = typeof req.params.id === 'string' ? req.params.id : undefined;
 
   const record = await completeTrip({
+    userId,
+    loadingId,
+    fileBuffer: req.file.buffer,
+    latitude: parsed.latitude,
+    longitude: parsed.longitude,
+    address: parsed.address,
+  });
+
+  sendSuccess(res, record);
+}
+
+/** Driver finished unloading at the destination — closes out the trip cycle. */
+export async function handleCompleteUnloading(req: Request, res: Response): Promise<void> {
+  const userId = req.user?.id;
+  if (!userId) throw ApiError.unauthorized();
+
+  if (!req.file) {
+    throw ApiError.badRequest('Photo proof is required when marking unloading completed');
+  }
+
+  const parsed = CompleteUnloadingSchema.parse(req.body);
+  const loadingId = typeof req.params.id === 'string' ? req.params.id : undefined;
+
+  const record = await completeUnloading({
     userId,
     loadingId,
     fileBuffer: req.file.buffer,
