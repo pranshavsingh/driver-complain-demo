@@ -8,6 +8,8 @@ import {
   UserPublicSchema,
   VehiclePublicSchema,
   LoadingRecordSchema,
+  ActiveLoadingResponseSchema,
+  type ActiveLoadingResponse,
   type ComplaintDetail,
   type ComplaintPublic,
   type CreateComplaint,
@@ -19,7 +21,6 @@ import {
   type UserPublic,
   type VehiclePublic,
   type LoadingRecord,
-  type LoadingStats,
 } from '@driver-complaint/shared-types';
 import { request, requestNoContent } from './client';
 import { clearTokens, getRefreshToken } from './tokens';
@@ -125,8 +126,8 @@ export const notifications = {
 };
 
 export const loading = {
-  active: (): Promise<{ active: LoadingRecord | null; stats?: LoadingStats }> =>
-    request(z.object({ active: z.any(), stats: z.any().optional() }) as any, '/loading/active'),
+  active: (): Promise<ActiveLoadingResponse> =>
+    request(ActiveLoadingResponseSchema, '/loading/active'),
 
   reached: (
     input: { latitude: number; longitude: number; address?: string; locationName?: string; complaintId?: string },

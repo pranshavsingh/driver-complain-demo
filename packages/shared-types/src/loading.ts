@@ -64,6 +64,12 @@ export const LoadingStatsSchema = z.object({
 });
 export type LoadingStats = z.infer<typeof LoadingStatsSchema>;
 
+export const ActiveLoadingResponseSchema = z.object({
+  active: LoadingRecordSchema.nullable(),
+  stats: LoadingStatsSchema.optional(),
+});
+export type ActiveLoadingResponse = z.infer<typeof ActiveLoadingResponseSchema>;
+
 export const DriverMonthlyTripSummarySchema = z.object({
   driverId: z.string(),
   driverName: z.string(),

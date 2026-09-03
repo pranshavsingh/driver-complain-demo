@@ -1,7 +1,6 @@
 import rateLimit from 'express-rate-limit';
-import type { Request, Response, NextFunction } from 'express';
+import type { Request, Response } from 'express';
 import { env } from '../config/env';
-import { SlidingWindowRateLimiter } from '../lib/sliding-window';
 
 /**
  * Login throttle — PINs are low-entropy, so cap attempts per IP + employeeId.
@@ -38,28 +37,4 @@ export const apiRateLimiter = rateLimit({
   standardHeaders: 'draft-7',
   legacyHeaders: false,
 });
-
-/**
- * Sliding Window Rate Limiter Middleware (DSA: Sliding Window Log via binary search).
- * Prevents burst spikes at fixed window boundaries.
- */
-const slidingLimiter = new SlidingWindowRateLimiter();
-
-export function createSlidingRateLimiter(maxRequests: number, windowMs: number) {
-  return (req: Request, res: Response, next: NextFunction): void => {
-    const key = `${req.ip ?? 'ip'}:${req.path}`;
-    if (!slidingLimiter.isAllowed(key, maxRequests, windowMs)) {
-      res.status(429).json({
-        success: false,
-        error: {
-          code: 'TOO_MANY_REQUESTS',
-          message: 'Rate limit exceeded. Please slow down.',
-          requestId: req.id == null ? undefined : String(req.id),
-        },
-      });
-      return;
-    }
-    next();
-  };
-}
 

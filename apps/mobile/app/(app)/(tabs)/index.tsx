@@ -138,7 +138,7 @@ export default function DriverHomeDashboardScreen(): ReactElement {
         <View style={styles.modalScreen}>
           <View style={[styles.modalHeader, { paddingTop: insets.top + spacing.xs }]}>
             <View style={styles.modalHeaderTitleRow}>
-              <Ionicons name="truck" size={22} color="#FFFFFF" />
+              <Ionicons name="bus" size={22} color="#FFFFFF" />
               <Text style={styles.modalTitle}>Loading / Unloading Assistant</Text>
             </View>
             <Pressable onPress={() => setShowLoadingAssistant(false)} style={styles.closeModalBtn}>
@@ -146,7 +146,7 @@ export default function DriverHomeDashboardScreen(): ReactElement {
             </Pressable>
           </View>
           <ScrollView contentContainerStyle={styles.modalContent}>
-            <LoadingAssistantCard />
+            <LoadingAssistantCard visible={showLoadingAssistant} />
           </ScrollView>
         </View>
       </Modal>

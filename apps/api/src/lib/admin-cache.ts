@@ -30,8 +30,3 @@ export async function getActiveAdminUserIds(): Promise<string[]> {
   adminCache = { ids, expiresAt: now + CACHE_TTL_MS };
   return ids;
 }
-
-/** Clear the admin user ID cache manually (e.g., when a user role or status changes). */
-export function invalidateAdminUserCache(): void {
-  adminCache = null;
-}

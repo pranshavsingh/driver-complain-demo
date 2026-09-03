@@ -11,7 +11,13 @@ import { PHOTO_QUALITY } from '../media/limits';
 import { colors, fontSize, radius, spacing } from '../theme';
 import { Ionicons } from '@expo/vector-icons';
 
-export function LoadingAssistantCard(): ReactElement {
+interface LoadingAssistantCardProps {
+  visible?: boolean;
+}
+
+export function LoadingAssistantCard({
+  visible = true,
+}: LoadingAssistantCardProps = {}): ReactElement {
   const [activeRecord, setActiveRecord] = useState<LoadingRecord | null>(null);
   const [completedRecord, setCompletedRecord] = useState<LoadingRecord | null>(null);
   const [loadingInitial, setLoadingInitial] = useState(true);
@@ -25,15 +31,16 @@ export function LoadingAssistantCard(): ReactElement {
   const fetchActiveAndStats = async () => {
     try {
       const res = await loading.active();
-      if (res.active) {
-        setActiveRecord(res.active);
+      setActiveRecord(res.active ?? null);
+      if (res.active === null) {
+        // Driver is idle (no active loading, transit, or unloading session).
+        // Clear any old completedRecord from a prior session so a fresh session can begin.
+        setCompletedRecord(null);
       }
       if (res.stats) {
-        setTripStats(res.stats);
-      } else if (res.active?.completedTripsCount !== undefined) {
         setTripStats({
-          completedTripsCount: res.active.completedTripsCount ?? 0,
-          monthlyTripsCount: res.active.monthlyTripsCount ?? 0,
+          completedTripsCount: res.stats.completedTripsCount,
+          monthlyTripsCount: res.stats.monthlyTripsCount,
         });
       }
     } catch (err) {
@@ -53,7 +60,7 @@ export function LoadingAssistantCard(): ReactElement {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [visible]);
 
   // Timer tick for the active loading, transit or unloading session. The origin always comes
   // from a server timestamp, never from Date.now() at mount, so the timer resumes correctly
@@ -294,9 +301,8 @@ export function LoadingAssistantCard(): ReactElement {
           completedTripsCount: record.completedTripsCount ?? tripStats.completedTripsCount + 1,
           monthlyTripsCount: record.monthlyTripsCount ?? tripStats.monthlyTripsCount + 1,
         });
-      } else {
-        await fetchActiveAndStats();
       }
+      await fetchActiveAndStats();
       Alert.alert(
         '🏁 Unloading Done!',
         `Unloaded in ${record.formattedUnloadingDuration || '< 1 min'}. Total Trips: ${record.completedTripsCount ?? 1}`,
@@ -474,7 +480,10 @@ export function LoadingAssistantCard(): ReactElement {
             <Button
               label="Start New Loading Session"
               variant="secondary"
-              onPress={() => setCompletedRecord(null)}
+              onPress={() => {
+                setCompletedRecord(null);
+                void fetchActiveAndStats();
+              }}
             />
           </View>
         ) : (

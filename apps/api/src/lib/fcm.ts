@@ -3,7 +3,6 @@ import { getMessaging, type Messaging } from 'firebase-admin/messaging';
 import { env } from '../config/env';
 import { logger } from './logger';
 import { prisma } from './prisma';
-import { getCachedDeviceTokens, invalidateDeviceTokenCache } from './device-token-cache';
 
 /** A push notification as this app sends them. `data` values must be strings (FCM rule). */
 export interface PushPayload {
@@ -75,8 +74,11 @@ export async function pushToUsers(userIds: string[], payload: PushPayload): Prom
   // Guard BEFORE touching the database: with push off there is nothing to look up.
   if (!messaging || userIds.length === 0) return;
 
-  // Use cached device tokens — avoids a DB query on every notification event.
-  const tokens = await getCachedDeviceTokens(userIds);
+  const rows = await prisma.deviceToken.findMany({
+    where: { userId: { in: userIds } },
+    select: { token: true },
+  });
+  const tokens = rows.map((r) => r.token);
   if (tokens.length === 0) return;
 
   const dead: string[] = [];
@@ -101,9 +103,5 @@ export async function pushToUsers(userIds: string[], payload: PushPayload): Prom
     // Uninstalled/expired devices: drop them so the token table stays useful.
     const { count } = await prisma.deviceToken.deleteMany({ where: { token: { in: dead } } });
     logger.info({ count }, 'Pruned dead FCM device tokens');
-    // Invalidate cache for affected users so stale tokens aren't re-sent.
-    for (const uid of userIds) {
-      invalidateDeviceTokenCache(uid);
-    }
   }
 }

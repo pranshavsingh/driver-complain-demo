@@ -11,7 +11,6 @@ import { logger } from './lib/logger';
 import { prisma } from './lib/prisma';
 import { initRealtime, closeRealtime } from './realtime/socket';
 import { closeRedis } from './lib/redis';
-import { startEventLoopMonitor, stopEventLoopMonitor } from './lib/event-loop-monitor';
 import { startMediaWorkers } from './jobs/media.worker';
 import { startCleanupScheduler, stopCleanupScheduler } from './jobs/cleanup.worker';
 import { closeQueues } from './jobs/queue';
@@ -25,14 +24,12 @@ server.listen(env.PORT, () => {
   logger.info(`API listening on http://localhost:${env.PORT} (${env.NODE_ENV})`);
 
   // Start background services after the server is listening.
-  startEventLoopMonitor();
   void startMediaWorkers();
   void startCleanupScheduler();
 });
 
 async function shutdown(signal: string): Promise<void> {
   logger.info(`Received ${signal}, shutting down gracefully`);
-  stopEventLoopMonitor();
   stopCleanupScheduler();
   // Drop websockets first; otherwise their open connections keep server.close() waiting.
   await closeRealtime().catch((err: unknown) => {

@@ -19,10 +19,47 @@ import { uploadBuffer, cloudinaryFolder } from '../../lib/cloudinary';
 import { dispatchComplaintEvent } from '../../lib/notify';
 import { transcribeAudio, transcribeAudioFromUrl, translateText } from '../../lib/transcribe';
 import { getActiveAdminUserIds } from '../../lib/admin-cache';
-import { findLeastLoadedAdmin } from '../../lib/admin-load-balancer';
-import { TimedBloomFilter } from '../../lib/bloom-filter';
-import { enqueueComplaintMedia } from '../../jobs/queue';
+import { logger } from '../../lib/logger';
 import { ApiError } from '../../errors/api-error';
+
+async function findLeastLoadedAdmin(category: string): Promise<string | null> {
+  const admins = await prisma.user.findMany({
+    where: {
+      role: { in: ['ADMIN', 'SUPER_ADMIN', 'EXECUTIVE'] },
+      isActive: true,
+      approvalStatus: 'APPROVED',
+      category: category as any,
+    },
+    select: { id: true },
+  });
+
+  if (admins.length === 0) return null;
+  if (admins.length === 1) return admins[0]!.id;
+
+  const counts = await prisma.complaint.groupBy({
+    by: ['assignedToId'],
+    where: {
+      assignedToId: { in: admins.map((a) => a.id) },
+      status: { in: ['NEW', 'IN_PROGRESS'] },
+    },
+    _count: { id: true },
+  });
+
+  const loadMap = new Map<string | null, number>(counts.map((c) => [c.assignedToId, c._count.id]));
+
+  let minLoad = Infinity;
+  let bestAdmin: string | null = null;
+  for (const admin of admins) {
+    const load = loadMap.get(admin.id) ?? 0;
+    if (load < minLoad) {
+      minLoad = load;
+      bestAdmin = admin.id;
+    }
+  }
+
+  logger.debug({ category, bestAdmin, minLoad, candidates: admins.length }, 'Load-balanced admin assignment');
+  return bestAdmin;
+}
 
 /** The authenticated caller, as far as the complaint layer is concerned. */
 export interface Actor {
@@ -40,9 +77,6 @@ export interface EvidenceFile {
 export type ComplaintEvidence = Partial<Record<AttachmentKind, EvidenceFile>>;
 
 const ADMIN_ROLES: Role[] = ['ADMIN', 'SUPER_ADMIN'];
-
-/** Bloom filter to detect duplicate complaint submissions within a 5-minute window. */
-const recentComplaints = new TimedBloomFilter(5 * 60_000, 4096, 5);
 
 /**
  * Photos go to Cloudinary's image pipeline; voice notes and videos both go to its video
@@ -810,4 +844,3 @@ export async function translateComplaintText(
   const translatedText = await translateText(text, targetLang);
   return { text, translatedText, targetLang };
 }
-

@@ -38,13 +38,13 @@ export async function getDriverTripStats(driverId: string): Promise<{
     prisma.loadingRecord.count({
       where: {
         driverId,
-        status: { in: ['TRIP_COMPLETED', 'COMPLETED'] },
+        status: { in: ['TRIP_COMPLETED', 'COMPLETED', 'UNLOADING'] },
       },
     }),
     prisma.loadingRecord.count({
       where: {
         driverId,
-        status: { in: ['TRIP_COMPLETED', 'COMPLETED'] },
+        status: { in: ['TRIP_COMPLETED', 'COMPLETED', 'UNLOADING'] },
         createdAt: { gte: startOfMonth },
       },
     }),
@@ -542,7 +542,7 @@ export async function listLoadingRecords(opts: {
       by: ['driverId'],
       where: {
         driverId: { in: driverIds },
-        status: { in: ['TRIP_COMPLETED', 'COMPLETED'] },
+        status: { in: ['TRIP_COMPLETED', 'COMPLETED', 'UNLOADING'] },
       },
       _count: { id: true },
     }),
@@ -550,7 +550,7 @@ export async function listLoadingRecords(opts: {
       by: ['driverId'],
       where: {
         driverId: { in: driverIds },
-        status: { in: ['TRIP_COMPLETED', 'COMPLETED'] },
+        status: { in: ['TRIP_COMPLETED', 'COMPLETED', 'UNLOADING'] },
         createdAt: { gte: startOfMonth },
       },
       _count: { id: true },
@@ -693,7 +693,7 @@ export async function getDriverMonthlyTripSummaries(opts: {
 
   const records = await prisma.loadingRecord.findMany({
     where: {
-      status: { in: ['TRIP_COMPLETED', 'COMPLETED'] },
+      status: { in: ['TRIP_COMPLETED', 'COMPLETED', 'UNLOADING'] },
       reachedAt: { gte: fromDate, lte: toDate },
       ...(opts.driverId ? { driverId: opts.driverId } : {}),
       ...(search
