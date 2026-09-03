@@ -18,7 +18,7 @@ import { PriorityBadge, StatusBadge } from '../components/Badges';
 import { Pagination } from '../components/Pagination';
 import { formatDateTime, formatEnum, fullName } from '../lib/format';
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 15;
 const FILTER_KEYS = Object.keys(EMPTY_FILTER) as (keyof ComplaintFilterInput)[];
 
 function readFilter(params: URLSearchParams): ComplaintFilterInput {
@@ -314,7 +314,36 @@ export function ComplaintsListPage(): ReactElement {
         </div>
 
         {listRes.loading && rows.length === 0 ? (
-          <div className="loading-state">Loading complaints list…</div>
+          <div className="table-responsive">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>COMPLAINT</th>
+                  <th>TITLE</th>
+                  <th>CATEGORY</th>
+                  <th>STATUS</th>
+                  <th>PRIORITY</th>
+                  <th>DRIVER</th>
+                  <th>ASSIGNEE</th>
+                  <th>FILED AT</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Array.from({ length: 15 }).map((_, idx) => (
+                  <tr key={idx} className="skeleton-table-row">
+                    <td><span className="skeleton-box" style={{ width: '90px' }} /></td>
+                    <td><span className="skeleton-box" style={{ width: '160px' }} /></td>
+                    <td><span className="skeleton-box" style={{ width: '80px' }} /></td>
+                    <td><span className="skeleton-box" style={{ width: '70px', borderRadius: '12px' }} /></td>
+                    <td><span className="skeleton-box" style={{ width: '60px', borderRadius: '12px' }} /></td>
+                    <td><span className="skeleton-box" style={{ width: '110px' }} /></td>
+                    <td><span className="skeleton-box" style={{ width: '100px' }} /></td>
+                    <td><span className="skeleton-box" style={{ width: '120px' }} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : rows.length === 0 ? (
           <div className="empty-table-state">
             <p>No complaints match these filters.</p>

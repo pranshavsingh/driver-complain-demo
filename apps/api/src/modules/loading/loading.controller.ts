@@ -158,7 +158,7 @@ export async function handleGetActiveLoading(req: Request, res: Response): Promi
 export async function handleListLoadingRecords(req: Request, res: Response): Promise<void> {
   if (req.path === '/trips') {
     const page = Math.max(1, Number(req.query.page) || 1);
-    const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 20));
+    const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 15));
     sendSuccess(res, await listTripRecords({ ...tripFilters(req), page, pageSize }));
     return;
   }

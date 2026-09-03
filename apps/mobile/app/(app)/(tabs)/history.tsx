@@ -21,10 +21,11 @@ import { ErrorNotice } from '../../../src/components/ErrorNotice';
 import { EmptyState } from '../../../src/components/ScreenState';
 import { useApiResource } from '../../../src/hooks/useApiResource';
 import { formatDateTime } from '../../../src/lib/format';
+import { SkeletonCardList } from '../../../src/components/SkeletonLoader';
 import { fontSize, radius, spacing } from '../../../src/theme';
 import { Ionicons } from '@expo/vector-icons';
 
-const PAGE_STEP = 20;
+const PAGE_STEP = 15;
 const MAX_PAGE_SIZE = 100;
 
 const STATUS_FILTERS: { label: string; value: ComplaintStatus | 'ALL' }[] = [
@@ -162,9 +163,7 @@ export default function ComplaintHistoryScreen(): ReactElement {
         }
         ListEmptyComponent={
           complaints.loading && complaints.data === null ? (
-            <View style={styles.loadingContainer}>
-              <Text style={styles.loadingText}>Loading your complaints...</Text>
-            </View>
+            <SkeletonCardList count={4} />
           ) : (
             <EmptyState
               title={searchQuery || statusFilter !== 'ALL' ? 'No matching complaints' : 'No complaints filed yet'}
