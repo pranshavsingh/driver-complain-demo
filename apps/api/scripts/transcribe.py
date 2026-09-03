@@ -2,7 +2,7 @@
 """
 Local speech-to-text transcription using faster-whisper.
 Returns transcription in the ORIGINAL spoken language (not translated).
-Uses 'small' model for good accuracy without requiring GPU.
+Uses Hugging Face's Systran/faster-whisper-large-v3 model locally for accurate transcription.
 """
 import sys
 import os
@@ -34,22 +34,27 @@ def transcribe(audio_path):
         sys.exit(0)
 
     try:
-        # Use 'small' model — much better accuracy than 'tiny' for Indian languages.
-        # 'small' needs ~1GB RAM, runs fine on CPU.
-        # For even better accuracy, change to 'medium' (~2.5GB) or 'large-v3' (~4GB).
-        model = WhisperModel("small", device="cpu", compute_type="int8")
+        # "large-v3" resolves to Hugging Face's Systran/faster-whisper-large-v3 conversion.
+        # It is the highest-accuracy multilingual Whisper model available to faster-whisper.
+        model_name = os.getenv("TRANSCRIPTION_LOCAL_MODEL", "large-v3")
+        model = WhisperModel(model_name, device="cpu", compute_type="int8")
 
         segments, info = model.transcribe(
             audio_path,
-            beam_size=5,
+            beam_size=8,
             # task="transcribe" keeps the original language — NOT "translate" which
             # forces English and garbles Hindi/Bengali.
             task="transcribe",
-            # VAD filter removes silence and background noise for cleaner output
+            initial_prompt=(
+                "Fleet driver complaint. Terms may include truck, trailer, tyre, engine, "
+                "brake, clutch, fuel, loading, unloading, GPS, vehicle number and route names. "
+                "The speaker may use English, Hindi, Bengali or a mixture."
+            ),
+            # Keep VAD conservative so it does not cut softly spoken words between noisy gaps.
             vad_filter=True,
             vad_parameters=dict(
-                min_silence_duration_ms=500,
-                speech_pad_ms=400,
+                min_silence_duration_ms=900,
+                speech_pad_ms=600,
             ),
         )
 
