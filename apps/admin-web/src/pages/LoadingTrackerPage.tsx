@@ -7,8 +7,30 @@ import { useApiResource } from '../hooks/useApiResource';
 import { formatDateTime } from '../lib/format';
 import { useRealtime } from '../realtime/RealtimeProvider';
 
+function waitingMinutes(record: LoadingRecord, now: number): number | null {
+  if (record.waitingTimeMinutes !== null && record.waitingTimeMinutes !== undefined) {
+    return record.waitingTimeMinutes;
+  }
+
+  const reachedAt = new Date(record.reachedAt).getTime();
+  const endedAt = record.completedAt ? new Date(record.completedAt).getTime() : now;
+  if (!Number.isFinite(reachedAt) || !Number.isFinite(endedAt)) return null;
+
+  return Math.max(0, Math.floor((endedAt - reachedAt) / 60_000));
+}
+
+function formatWaitingDuration(minutes: number | null): string {
+  if (minutes === null) return 'Unavailable';
+  if (minutes < 1) return '< 1 min';
+
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return hours > 0 ? `${hours}h ${remainingMinutes}m` : `${remainingMinutes} min`;
+}
+
 export function LoadingTrackerPage(): ReactElement {
   const [selectedPhoto, setSelectedPhoto] = useState<{ url: string; title: string } | null>(null);
+  const [now, setNow] = useState(() => Date.now());
 
   const loadingResource = useApiResource('admin:loading', () => api.loading.list());
   const { subscribe } = useRealtime();
@@ -24,11 +46,19 @@ export function LoadingTrackerPage(): ReactElement {
 
   const records: LoadingRecord[] = loadingResource.data?.data ?? [];
 
+  // A waiting session has no completion timestamp yet. Keep its displayed duration live
+  // rather than waiting for the driver to complete loading before showing a value.
+  useEffect(() => {
+    if (!records.some((record) => record.status === 'REACHED')) return;
+    const interval = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(interval);
+  }, [records]);
+
   const activeWaitingCount = useMemo(() => records.filter((r) => r.status === 'REACHED').length, [records]);
   const completedCount = useMemo(() => records.filter((r) => r.status === 'COMPLETED').length, [records]);
   const highDetentionCount = useMemo(
-    () => records.filter((r) => r.waitingTimeMinutes !== null && r.waitingTimeMinutes !== undefined && r.waitingTimeMinutes > 120).length,
-    [records],
+    () => records.filter((record) => (waitingMinutes(record, now) ?? 0) > 120).length,
+    [records, now],
   );
 
   return (
@@ -124,7 +154,8 @@ export function LoadingTrackerPage(): ReactElement {
               </thead>
               <tbody>
                 {records.map((rec) => {
-                  const isHighDetention = (rec.waitingTimeMinutes ?? 0) > 120;
+                  const totalWaitingMinutes = waitingMinutes(rec, now);
+                  const isHighDetention = (totalWaitingMinutes ?? 0) > 120;
                   const mapsUrl = `https://www.google.com/maps?q=${rec.reachedLatitude},${rec.reachedLongitude}`;
 
                   return (
@@ -245,13 +276,13 @@ export function LoadingTrackerPage(): ReactElement {
                       <td>
                         {rec.status === 'REACHED' ? (
                           <span className="waiting-timer-pill">
-                            <Clock size={12} /> Calculating...
+                            <Clock size={12} /> {formatWaitingDuration(totalWaitingMinutes)} · Live
                           </span>
                         ) : (
                           <span
                             className={`duration-pill ${isHighDetention ? 'high-detention' : ''}`}
                           >
-                            {rec.formattedWaitingTime || '< 1 min'}
+                            {formatWaitingDuration(totalWaitingMinutes)}
                             {isHighDetention ? ' (High Delay)' : ''}
                           </span>
                         )}

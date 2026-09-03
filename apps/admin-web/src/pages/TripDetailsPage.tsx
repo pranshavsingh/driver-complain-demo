@@ -814,22 +814,6 @@ export function TripDetailsPage(): ReactElement {
 
                         <td>
                           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                            {rec.reachedPhotoUrl ? (
-                              <button
-                                type="button"
-                                className="photo-thumb-btn"
-                                onClick={() =>
-                                  setSelectedPhoto({
-                                    url: rec.reachedPhotoUrl,
-                                    title: `Arrival Proof — ${rec.driverName || 'Driver'}`,
-                                    address: rec.reachedAddress,
-                                  })
-                                }
-                              >
-                                <ImageIcon size={11} /> Arrival
-                              </button>
-                            ) : null}
-
                             {rec.tripCompletedPhotoUrl ? (
                               <button
                                 type="button"
@@ -862,7 +846,7 @@ export function TripDetailsPage(): ReactElement {
                               </button>
                             ) : null}
 
-                            {!rec.reachedPhotoUrl && !rec.tripCompletedPhotoUrl && !rec.unloadingPhotoUrl ? (
+                            {!rec.tripCompletedPhotoUrl && !rec.unloadingPhotoUrl ? (
                               <span className="muted">—</span>
                             ) : null}
                           </div>
