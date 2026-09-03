@@ -1,24 +1,37 @@
-import { useState, type ReactElement } from 'react';
+import { useMemo, useState, type ReactElement } from 'react';
 import type { DriverListItem } from '@driver-complaint/shared-types';
 import { Users, RotateCw, Search, X } from '../components/Icons';
 import * as api from '../api/endpoints';
 import { ErrorBanner } from '../components/ErrorBanner';
+import { Pagination } from '../components/Pagination';
 import { useApiResource } from '../hooks/useApiResource';
 
 export function DriversPage(): ReactElement {
   const [searchQuery, setSearchQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
 
   const driversResource = useApiResource('drivers:list', () => api.drivers.list());
   const driversList: DriverListItem[] = driversResource.data ?? [];
 
-  const filteredDrivers = driversList.filter((d) => {
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase();
-    const nameMatch = `${d.firstName} ${d.lastName}`.toLowerCase().includes(q);
-    const empMatch = d.employeeId.toLowerCase().includes(q);
-    const dlMatch = d.licenseNumber.toLowerCase().includes(q);
-    return nameMatch || empMatch || dlMatch;
-  });
+  const filteredDrivers = useMemo(() => {
+    return driversList.filter((d) => {
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase();
+      const nameMatch = `${d.firstName} ${d.lastName}`.toLowerCase().includes(q);
+      const empMatch = d.employeeId.toLowerCase().includes(q);
+      const dlMatch = d.licenseNumber.toLowerCase().includes(q);
+      return nameMatch || empMatch || dlMatch;
+    });
+  }, [driversList, searchQuery]);
+
+  const totalItems = filteredDrivers.length;
+  const totalPages = Math.ceil(totalItems / pageSize) || 1;
+
+  const paginatedDrivers = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredDrivers.slice(start, start + pageSize);
+  }, [filteredDrivers, page, pageSize]);
 
   return (
     <div className="page-container">
@@ -47,7 +60,7 @@ export function DriversPage(): ReactElement {
         <div className="table-card-header">
           <div>
             <h2 className="table-card-title">
-              Drivers List <span className="badge-pill">{filteredDrivers.length}</span>
+              Drivers List <span className="badge-pill">{totalItems}</span>
             </h2>
           </div>
 
@@ -58,10 +71,20 @@ export function DriversPage(): ReactElement {
               className="search-input"
               placeholder="Search driver by name, Emp ID, or DL..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setPage(1);
+              }}
             />
             {searchQuery ? (
-              <button type="button" className="clear-search" onClick={() => setSearchQuery('')}>
+              <button
+                type="button"
+                className="clear-search"
+                onClick={() => {
+                  setSearchQuery('');
+                  setPage(1);
+                }}
+              >
                 <X size={14} />
               </button>
             ) : null}
@@ -75,49 +98,61 @@ export function DriversPage(): ReactElement {
             <p>No drivers found matching your search.</p>
           </div>
         ) : (
-          <div className="table-responsive">
-            <table className="admin-table">
-              <thead>
-                <tr>
-                  <th>Photo</th>
-                  <th>Driver Name</th>
-                  <th>Employee ID</th>
-                  <th>Contact Number</th>
-                  <th>Driving License (DL)</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredDrivers.map((driver) => (
-                  <tr key={driver.id}>
-                    <td>
-                      <div className="driver-avatar-circle">
-                        {driver.firstName[0]}
-                        {driver.lastName[0]}
-                      </div>
-                    </td>
-                    <td>
-                      <div className="driver-name-cell">
-                        {driver.firstName} {driver.lastName}
-                      </div>
-                    </td>
-                    <td>
-                      <span className="employee-id-badge">{driver.employeeId}</span>
-                    </td>
-                    <td>
-                      <span className="contact-phone">+1 (555) 019-2834</span>
-                    </td>
-                    <td>
-                      <span className="license-tag">{driver.licenseNumber || 'N/A'}</span>
-                    </td>
-                    <td>
-                      <span className="status-chip-active">Active</span>
-                    </td>
+          <>
+            <div className="table-responsive">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Photo</th>
+                    <th>Driver Name</th>
+                    <th>Employee ID</th>
+                    <th>Contact Number</th>
+                    <th>Driving License (DL)</th>
+                    <th>Status</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {paginatedDrivers.map((driver) => (
+                    <tr key={driver.id}>
+                      <td>
+                        <div className="driver-avatar-circle">
+                          {driver.firstName[0]}
+                          {driver.lastName[0]}
+                        </div>
+                      </td>
+                      <td>
+                        <div className="driver-name-cell">
+                          {driver.firstName} {driver.lastName}
+                        </div>
+                      </td>
+                      <td>
+                        <span className="employee-id-badge">{driver.employeeId}</span>
+                      </td>
+                      <td>
+                        <span className="contact-phone">+1 (555) 019-2834</span>
+                      </td>
+                      <td>
+                        <span className="license-tag">{driver.licenseNumber || 'N/A'}</span>
+                      </td>
+                      <td>
+                        <span className="status-chip-active">Active</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <Pagination
+              meta={{ page, pageSize, total: totalItems, totalPages }}
+              onPageChange={setPage}
+              onPageSizeChange={(sz) => {
+                setPageSize(sz);
+                setPage(1);
+              }}
+              itemLabel="driver"
+            />
+          </>
         )}
       </div>
     </div>

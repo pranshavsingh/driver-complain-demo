@@ -10,11 +10,13 @@ import { ComplaintDetailPage } from './pages/ComplaintDetailPage';
 import { LoadingTrackerPage } from './pages/LoadingTrackerPage';
 import { TripDetailsPage } from './pages/TripDetailsPage';
 import { UsersPage } from './pages/UsersPage';
+import { ThemeProvider } from './context/ThemeContext';
 import { NotFoundPage } from './pages/NotFoundPage';
 
 export function App(): ReactElement {
   return (
-    <Routes>
+    <ThemeProvider>
+      <Routes>
       <Route path="/login" element={<LoginPage />} />
 
       {/* Admin Shell Layout with Left Sidebar */}
@@ -42,6 +44,7 @@ export function App(): ReactElement {
         <Route path="/trips" element={<TripDetailsPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
-    </Routes>
+      </Routes>
+    </ThemeProvider>
   );
 }

@@ -20,6 +20,7 @@ import {
 } from '../components/Icons';
 import * as api from '../api/endpoints';
 import { ErrorBanner } from '../components/ErrorBanner';
+import { Pagination } from '../components/Pagination';
 import { useApiResource } from '../hooks/useApiResource';
 import { formatDateTime } from '../lib/format';
 import { useRealtime } from '../realtime/RealtimeProvider';
@@ -125,6 +126,25 @@ export function TripDetailsPage(): ReactElement {
 
   const records: LoadingRecord[] = logsResource.data?.data ?? [];
   const summaries: DriverMonthlyTripSummary[] = summaryResource.data?.data ?? [];
+
+  const [matrixPage, setMatrixPage] = useState(1);
+  const [matrixPageSize, setMatrixPageSize] = useState(15);
+  const [logsPage, setLogsPage] = useState(1);
+  const [logsPageSize, setLogsPageSize] = useState(15);
+
+  const totalMatrixItems = summaries.length;
+  const totalMatrixPages = Math.ceil(totalMatrixItems / matrixPageSize) || 1;
+  const paginatedSummaries = useMemo(() => {
+    const start = (matrixPage - 1) * matrixPageSize;
+    return summaries.slice(start, start + matrixPageSize);
+  }, [summaries, matrixPage, matrixPageSize]);
+
+  const totalLogsItems = records.length;
+  const totalLogsPages = Math.ceil(totalLogsItems / logsPageSize) || 1;
+  const paginatedRecords = useMemo(() => {
+    const start = (logsPage - 1) * logsPageSize;
+    return records.slice(start, start + logsPageSize);
+  }, [records, logsPage, logsPageSize]);
 
   // Compute stat metrics
   const totalCompletedTrips = useMemo(() => {
@@ -585,7 +605,7 @@ export function TripDetailsPage(): ReactElement {
                   </tr>
                 </thead>
                 <tbody>
-                  {summaries.map((s, idx) => (
+                  {paginatedSummaries.map((s, idx) => (
                     <tr key={`${s.driverId}_${s.year}_${s.month}_${idx}`}>
                       <td>
                         <div style={{ fontWeight: '700', color: '#0f172a' }}>{s.driverName}</div>
@@ -659,6 +679,18 @@ export function TripDetailsPage(): ReactElement {
               </table>
             </div>
           )}
+
+          {summaries.length > 0 ? (
+            <Pagination
+              meta={{ page: matrixPage, pageSize: matrixPageSize, total: totalMatrixItems, totalPages: totalMatrixPages }}
+              onPageChange={setMatrixPage}
+              onPageSizeChange={(sz) => {
+                setMatrixPageSize(sz);
+                setMatrixPage(1);
+              }}
+              itemLabel="summary"
+            />
+          ) : null}
         </div>
       ) : (
         /* TAB 2: Detailed Trip Logs Table */
@@ -677,186 +709,198 @@ export function TripDetailsPage(): ReactElement {
               <p>No trip records found matching your filters.</p>
             </div>
           ) : (
-            <div className="table-responsive table-scroll">
-              <table className="admin-table">
-                <thead>
-                  <tr>
-                    <th>Driver & Vehicle</th>
-                    <th>Status</th>
-                    <th>Departure & Arrival Timestamps</th>
-                    <th>Start & End Address</th>
-                    <th>Duration & Detention</th>
-                    <th>Proof Photos</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {records.map((rec) => {
-                    const isLongTrip = (rec.tripDurationMinutes ?? 0) > 240;
-                    const isHighUnloading = (rec.unloadingDurationMinutes ?? 0) > 120;
-                    const mapsStartUrl = rec.tripStartLatitude
-                      ? `https://www.google.com/maps?q=${rec.tripStartLatitude},${rec.tripStartLongitude}`
-                      : null;
-                    const mapsCompletedUrl = rec.tripCompletedLatitude
-                      ? `https://www.google.com/maps?q=${rec.tripCompletedLatitude},${rec.tripCompletedLongitude}`
-                      : null;
+            <>
+              <div className="table-responsive table-scroll">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Driver & Vehicle</th>
+                      <th>Status</th>
+                      <th>Departure & Arrival Timestamps</th>
+                      <th>Start & End Address</th>
+                      <th>Duration & Detention</th>
+                      <th>Proof Photos</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paginatedRecords.map((rec) => {
+                      const isLongTrip = (rec.tripDurationMinutes ?? 0) > 240;
+                      const isHighUnloading = (rec.unloadingDurationMinutes ?? 0) > 120;
+                      const mapsStartUrl = rec.tripStartLatitude
+                        ? `https://www.google.com/maps?q=${rec.tripStartLatitude},${rec.tripStartLongitude}`
+                        : null;
+                      const mapsCompletedUrl = rec.tripCompletedLatitude
+                        ? `https://www.google.com/maps?q=${rec.tripCompletedLatitude},${rec.tripCompletedLongitude}`
+                        : null;
 
-                    return (
-                      <tr key={rec.id}>
-                        <td>
-                          <div style={{ fontWeight: '700', color: '#0f172a' }}>
-                            {rec.driverName || 'Driver'}
-                          </div>
-                          {rec.vehiclePlate ? (
-                            <span className="vehicle-badge">{rec.vehiclePlate}</span>
-                          ) : null}
-                        </td>
-
-                        <td>
-                          {rec.status === 'TRIP_COMPLETED' ? (
-                            <span className="status-badge badge-success">
-                              <CheckCircle2 size={12} style={{ marginRight: 4 }} /> TRIP COMPLETED
-                            </span>
-                          ) : rec.status === 'UNLOADING' ? (
-                            <span className="status-badge badge-warning">
-                              <span className="pulsing-dot" /> UNLOADING
-                            </span>
-                          ) : rec.status === 'TRIP_STARTED' ? (
-                            <span className="status-badge badge-warning">
-                              <span className="pulsing-dot" /> TRIP STARTED
-                            </span>
-                          ) : rec.status === 'COMPLETED' ? (
-                            <span className="status-badge badge-info">LOADING DONE</span>
-                          ) : (
-                            <span className="status-badge badge-warning">REACHED</span>
-                          )}
-                        </td>
-
-                        <td>
-                          <div style={{ fontSize: '12px' }}>
-                            {rec.tripStartedAt ? (
-                              <div>
-                                <span className="muted">Started:</span> {formatDateTime(rec.tripStartedAt)}
-                              </div>
+                      return (
+                        <tr key={rec.id}>
+                          <td>
+                            <div style={{ fontWeight: '700', color: '#0f172a' }}>
+                              {rec.driverName || 'Driver'}
+                            </div>
+                            {rec.vehiclePlate ? (
+                              <span className="vehicle-badge">{rec.vehiclePlate}</span>
                             ) : null}
-                            {rec.tripCompletedAt ? (
-                              <div style={{ marginTop: 2 }}>
-                                <span className="muted">Completed:</span> {formatDateTime(rec.tripCompletedAt)}
-                              </div>
-                            ) : (
-                              <div>
-                                <span className="muted">Arrived:</span> {formatDateTime(rec.reachedAt)}
-                              </div>
-                            )}
-                            {rec.unloadingCompletedAt ? (
-                              <div style={{ marginTop: 2 }}>
-                                <span className="muted">Unloaded:</span> {formatDateTime(rec.unloadingCompletedAt)}
-                              </div>
-                            ) : null}
-                          </div>
-                        </td>
+                          </td>
 
-                        <td>
-                          <div style={{ fontSize: '12px', maxWidth: 220 }}>
-                            {rec.tripStartAddress ? (
-                              <div style={{ marginBottom: 4 }}>
-                                <strong style={{ color: '#0f172a' }}>Start: </strong>
-                                <span>{rec.tripStartAddress}</span>
-                                {mapsStartUrl ? (
-                                  <a
-                                    href={mapsStartUrl}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    style={{ marginLeft: 4, color: '#2563eb' }}
-                                  >
-                                    <ExternalLink size={10} />
-                                  </a>
-                                ) : null}
-                              </div>
-                            ) : null}
-
-                            {rec.tripCompletedAddress ? (
-                              <div>
-                                <strong style={{ color: '#0f172a' }}>End: </strong>
-                                <span>{rec.tripCompletedAddress}</span>
-                                {mapsCompletedUrl ? (
-                                  <a
-                                    href={mapsCompletedUrl}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    style={{ marginLeft: 4, color: '#2563eb' }}
-                                  >
-                                    <ExternalLink size={10} />
-                                  </a>
-                                ) : null}
-                              </div>
-                            ) : (
-                              <span className="muted">{rec.reachedAddress || rec.locationName || 'N/A'}</span>
-                            )}
-                          </div>
-                        </td>
-
-                        <td>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                            {formatHms(rec.tripStartedAt, rec.tripCompletedAt, rec.formattedTripDuration) ? (
-                              <span className={`duration-pill ${isLongTrip ? 'high-detention' : ''}`}>
-                                <Clock size={12} style={{ marginRight: 4 }} />
-                                Trip: {formatHms(rec.tripStartedAt, rec.tripCompletedAt, rec.formattedTripDuration)}
+                          <td>
+                            {rec.status === 'TRIP_COMPLETED' ? (
+                              <span className="status-badge badge-success">
+                                <CheckCircle2 size={12} style={{ marginRight: 4 }} /> TRIP COMPLETED
                               </span>
-                            ) : null}
-
-                            {formatHms(rec.tripCompletedAt, rec.unloadingCompletedAt, rec.formattedUnloadingDuration) ? (
-                              <span className={`duration-pill ${isHighUnloading ? 'high-detention' : ''}`}>
-                                Unload: {formatHms(rec.tripCompletedAt, rec.unloadingCompletedAt, rec.formattedUnloadingDuration)}
+                            ) : rec.status === 'UNLOADING' ? (
+                              <span className="status-badge badge-warning">
+                                <span className="pulsing-dot" /> UNLOADING
                               </span>
-                            ) : null}
-                          </div>
-                        </td>
+                            ) : rec.status === 'TRIP_STARTED' ? (
+                              <span className="status-badge badge-warning">
+                                <span className="pulsing-dot" /> TRIP STARTED
+                              </span>
+                            ) : rec.status === 'COMPLETED' ? (
+                              <span className="status-badge badge-info">LOADING DONE</span>
+                            ) : (
+                              <span className="status-badge badge-warning">REACHED</span>
+                            )}
+                          </td>
 
-                        <td>
-                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                            {rec.tripCompletedPhotoUrl ? (
-                              <button
-                                type="button"
-                                className="photo-thumb-btn"
-                                onClick={() =>
-                                  setSelectedPhoto({
-                                    url: rec.tripCompletedPhotoUrl!,
-                                    title: `Trip Completion Proof — ${rec.driverName || 'Driver'}`,
-                                    address: rec.tripCompletedAddress,
-                                  })
-                                }
-                              >
-                                <ImageIcon size={11} /> Trip End
-                              </button>
-                            ) : null}
+                          <td>
+                            <div style={{ fontSize: '12px' }}>
+                              {rec.tripStartedAt ? (
+                                <div>
+                                  <span className="muted">Started:</span> {formatDateTime(rec.tripStartedAt)}
+                                </div>
+                              ) : null}
+                              {rec.tripCompletedAt ? (
+                                <div style={{ marginTop: 2 }}>
+                                  <span className="muted">Completed:</span> {formatDateTime(rec.tripCompletedAt)}
+                                </div>
+                              ) : (
+                                <div>
+                                  <span className="muted">Arrived:</span> {formatDateTime(rec.reachedAt)}
+                                </div>
+                              )}
+                              {rec.unloadingCompletedAt ? (
+                                <div style={{ marginTop: 2 }}>
+                                  <span className="muted">Unloaded:</span> {formatDateTime(rec.unloadingCompletedAt)}
+                                </div>
+                              ) : null}
+                            </div>
+                          </td>
 
-                            {rec.unloadingPhotoUrl ? (
-                              <button
-                                type="button"
-                                className="photo-thumb-btn"
-                                onClick={() =>
-                                  setSelectedPhoto({
-                                    url: rec.unloadingPhotoUrl!,
-                                    title: `Unloading Proof — ${rec.driverName || 'Driver'}`,
-                                    address: rec.unloadingAddress,
-                                  })
-                                }
-                              >
-                                <ImageIcon size={11} /> Unloading
-                              </button>
-                            ) : null}
+                          <td>
+                            <div style={{ fontSize: '12px', maxWidth: 220 }}>
+                              {rec.tripStartAddress ? (
+                                <div style={{ marginBottom: 4 }}>
+                                  <strong style={{ color: '#0f172a' }}>Start: </strong>
+                                  <span>{rec.tripStartAddress}</span>
+                                  {mapsStartUrl ? (
+                                    <a
+                                      href={mapsStartUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      style={{ marginLeft: 4, color: '#2563eb' }}
+                                    >
+                                      <ExternalLink size={10} />
+                                    </a>
+                                  ) : null}
+                                </div>
+                              ) : null}
 
-                            {!rec.tripCompletedPhotoUrl && !rec.unloadingPhotoUrl ? (
-                              <span className="muted">—</span>
-                            ) : null}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                              {rec.tripCompletedAddress ? (
+                                <div>
+                                  <strong style={{ color: '#0f172a' }}>End: </strong>
+                                  <span>{rec.tripCompletedAddress}</span>
+                                  {mapsCompletedUrl ? (
+                                    <a
+                                      href={mapsCompletedUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      style={{ marginLeft: 4, color: '#2563eb' }}
+                                    >
+                                      <ExternalLink size={10} />
+                                    </a>
+                                  ) : null}
+                                </div>
+                              ) : (
+                                <span className="muted">{rec.reachedAddress || rec.locationName || 'N/A'}</span>
+                              )}
+                            </div>
+                          </td>
+
+                          <td>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              {formatHms(rec.tripStartedAt, rec.tripCompletedAt, rec.formattedTripDuration) ? (
+                                <span className={`duration-pill ${isLongTrip ? 'high-detention' : ''}`}>
+                                  <Clock size={12} style={{ marginRight: 4 }} />
+                                  Trip: {formatHms(rec.tripStartedAt, rec.tripCompletedAt, rec.formattedTripDuration)}
+                                </span>
+                              ) : null}
+
+                              {formatHms(rec.tripCompletedAt, rec.unloadingCompletedAt, rec.formattedUnloadingDuration) ? (
+                                <span className={`duration-pill ${isHighUnloading ? 'high-detention' : ''}`}>
+                                  Unload: {formatHms(rec.tripCompletedAt, rec.unloadingCompletedAt, rec.formattedUnloadingDuration)}
+                                </span>
+                              ) : null}
+                            </div>
+                          </td>
+
+                          <td>
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                              {rec.tripCompletedPhotoUrl ? (
+                                <button
+                                  type="button"
+                                  className="photo-thumb-btn"
+                                  onClick={() =>
+                                    setSelectedPhoto({
+                                      url: rec.tripCompletedPhotoUrl!,
+                                      title: `Trip Completion Proof — ${rec.driverName || 'Driver'}`,
+                                      address: rec.tripCompletedAddress,
+                                    })
+                                  }
+                                >
+                                  <ImageIcon size={11} /> Trip End
+                                </button>
+                              ) : null}
+
+                              {rec.unloadingPhotoUrl ? (
+                                <button
+                                  type="button"
+                                  className="photo-thumb-btn"
+                                  onClick={() =>
+                                    setSelectedPhoto({
+                                      url: rec.unloadingPhotoUrl!,
+                                      title: `Unloading Proof — ${rec.driverName || 'Driver'}`,
+                                      address: rec.unloadingAddress,
+                                    })
+                                  }
+                                >
+                                  <ImageIcon size={11} /> Unloading
+                                </button>
+                              ) : null}
+
+                              {!rec.tripCompletedPhotoUrl && !rec.unloadingPhotoUrl ? (
+                                <span className="muted">—</span>
+                              ) : null}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <Pagination
+                meta={{ page: logsPage, pageSize: logsPageSize, total: totalLogsItems, totalPages: totalLogsPages }}
+                onPageChange={setLogsPage}
+                onPageSizeChange={(sz) => {
+                  setLogsPageSize(sz);
+                  setLogsPage(1);
+                }}
+                itemLabel="trip record"
+              />
+            </>
           )}
         </div>
       )}

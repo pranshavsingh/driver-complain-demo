@@ -5,6 +5,7 @@ import { ClipboardList, AlertCircle, Clock, CheckCircle2, RotateCw, Search, X } 
 import * as api from '../api/endpoints';
 import { PriorityBadge, StatusBadge } from '../components/Badges';
 import { ErrorBanner } from '../components/ErrorBanner';
+import { Pagination } from '../components/Pagination';
 import { useApiResource } from '../hooks/useApiResource';
 import { describeVehicle, formatDateTime } from '../lib/format';
 
@@ -16,6 +17,8 @@ export function DashboardPage(): ReactElement {
   const { user } = useAuth();
   const [selectedStat, setSelectedStat] = useState<StatFilterMode>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
 
   const complaintsResource = useApiResource('dashboard:complaints', () =>
     api.complaints.list(api.EMPTY_FILTER, 1, 100),
@@ -61,6 +64,14 @@ export function DashboardPage(): ReactElement {
 
     return true;
   });
+
+  const totalItems = filteredComplaints.length;
+  const totalPages = Math.ceil(totalItems / pageSize) || 1;
+
+  const paginatedComplaints = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredComplaints.slice(start, start + pageSize);
+  }, [filteredComplaints, page, pageSize]);
 
   return (
     <div className="page-container">
@@ -118,7 +129,7 @@ export function DashboardPage(): ReactElement {
         <button
           type="button"
           className={`stat-card ${selectedStat === 'ALL' ? 'selected' : ''}`}
-          onClick={() => setSelectedStat('ALL')}
+          onClick={() => { setSelectedStat('ALL'); setPage(1); }}
         >
           <div className="stat-card-header">
             <span className="stat-card-title">Total Complaints</span>
@@ -131,7 +142,7 @@ export function DashboardPage(): ReactElement {
         <button
           type="button"
           className={`stat-card stat-info ${selectedStat === 'NEW' ? 'selected' : ''}`}
-          onClick={() => setSelectedStat('NEW')}
+          onClick={() => { setSelectedStat('NEW'); setPage(1); }}
         >
           <div className="stat-card-header">
             <span className="stat-card-title">New Complaints</span>
@@ -144,7 +155,7 @@ export function DashboardPage(): ReactElement {
         <button
           type="button"
           className={`stat-card stat-warning ${selectedStat === 'IN_PROGRESS' ? 'selected' : ''}`}
-          onClick={() => setSelectedStat('IN_PROGRESS')}
+          onClick={() => { setSelectedStat('IN_PROGRESS'); setPage(1); }}
         >
           <div className="stat-card-header">
             <span className="stat-card-title">Total In Process Complaints</span>
@@ -157,7 +168,7 @@ export function DashboardPage(): ReactElement {
         <button
           type="button"
           className={`stat-card stat-success ${selectedStat === 'RESOLVED' ? 'selected' : ''}`}
-          onClick={() => setSelectedStat('RESOLVED')}
+          onClick={() => { setSelectedStat('RESOLVED'); setPage(1); }}
         >
           <div className="stat-card-header">
             <span className="stat-card-title">Total Resolved Complaints</span>
@@ -191,10 +202,10 @@ export function DashboardPage(): ReactElement {
               className="search-input"
               placeholder="Search by complaint no, title..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
             />
             {searchQuery ? (
-              <button type="button" className="clear-search" onClick={() => setSearchQuery('')}>
+              <button type="button" className="clear-search" onClick={() => { setSearchQuery(''); setPage(1); }}>
                 <X size={14} />
               </button>
             ) : null}
@@ -208,59 +219,71 @@ export function DashboardPage(): ReactElement {
             <p>No complaints match the selected box filter.</p>
           </div>
         ) : (
-          <div className="table-responsive">
-            <table className="admin-table">
-              <thead>
-                <tr>
-                  <th>Complaint</th>
-                  <th>Title</th>
-                  <th>Status</th>
-                  <th>Priority</th>
-                  <th>Vehicle</th>
-                  <th>Created</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredComplaints.map((item) => {
-                  const vehicleObj = item.vehicleId ? vehicleMap.get(item.vehicleId) : null;
-                  return (
-                    <tr key={item.id}>
-                      <td>
-                        <Link to={`/complaints/${item.id}`} className="complaint-no">
-                          {item.complaintNo}
-                        </Link>
-                      </td>
-                      <td>
-                        <div className="title-cell" title={item.description}>
-                          {item.title}
-                        </div>
-                      </td>
-                      <td>
-                        <StatusBadge status={item.status} />
-                      </td>
-                      <td>
-                        <PriorityBadge priority={item.priority} />
-                      </td>
-                      <td>
-                        {vehicleObj ? (
-                          <span className="vehicle-badge">{describeVehicle(vehicleObj)}</span>
-                        ) : (
-                          <span className="muted">—</span>
-                        )}
-                      </td>
-                      <td>{formatDateTime(item.createdAt)}</td>
-                      <td>
-                        <Link to={`/complaints/${item.id}`} className="btn-view">
-                          View
-                        </Link>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <div className="table-responsive">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>Complaint</th>
+                    <th>Title</th>
+                    <th>Status</th>
+                    <th>Priority</th>
+                    <th>Vehicle</th>
+                    <th>Created</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedComplaints.map((item) => {
+                    const vehicleObj = item.vehicleId ? vehicleMap.get(item.vehicleId) : null;
+                    return (
+                      <tr key={item.id}>
+                        <td>
+                          <Link to={`/complaints/${item.id}`} className="complaint-no">
+                            {item.complaintNo}
+                          </Link>
+                        </td>
+                        <td>
+                          <div className="title-cell" title={item.description}>
+                            {item.title}
+                          </div>
+                        </td>
+                        <td>
+                          <StatusBadge status={item.status} />
+                        </td>
+                        <td>
+                          <PriorityBadge priority={item.priority} />
+                        </td>
+                        <td>
+                          {vehicleObj ? (
+                            <span className="vehicle-badge">{describeVehicle(vehicleObj)}</span>
+                          ) : (
+                            <span className="muted">—</span>
+                          )}
+                        </td>
+                        <td>{formatDateTime(item.createdAt)}</td>
+                        <td>
+                          <Link to={`/complaints/${item.id}`} className="btn-view">
+                            View
+                          </Link>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <Pagination
+              meta={{ page, pageSize, total: totalItems, totalPages }}
+              onPageChange={setPage}
+              onPageSizeChange={(sz) => {
+                setPageSize(sz);
+                setPage(1);
+              }}
+              itemLabel="complaint"
+            />
+          </>
         )}
       </div>
     </div>

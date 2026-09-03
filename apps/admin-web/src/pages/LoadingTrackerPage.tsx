@@ -3,6 +3,7 @@ import type { LoadingRecord } from '@driver-complaint/shared-types';
 import { Clock, MapPin, CheckCircle2, AlertTriangle, RotateCw, ExternalLink, ImageIcon } from '../components/Icons';
 import * as api from '../api/endpoints';
 import { ErrorBanner } from '../components/ErrorBanner';
+import { Pagination } from '../components/Pagination';
 import { useApiResource } from '../hooks/useApiResource';
 import { formatDateTime } from '../lib/format';
 import { useRealtime } from '../realtime/RealtimeProvider';
@@ -31,6 +32,8 @@ function formatWaitingDuration(minutes: number | null): string {
 export function LoadingTrackerPage(): ReactElement {
   const [selectedPhoto, setSelectedPhoto] = useState<{ url: string; title: string } | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
 
   const loadingResource = useApiResource('admin:loading', () => api.loading.list());
   const { subscribe } = useRealtime();
@@ -45,6 +48,14 @@ export function LoadingTrackerPage(): ReactElement {
   }, [subscribe, loadingResource]);
 
   const records: LoadingRecord[] = loadingResource.data?.data ?? [];
+
+  const totalItems = records.length;
+  const totalPages = Math.ceil(totalItems / pageSize) || 1;
+
+  const paginatedRecords = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return records.slice(start, start + pageSize);
+  }, [records, page, pageSize]);
 
   // A waiting session has no completion timestamp yet. Keep its displayed duration live
   // rather than waiting for the driver to complete loading before showing a value.
@@ -153,7 +164,7 @@ export function LoadingTrackerPage(): ReactElement {
                 </tr>
               </thead>
               <tbody>
-                {records.map((rec) => {
+                {paginatedRecords.map((rec) => {
                   const totalWaitingMinutes = waitingMinutes(rec, now);
                   const isHighDetention = (totalWaitingMinutes ?? 0) > 120;
                   const mapsUrl = `https://www.google.com/maps?q=${rec.reachedLatitude},${rec.reachedLongitude}`;
@@ -294,6 +305,18 @@ export function LoadingTrackerPage(): ReactElement {
             </table>
           </div>
         )}
+
+        {records.length > 0 ? (
+          <Pagination
+            meta={{ page, pageSize, total: totalItems, totalPages }}
+            onPageChange={setPage}
+            onPageSizeChange={(sz) => {
+              setPageSize(sz);
+              setPage(1);
+            }}
+            itemLabel="record"
+          />
+        ) : null}
       </div>
 
       {/* Photo Modal */}
