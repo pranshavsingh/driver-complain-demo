@@ -20,7 +20,20 @@ export function ThemeProvider({ children }: { children: ReactNode }): ReactEleme
   });
 
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
+    const root = document.documentElement;
+    const body = document.body;
+
+    root.setAttribute('data-theme', theme);
+    body.setAttribute('data-theme', theme);
+
+    if (theme === 'dark') {
+      root.classList.add('dark');
+      body.classList.add('dark');
+    } else {
+      root.classList.remove('dark');
+      body.classList.remove('dark');
+    }
+
     localStorage.setItem('admin_theme', theme);
   }, [theme]);
 

@@ -1,11 +1,53 @@
 import { useState, useEffect, useRef, type ReactElement } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { Truck, LayoutDashboard, Users, ClipboardList, LogOut, Sun, Moon, Bell, Menu, X } from './Icons';
+import { Truck, LayoutDashboard, Users, ClipboardList, LogOut, Sun, Moon, Bell, Menu, X, Trash2, CheckCircle2 } from './Icons';
 import { isSuperAdmin, useAuth } from '../auth/AuthContext';
 import { useRealtime } from '../realtime/RealtimeProvider';
 import { useTheme } from '../context/ThemeContext';
 import { PageErrorBoundary } from './ErrorBoundary';
 import { fullName } from '../lib/format';
+
+interface NotificationItem {
+  id: string;
+  msg: string;
+  time: string;
+  type: 'complaint' | 'loading' | 'trip';
+  unread: boolean;
+}
+
+const INITIAL_NOTIFICATIONS: NotificationItem[] = [
+  {
+    id: 'n1',
+    msg: 'New complaint CMP-2026-004 registered by Dana Driver.',
+    time: '5 mins ago',
+    type: 'complaint',
+    unread: true,
+  },
+  {
+    id: 'n2',
+    msg: 'Driver reached loading point at Warehouse B.',
+    time: '12 mins ago',
+    type: 'loading',
+    unread: true,
+  },
+  {
+    id: 'n3',
+    msg: 'Trip completed successfully for vehicle ABC-1234.',
+    time: '1 hr ago',
+    type: 'trip',
+    unread: true,
+  },
+];
+
+function getPageTitle(pathname: string): string {
+  if (pathname.startsWith('/dashboard')) return 'Executive Dashboard';
+  if (pathname.startsWith('/drivers')) return 'Drivers Directory';
+  if (pathname.startsWith('/users')) return 'Users & Approvals';
+  if (pathname.startsWith('/complaints')) return 'Complaints Management';
+  if (pathname.startsWith('/loading')) return 'Loading & Detention Analytics';
+  if (pathname.startsWith('/trips')) return 'Trip Analytics & Logs';
+  return 'Fleet Administration';
+}
 
 export function Layout(): ReactElement {
   const { user, logout } = useAuth();
@@ -16,6 +58,8 @@ export function Layout(): ReactElement {
   const [signingOut, setSigningOut] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [notifications, setNotifications] = useState<NotificationItem[]>(INITIAL_NOTIFICATIONS);
+
   const notifRef = useRef<HTMLDivElement>(null);
 
   // Close notifications dropdown on click outside
@@ -41,6 +85,16 @@ export function Layout(): ReactElement {
     });
   };
 
+  const handleClearNotifications = (): void => {
+    setNotifications([]);
+  };
+
+  const handleDismissNotification = (id: string): void => {
+    setNotifications((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const unreadCount = notifications.filter((n) => n.unread).length;
+
   return (
     <div className={`admin-app-container ${sidebarOpen ? 'sidebar-expanded' : ''}`}>
       {/* Fixed Top Navbar */}
@@ -56,35 +110,42 @@ export function Layout(): ReactElement {
           </button>
 
           <div className="navbar-brand">
-            <div className="brand-logo">
-              <Truck size={22} color="#38bdf8" />
+            <div className="brand-logo-icon">
+              <Truck size={22} color="#ffffff" />
             </div>
             <div className="brand-text">
               <span className="brand-title">Driver Complaint</span>
               <span className="brand-subtitle">Fleet Workspace</span>
             </div>
           </div>
+
+          <div className="navbar-page-indicator">
+            <span className="page-breadcrumb">{getPageTitle(location.pathname)}</span>
+          </div>
         </div>
 
         <div className="navbar-right">
-          {/* Live Connection Badge */}
+          {/* Live Sync Status Badge */}
           <div className="connection-badge" title={connected ? 'Connected to Realtime Server' : 'Offline'}>
             <span className={connected ? 'live-dot live-on' : 'live-dot live-off'} />
-            <span className="connection-text">{connected ? 'Live' : 'Offline'}</span>
+            <span className="connection-text">{connected ? 'Live Sync' : 'Offline'}</span>
           </div>
 
-          {/* Theme Switcher Button */}
+          {/* Theme Switcher Toggle */}
           <button
             type="button"
-            className="theme-toggle-btn"
+            className="theme-switcher-pill"
             onClick={toggleTheme}
             title={`Switch to ${theme === 'light' ? 'Dark' : 'Light'} Mode`}
             aria-label="Toggle Theme"
           >
-            {theme === 'light' ? <Moon size={18} color="#475569" /> : <Sun size={18} color="#f59e0b" />}
+            <span className="theme-icon-wrap">
+              {theme === 'light' ? <Moon size={16} color="#0f172a" /> : <Sun size={16} color="#f59e0b" />}
+            </span>
+            <span className="theme-label">{theme === 'light' ? 'Light' : 'Dark'}</span>
           </button>
 
-          {/* Notification Icon & Dropdown */}
+          {/* Notification Icon & Interactive Dropdown */}
           <div className="notif-dropdown-wrapper" ref={notifRef}>
             <button
               type="button"
@@ -93,73 +154,63 @@ export function Layout(): ReactElement {
               aria-label="Notifications"
             >
               <Bell size={18} />
-              <span className="notif-badge">3</span>
+              {unreadCount > 0 ? <span className="notif-badge">{unreadCount}</span> : null}
             </button>
 
             {showNotifications ? (
               <div className="notif-dropdown-menu">
                 <div className="notif-header">
-                  <span className="notif-title">Live Notifications</span>
-                  <span className="notif-count">3 unread</span>
+                  <div>
+                    <span className="notif-title">Notifications</span>
+                    <span className="notif-count">{notifications.length} alerts</span>
+                  </div>
+                  {notifications.length > 0 ? (
+                    <button
+                      type="button"
+                      className="btn-clear-notifs"
+                      onClick={handleClearNotifications}
+                      title="Clear all notifications"
+                    >
+                      <Trash2 size={13} /> Clear All
+                    </button>
+                  ) : null}
                 </div>
+
                 <div className="notif-list">
-                  <div className="notif-item">
-                    <div className="notif-icon-circle new-complaint">
-                      <ClipboardList size={14} />
+                  {notifications.length === 0 ? (
+                    <div className="notif-empty-state">
+                      <CheckCircle2 size={24} color="#16a34a" />
+                      <p>No new notifications</p>
                     </div>
-                    <div className="notif-content">
-                      <p className="notif-msg">New complaint <strong>CMP-2026-004</strong> registered by Dana Driver.</p>
-                      <span className="notif-time">5 mins ago</span>
-                    </div>
-                  </div>
-                  <div className="notif-item">
-                    <div className="notif-icon-circle detention-alert">
-                      <Truck size={14} />
-                    </div>
-                    <div className="notif-content">
-                      <p className="notif-msg">Driver reached loading point at Warehouse B.</p>
-                      <span className="notif-time">12 mins ago</span>
-                    </div>
-                  </div>
-                  <div className="notif-item">
-                    <div className="notif-icon-circle status-update">
-                      <Truck size={14} />
-                    </div>
-                    <div className="notif-content">
-                      <p className="notif-msg">Trip completed successfully for vehicle ABC-1234.</p>
-                      <span className="notif-time">1 hr ago</span>
-                    </div>
-                  </div>
+                  ) : (
+                    notifications.map((item) => (
+                      <div key={item.id} className="notif-item">
+                        <div className={`notif-icon-circle ${item.type}`}>
+                          {item.type === 'complaint' ? (
+                            <ClipboardList size={14} />
+                          ) : (
+                            <Truck size={14} />
+                          )}
+                        </div>
+                        <div className="notif-content">
+                          <p className="notif-msg">{item.msg}</p>
+                          <span className="notif-time">{item.time}</span>
+                        </div>
+                        <button
+                          type="button"
+                          className="btn-dismiss-notif"
+                          onClick={() => handleDismissNotification(item.id)}
+                          title="Dismiss notification"
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             ) : null}
           </div>
-
-          {/* User Profile Info */}
-          {user ? (
-            <div className="user-profile">
-              <div className="user-avatar">
-                {user.firstName[0]}
-                {user.lastName[0]}
-              </div>
-              <div className="user-info">
-                <div className="user-name">{fullName(user)}</div>
-                <div className="user-role">{user.role}</div>
-              </div>
-            </div>
-          ) : null}
-
-          {/* Sign Out */}
-          <button
-            type="button"
-            className="btn-logout"
-            onClick={handleLogout}
-            disabled={signingOut}
-            title="Sign out of Fleet Admin"
-          >
-            <LogOut size={16} />
-            <span className="logout-text">{signingOut ? 'Signing out…' : 'Sign out'}</span>
-          </button>
         </div>
       </header>
 
@@ -167,6 +218,18 @@ export function Layout(): ReactElement {
       <div className="admin-layout-body">
         {/* Responsive Left Sidebar */}
         <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
+          {/* Sidebar Brand Header */}
+          <div className="sidebar-brand">
+            <div className="brand-logo-icon">
+              <Truck size={22} color="#ffffff" />
+            </div>
+            <div>
+              <div className="brand-title">Driver Complaint</div>
+              <div className="brand-subtitle">Fleet Admin</div>
+            </div>
+          </div>
+
+          {/* Sidebar Navigation */}
           <nav className="sidebar-nav">
             <NavLink
               to="/dashboard"
@@ -220,6 +283,33 @@ export function Layout(): ReactElement {
               <span className="nav-label">Trip Analytics & Logs</span>
             </NavLink>
           </nav>
+
+          {/* Sidebar Footer with User Profile & Sign Out (at bottom of sidebar) */}
+          <div className="sidebar-footer">
+            {user ? (
+              <div className="user-profile-box">
+                <div className="user-avatar-circle">
+                  {user.firstName ? user.firstName[0] : 'U'}
+                  {user.lastName ? user.lastName[0] : ''}
+                </div>
+                <div className="user-profile-meta">
+                  <div className="user-full-name">{fullName(user)}</div>
+                  <div className="user-role-badge">{user.role}</div>
+                </div>
+              </div>
+            ) : null}
+
+            <button
+              type="button"
+              className="btn-sidebar-logout"
+              onClick={handleLogout}
+              disabled={signingOut}
+              title="Sign out of Fleet Admin"
+            >
+              <LogOut size={16} />
+              <span>{signingOut ? 'Signing out…' : 'Sign out'}</span>
+            </button>
+          </div>
         </aside>
 
         {/* Backdrop for Mobile Sidebar Overlay */}
