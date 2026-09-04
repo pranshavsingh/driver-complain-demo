@@ -3441,3 +3441,208 @@ textarea:focus-visible {
   color: var(--muted);
   font-size: 13px;
 }
+
+/* Shared theme contract. Keep shell and data views on the same token set. */
+:root {
+  --bg: #f4f7fb;
+  --surface: #ffffff;
+  --surface-muted: #f8fafc;
+  --surface-hover: #f1f5f9;
+  --border: #dce4ef;
+  --text: #172033;
+  --muted: #64748b;
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --sidebar-bg: #0c1425;
+  --sidebar-text: #a9b7cd;
+  --sidebar-active: #1d4ed8;
+  --sidebar-active-text: #ffffff;
+}
+
+[data-theme="dark"] {
+  --bg: #0b1220;
+  --surface: #111b2e;
+  --surface-muted: #162238;
+  --surface-hover: #1b2940;
+  --border: #2a3850;
+  --text: #e7edf7;
+  --muted: #9aa9be;
+  --accent: #60a5fa;
+  --accent-hover: #93c5fd;
+  --sidebar-bg: #080f1d;
+  --sidebar-text: #a9b7cd;
+  --sidebar-active: #1d4ed8;
+  --sidebar-active-text: #ffffff;
+  --shadow-sm: 0 1px 3px rgb(0 0 0 / 0.22), 0 8px 24px rgb(0 0 0 / 0.16);
+  --shadow-md: 0 16px 36px rgb(0 0 0 / 0.3), 0 4px 10px rgb(0 0 0 / 0.2);
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.admin-app-container { flex-direction: row; }
+
+.sidebar {
+  top: 0;
+  width: 276px;
+  height: 100vh;
+  background: linear-gradient(165deg, #14213a 0%, var(--sidebar-bg) 55%);
+  border-right: 1px solid rgb(255 255 255 / 0.09);
+}
+
+.brand-logo-icon {
+  background: linear-gradient(145deg, #0e7490, #2563eb);
+  box-shadow: 0 8px 18px rgb(2 132 199 / 0.23);
+}
+
+.brand-title { color: #ffffff; }
+.brand-subtitle { color: #7dd3fc; }
+.sidebar-brand, .sidebar-footer { border-color: rgb(255 255 255 / 0.09); }
+.sidebar-footer { background: rgb(0 0 0 / 0.14); }
+.user-profile-box { background: rgb(255 255 255 / 0.05); border-color: rgb(255 255 255 / 0.09); }
+.user-full-name { color: #f8fafc; }
+.user-employee-id { color: #a9b7cd; }
+
+.nav-item { color: var(--sidebar-text); }
+.nav-item:hover { background: rgb(255 255 255 / 0.07); color: #ffffff; }
+.nav-item.active {
+  background: linear-gradient(100deg, #2563eb, #1e40af);
+  color: var(--sidebar-active-text);
+  box-shadow: 0 8px 20px rgb(15 23 42 / 0.24);
+}
+
+.main-content {
+  width: calc(100% - 276px);
+  min-height: 100vh;
+  margin-left: 276px;
+  padding: 0;
+  background: var(--bg);
+}
+
+.workspace-header {
+  height: 68px;
+  padding: 0 36px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  border-bottom-color: var(--border);
+  backdrop-filter: blur(12px);
+}
+
+.workspace-body { padding: 36px 44px 48px; }
+.breadcrumb-title { font-size: 16px; letter-spacing: -0.02em; }
+.connection-badge, .theme-toggle-container, .notif-bell-btn {
+  background: var(--surface-muted);
+  border-color: var(--border);
+  color: var(--text);
+}
+.theme-toggle-slider { background: var(--surface); }
+
+.stat-card,
+.filter-card,
+.table-card,
+.detail-header-card,
+.detail-card,
+.analytics-card,
+.modal-content,
+.modal-card {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
+}
+.stat-card { background: linear-gradient(135deg, var(--surface), var(--surface-muted)); }
+.stat-card.selected { background: linear-gradient(135deg, var(--surface), color-mix(in srgb, var(--accent) 10%, var(--surface))); }
+.stat-card-title, .stat-card-footer, .page-subtitle { color: var(--muted); }
+.filter-input-box, .filter-select, .filter-input-date, .form-input, .form-control, .form-select, .form-textarea, .table-search-box, .page-size-select {
+  background: var(--surface-muted);
+  border-color: var(--border);
+  color: var(--text);
+}
+.table-card-header, .admin-table th, .table-footer-pagination, .pagination-wrapper, .notif-header { background: var(--surface-muted); }
+.admin-table th { color: var(--muted); }
+.admin-table td, .notif-item { border-color: var(--border); }
+.admin-table tbody tr:hover, .notif-item:hover { background: var(--surface-hover); }
+.meta-item, .driver-statement-box { background: var(--surface-muted); }
+.btn-secondary, .btn-page-nav, .btn-page-number { background: var(--surface); border-color: var(--border); color: var(--text); }
+
+@media (max-width: 1100px) {
+  .sidebar { width: 250px; }
+  .main-content { width: calc(100% - 250px); margin-left: 250px; }
+  .workspace-body { padding: 28px; }
+}
+
+@media (max-width: 960px) {
+  .sidebar { transform: translateX(-100%); }
+  .sidebar.open { transform: translateX(0); }
+  .main-content { width: 100%; margin-left: 0; }
+  .workspace-body { padding: 24px 20px 36px; }
+  .sidebar-backdrop { top: 0; z-index: 40; }
+  .btn-toggle-sidebar-mobile { display: flex; }
+}
+
+@media (max-width: 600px) {
+  .workspace-header { height: 60px; padding: 0 16px; }
+  .workspace-header-right { gap: 8px; }
+  .connection-badge, .theme-btn-label { display: none; }
+  .theme-toggle-btn { padding: 8px 10px; }
+  .workspace-body { padding: 20px 16px 32px; }
+}
+
+/* Remaining detail and analytics components use the shared dark-theme surfaces. */
+.detail-title,
+.card-section-title,
+.meta-value,
+.statement-text,
+.timeline-author,
+.timeline-transition,
+.chart-title,
+.bar-name,
+.bar-value,
+.col-value,
+.modal-header h3 { color: var(--text); }
+
+.meta-label,
+.meta-sub,
+.form-label,
+.form-hint,
+.empty-text,
+.chart-subtitle,
+.chart-empty,
+.chart-note,
+.fleet-avg-label,
+.attachment-meta,
+.timeline-time,
+.timeline-note,
+.media-kind-tag { color: var(--muted); }
+
+.complaint-no-tag,
+.assignee-tag,
+.attachment-card,
+.driver-statement-box,
+.timeline-note,
+.fleet-avg-item {
+  background: var(--surface-muted);
+  border-color: var(--border);
+}
+
+.complaint-no-tag,
+.assignee-tag { color: var(--accent); }
+.card-section-title { border-bottom-color: var(--border); }
+.timeline-item { border-left-color: var(--border); }
+.timeline-marker { border-color: var(--surface); }
+
+.form-select,
+.form-textarea,
+.form-select:focus,
+.form-textarea:focus,
+.close-btn,
+.photo-modal,
+.modal-content {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.fleet-avg-value { color: var(--accent); }
+.bar-track,
+.share-bar { background: color-mix(in srgb, var(--accent) 14%, var(--surface)); }

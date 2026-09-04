@@ -172,7 +172,7 @@ export function LoadingTrackerPage(): ReactElement {
                   return (
                     <tr key={rec.id}>
                       <td>
-                        <div style={{ fontWeight: '600', color: '#0f172a' }}>
+                        <div style={{ fontWeight: '600', color: 'var(--text)' }}>
                           {rec.driverName || 'Driver'}
                         </div>
                         {rec.vehiclePlate ? (

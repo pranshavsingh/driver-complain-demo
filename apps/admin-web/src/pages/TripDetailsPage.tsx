@@ -609,7 +609,7 @@ export function TripDetailsPage(): ReactElement {
                   {paginatedSummaries.map((s, idx) => (
                     <tr key={`${s.driverId}_${s.year}_${s.month}_${idx}`}>
                       <td>
-                        <div style={{ fontWeight: '700', color: '#0f172a' }}>{s.driverName}</div>
+                        <div style={{ fontWeight: '700', color: 'var(--text)' }}>{s.driverName}</div>
                       </td>
                       <td>
                         <span className="muted" style={{ fontSize: '13px' }}>{s.licenseNumber}</span>
@@ -737,7 +737,7 @@ export function TripDetailsPage(): ReactElement {
                       return (
                         <tr key={rec.id}>
                           <td>
-                            <div style={{ fontWeight: '700', color: '#0f172a' }}>
+                            <div style={{ fontWeight: '700', color: 'var(--text)' }}>
                               {rec.driverName || 'Driver'}
                             </div>
                             {rec.vehiclePlate ? (
@@ -793,7 +793,7 @@ export function TripDetailsPage(): ReactElement {
                             <div style={{ fontSize: '12px', maxWidth: 220 }}>
                               {rec.tripStartAddress ? (
                                 <div style={{ marginBottom: 4 }}>
-                                  <strong style={{ color: '#0f172a' }}>Start: </strong>
+                                  <strong style={{ color: 'var(--text)' }}>Start: </strong>
                                   <span>{rec.tripStartAddress}</span>
                                   {mapsStartUrl ? (
                                     <a
@@ -810,7 +810,7 @@ export function TripDetailsPage(): ReactElement {
 
                               {rec.tripCompletedAddress ? (
                                 <div>
-                                  <strong style={{ color: '#0f172a' }}>End: </strong>
+                                  <strong style={{ color: 'var(--text)' }}>End: </strong>
                                   <span>{rec.tripCompletedAddress}</span>
                                   {mapsCompletedUrl ? (
                                     <a
@@ -919,7 +919,7 @@ export function TripDetailsPage(): ReactElement {
             <div className="modal-body" style={{ textAlign: 'center' }}>
               <img src={selectedPhoto.url} alt="Proof preview" className="full-proof-img" />
               {selectedPhoto.address ? (
-                <div style={{ marginTop: 12, fontSize: 13, color: '#475569' }}>
+                <div style={{ marginTop: 12, fontSize: 13, color: 'var(--muted)' }}>
                   <MapPin size={14} style={{ marginRight: 4, display: 'inline' }} />
                   {selectedPhoto.address}
                 </div>

@@ -38,7 +38,7 @@ Each app's README covers running it, its environment variables, and what it does
 
 - **Node 24** (`.nvmrc`)
 - **pnpm 10** — provisioned via corepack (`corepack enable`, or `corepack pnpm@10 ...`)
-- **Docker** — runs local PostgreSQL
+- A reachable PostgreSQL database — set its connection string in `apps/api/.env`
 
 > On Windows, if `corepack enable` fails with `EPERM` (can't write shims into
 > `C:\Program Files\nodejs`), invoke pnpm through the corepack proxy instead, e.g.
@@ -53,22 +53,20 @@ corepack pnpm@10.15.0 install
 # 2. build shared-types (the API typechecks against its dist + .d.ts)
 corepack pnpm@10.15.0 --filter @driver-complaint/shared-types build
 
-# 3. create the API env file, then fill in secrets / Cloudinary creds
+# 3. create the local API and dashboard env files, then set DATABASE_URL in apps/api/.env
 cp apps/api/.env.example apps/api/.env
+cp apps/admin-web/.env.example apps/admin-web/.env
 
-# 4. start PostgreSQL
-docker compose up -d db
-
-# 5. create + apply the initial migration and generate the Prisma client
+# 4. apply migrations and generate the Prisma client against your DATABASE_URL
 corepack pnpm@10.15.0 --filter @driver-complaint/api exec prisma migrate dev --name init
 
-# 6. seed baseline users (super_admin, admin, driver + vehicle)
+# 5. seed baseline users (super_admin, admin, driver + vehicle)
 corepack pnpm@10.15.0 --filter @driver-complaint/api run seed
 
-# 7. run the API
-corepack pnpm@10.15.0 --filter @driver-complaint/api dev
-# health check:
-curl http://localhost:4000/health   # -> {"ok":true}
+# 6. run the API and admin dashboard together
+corepack pnpm@10.15.0 dev:local
+# dashboard: http://localhost:3000
+# API health: http://localhost:4000/health   # -> {"ok":true}
 ```
 
 ## Seeded accounts & auth quickstart
