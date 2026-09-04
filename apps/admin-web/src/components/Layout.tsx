@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, type ReactElement } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { Truck, LayoutDashboard, Users, ClipboardList, LogOut, Sun, Moon, Bell, Menu, X, Trash2, CheckCircle2 } from './Icons';
+import { Truck, LayoutDashboard, Users, ClipboardList, Bell, Menu, X, Trash2, CheckCircle2 } from './Icons';
 import { isSuperAdmin, useAuth } from '../auth/AuthContext';
 import { useRealtime } from '../realtime/RealtimeProvider';
-import { useTheme } from '../context/ThemeContext';
+import { ThemeSwitcher } from './ThemeSwitcher';
 import { PageErrorBoundary } from './ErrorBoundary';
 import { fullName } from '../lib/format';
 
@@ -50,12 +50,10 @@ function getPageTitle(pathname: string): string {
 }
 
 export function Layout(): ReactElement {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const { connected } = useRealtime();
-  const { theme, toggleTheme } = useTheme();
   const location = useLocation();
 
-  const [signingOut, setSigningOut] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>(INITIAL_NOTIFICATIONS);
@@ -77,13 +75,6 @@ export function Layout(): ReactElement {
   useEffect(() => {
     setSidebarOpen(false);
   }, [location.pathname]);
-
-  const handleLogout = (): void => {
-    setSigningOut(true);
-    void logout().finally(() => {
-      setSigningOut(false);
-    });
-  };
 
   const handleClearNotifications = (): void => {
     setNotifications([]);
@@ -131,19 +122,8 @@ export function Layout(): ReactElement {
             <span className="connection-text">{connected ? 'Live Sync' : 'Offline'}</span>
           </div>
 
-          {/* Theme Switcher Toggle */}
-          <button
-            type="button"
-            className="theme-switcher-pill"
-            onClick={toggleTheme}
-            title={`Switch to ${theme === 'light' ? 'Dark' : 'Light'} Mode`}
-            aria-label="Toggle Theme"
-          >
-            <span className="theme-icon-wrap">
-              {theme === 'light' ? <Moon size={16} color="#0f172a" /> : <Sun size={16} color="#f59e0b" />}
-            </span>
-            <span className="theme-label">{theme === 'light' ? 'Light' : 'Dark'}</span>
-          </button>
+          {/* Premium Theme Switcher Segmented Control */}
+          <ThemeSwitcher />
 
           {/* Notification Icon & Interactive Dropdown */}
           <div className="notif-dropdown-wrapper" ref={notifRef}>
@@ -284,7 +264,7 @@ export function Layout(): ReactElement {
             </NavLink>
           </nav>
 
-          {/* Sidebar Footer with User Profile & Sign Out (at bottom of sidebar) */}
+          {/* Sidebar Footer with User Profile Identity (No logout button) */}
           <div className="sidebar-footer">
             {user ? (
               <div className="user-profile-box">
@@ -294,21 +274,11 @@ export function Layout(): ReactElement {
                 </div>
                 <div className="user-profile-meta">
                   <div className="user-full-name">{fullName(user)}</div>
+                  <div className="user-employee-id">{user.employeeId}</div>
                   <div className="user-role-badge">{user.role}</div>
                 </div>
               </div>
             ) : null}
-
-            <button
-              type="button"
-              className="btn-sidebar-logout"
-              onClick={handleLogout}
-              disabled={signingOut}
-              title="Sign out of Fleet Admin"
-            >
-              <LogOut size={16} />
-              <span>{signingOut ? 'Signing out…' : 'Sign out'}</span>
-            </button>
           </div>
         </aside>
 
