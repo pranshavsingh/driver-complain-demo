@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, type ReactElement } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { Truck, LayoutDashboard, Users, ClipboardList, Bell, Menu, X, Trash2, CheckCircle2 } from './Icons';
+import { Truck, LayoutDashboard, Users, ClipboardList, LogOut, Bell, Menu, X, Trash2, CheckCircle2 } from './Icons';
 import { isSuperAdmin, useAuth } from '../auth/AuthContext';
 import { useRealtime } from '../realtime/RealtimeProvider';
 import { ThemeSwitcher } from './ThemeSwitcher';
@@ -50,10 +50,11 @@ function getPageTitle(pathname: string): string {
 }
 
 export function Layout(): ReactElement {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const { connected } = useRealtime();
   const location = useLocation();
 
+  const [signingOut, setSigningOut] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>(INITIAL_NOTIFICATIONS);
@@ -76,6 +77,13 @@ export function Layout(): ReactElement {
     setSidebarOpen(false);
   }, [location.pathname]);
 
+  const handleLogout = (): void => {
+    setSigningOut(true);
+    void logout().finally(() => {
+      setSigningOut(false);
+    });
+  };
+
   const handleClearNotifications = (): void => {
     setNotifications([]);
   };
@@ -88,210 +96,207 @@ export function Layout(): ReactElement {
 
   return (
     <div className={`admin-app-container ${sidebarOpen ? 'sidebar-expanded' : ''}`}>
-      {/* Fixed Top Navbar */}
-      <header className="top-navbar">
-        <div className="navbar-left">
-          <button
-            type="button"
-            className="btn-toggle-sidebar"
-            onClick={() => setSidebarOpen((prev) => !prev)}
-            aria-label="Toggle Navigation Menu"
+      {/* Full-Height Left Sidebar (Starts at top: 0, bottom: 0 - Never cut off) */}
+      <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
+        <div className="sidebar-brand">
+          <div className="brand-logo-icon">
+            <Truck size={22} color="#ffffff" />
+          </div>
+          <div>
+            <div className="brand-title">Driver Complaint</div>
+            <div className="brand-subtitle">Fleet Admin</div>
+          </div>
+        </div>
+
+        <nav className="sidebar-nav">
+          <NavLink
+            to="/dashboard"
+            className={({ isActive }) =>
+              isActive || location.pathname === '/' ? 'nav-item active' : 'nav-item'
+            }
           >
-            {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
-          </button>
+            <LayoutDashboard size={18} className="nav-icon" />
+            <span className="nav-label">Dashboard</span>
+          </NavLink>
 
-          <div className="navbar-brand">
-            <div className="brand-logo-icon">
-              <Truck size={22} color="#ffffff" />
-            </div>
-            <div className="brand-text">
-              <span className="brand-title">Driver Complaint</span>
-              <span className="brand-subtitle">Fleet Workspace</span>
-            </div>
-          </div>
+          <NavLink
+            to="/drivers"
+            className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
+          >
+            <Users size={18} className="nav-icon" />
+            <span className="nav-label">Drivers Directory</span>
+          </NavLink>
 
-          <div className="navbar-page-indicator">
-            <span className="page-breadcrumb">{getPageTitle(location.pathname)}</span>
-          </div>
-        </div>
-
-        <div className="navbar-right">
-          {/* Live Sync Status Badge */}
-          <div className="connection-badge" title={connected ? 'Connected to Realtime Server' : 'Offline'}>
-            <span className={connected ? 'live-dot live-on' : 'live-dot live-off'} />
-            <span className="connection-text">{connected ? 'Live Sync' : 'Offline'}</span>
-          </div>
-
-          {/* Premium Theme Switcher Segmented Control */}
-          <ThemeSwitcher />
-
-          {/* Notification Icon & Interactive Dropdown */}
-          <div className="notif-dropdown-wrapper" ref={notifRef}>
-            <button
-              type="button"
-              className={`notif-bell-btn ${showNotifications ? 'active' : ''}`}
-              onClick={() => setShowNotifications((prev) => !prev)}
-              aria-label="Notifications"
-            >
-              <Bell size={18} />
-              {unreadCount > 0 ? <span className="notif-badge">{unreadCount}</span> : null}
-            </button>
-
-            {showNotifications ? (
-              <div className="notif-dropdown-menu">
-                <div className="notif-header">
-                  <div>
-                    <span className="notif-title">Notifications</span>
-                    <span className="notif-count">{notifications.length} alerts</span>
-                  </div>
-                  {notifications.length > 0 ? (
-                    <button
-                      type="button"
-                      className="btn-clear-notifs"
-                      onClick={handleClearNotifications}
-                      title="Clear all notifications"
-                    >
-                      <Trash2 size={13} /> Clear All
-                    </button>
-                  ) : null}
-                </div>
-
-                <div className="notif-list">
-                  {notifications.length === 0 ? (
-                    <div className="notif-empty-state">
-                      <CheckCircle2 size={24} color="#16a34a" />
-                      <p>No new notifications</p>
-                    </div>
-                  ) : (
-                    notifications.map((item) => (
-                      <div key={item.id} className="notif-item">
-                        <div className={`notif-icon-circle ${item.type}`}>
-                          {item.type === 'complaint' ? (
-                            <ClipboardList size={14} />
-                          ) : (
-                            <Truck size={14} />
-                          )}
-                        </div>
-                        <div className="notif-content">
-                          <p className="notif-msg">{item.msg}</p>
-                          <span className="notif-time">{item.time}</span>
-                        </div>
-                        <button
-                          type="button"
-                          className="btn-dismiss-notif"
-                          onClick={() => handleDismissNotification(item.id)}
-                          title="Dismiss notification"
-                        >
-                          <X size={12} />
-                        </button>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      </header>
-
-      {/* Admin Shell Body with Left Sidebar & Main Content */}
-      <div className="admin-layout-body">
-        {/* Responsive Left Sidebar */}
-        <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
-          {/* Sidebar Brand Header */}
-          <div className="sidebar-brand">
-            <div className="brand-logo-icon">
-              <Truck size={22} color="#ffffff" />
-            </div>
-            <div>
-              <div className="brand-title">Driver Complaint</div>
-              <div className="brand-subtitle">Fleet Admin</div>
-            </div>
-          </div>
-
-          {/* Sidebar Navigation */}
-          <nav className="sidebar-nav">
+          {isSuperAdmin(user) ? (
             <NavLink
-              to="/dashboard"
-              className={({ isActive }) =>
-                isActive || location.pathname === '/' ? 'nav-item active' : 'nav-item'
-              }
-            >
-              <LayoutDashboard size={18} className="nav-icon" />
-              <span className="nav-label">Dashboard</span>
-            </NavLink>
-
-            <NavLink
-              to="/drivers"
+              to="/users"
               className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
             >
               <Users size={18} className="nav-icon" />
-              <span className="nav-label">Drivers Directory</span>
+              <span className="nav-label">Users & Approvals</span>
             </NavLink>
+          ) : null}
 
-            {isSuperAdmin(user) ? (
-              <NavLink
-                to="/users"
-                className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
-              >
-                <Users size={18} className="nav-icon" />
-                <span className="nav-label">Users & Approvals</span>
-              </NavLink>
-            ) : null}
+          <NavLink
+            to="/complaints"
+            className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
+          >
+            <ClipboardList size={18} className="nav-icon" />
+            <span className="nav-label">Complaints</span>
+          </NavLink>
 
-            <NavLink
-              to="/complaints"
-              className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
-            >
-              <ClipboardList size={18} className="nav-icon" />
-              <span className="nav-label">Complaints</span>
-            </NavLink>
+          <NavLink
+            to="/loading"
+            className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
+          >
+            <Truck size={18} className="nav-icon" />
+            <span className="nav-label">Loading & Detention</span>
+          </NavLink>
 
-            <NavLink
-              to="/loading"
-              className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
-            >
-              <Truck size={18} className="nav-icon" />
-              <span className="nav-label">Loading & Detention</span>
-            </NavLink>
+          <NavLink
+            to="/trips"
+            className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
+          >
+            <Truck size={18} className="nav-icon" />
+            <span className="nav-label">Trip Analytics & Logs</span>
+          </NavLink>
+        </nav>
 
-            <NavLink
-              to="/trips"
-              className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
-            >
-              <Truck size={18} className="nav-icon" />
-              <span className="nav-label">Trip Analytics & Logs</span>
-            </NavLink>
-          </nav>
-
-          {/* Sidebar Footer with User Profile Identity (No logout button) */}
-          <div className="sidebar-footer">
-            {user ? (
-              <div className="user-profile-box">
-                <div className="user-avatar-circle">
-                  {user.firstName ? user.firstName[0] : 'U'}
-                  {user.lastName ? user.lastName[0] : ''}
-                </div>
-                <div className="user-profile-meta">
-                  <div className="user-full-name">{fullName(user)}</div>
-                  <div className="user-employee-id">{user.employeeId}</div>
-                  <div className="user-role-badge">{user.role}</div>
-                </div>
+        {/* Sidebar Footer with User Profile Identity & Restored Logout Button (Pinned at bottom, flex-shrink: 0) */}
+        <div className="sidebar-footer">
+          {user ? (
+            <div className="user-profile-box">
+              <div className="user-avatar-circle">
+                {user.firstName ? user.firstName[0] : 'U'}
+                {user.lastName ? user.lastName[0] : ''}
               </div>
-            ) : null}
+              <div className="user-profile-meta">
+                <div className="user-full-name">{fullName(user)}</div>
+                <div className="user-employee-id">{user.employeeId}</div>
+                <div className="user-role-badge">{user.role}</div>
+              </div>
+            </div>
+          ) : null}
+
+          <button
+            type="button"
+            className="btn-sidebar-logout"
+            onClick={handleLogout}
+            disabled={signingOut}
+            title="Sign out of Fleet Admin"
+          >
+            <LogOut size={16} />
+            <span>{signingOut ? 'Signing out…' : 'Sign out'}</span>
+          </button>
+        </div>
+      </aside>
+
+      {/* Backdrop for Mobile Sidebar Overlay */}
+      {sidebarOpen ? <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} /> : null}
+
+      {/* Main Workspace Content Area */}
+      <main className="main-content">
+        {/* Workspace Top Header Bar (Contains Breadcrumbs, Sync Status, Theme Switcher & Notifications) */}
+        <header className="workspace-header">
+          <div className="workspace-header-left">
+            <button
+              type="button"
+              className="btn-toggle-sidebar-mobile"
+              onClick={() => setSidebarOpen((prev) => !prev)}
+              aria-label="Toggle Navigation Menu"
+            >
+              {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
+            </button>
+            <div className="workspace-breadcrumb">
+              <span className="breadcrumb-title">{getPageTitle(location.pathname)}</span>
+            </div>
           </div>
-        </aside>
 
-        {/* Backdrop for Mobile Sidebar Overlay */}
-        {sidebarOpen ? <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} /> : null}
+          <div className="workspace-header-right">
+            {/* Live Sync Status Badge */}
+            <div className="connection-badge" title={connected ? 'Connected to Realtime Server' : 'Offline'}>
+              <span className={connected ? 'live-dot live-on' : 'live-dot live-off'} />
+              <span className="connection-text">{connected ? 'Live Sync' : 'Offline'}</span>
+            </div>
 
-        {/* Main Workspace Content */}
-        <main className="main-content">
+            {/* Segmented Theme Switcher Control */}
+            <ThemeSwitcher />
+
+            {/* Notification Dropdown */}
+            <div className="notif-dropdown-wrapper" ref={notifRef}>
+              <button
+                type="button"
+                className={`notif-bell-btn ${showNotifications ? 'active' : ''}`}
+                onClick={() => setShowNotifications((prev) => !prev)}
+                aria-label="Notifications"
+              >
+                <Bell size={18} />
+                {unreadCount > 0 ? <span className="notif-badge">{unreadCount}</span> : null}
+              </button>
+
+              {showNotifications ? (
+                <div className="notif-dropdown-menu">
+                  <div className="notif-header">
+                    <div>
+                      <span className="notif-title">Notifications</span>
+                      <span className="notif-count">{notifications.length} alerts</span>
+                    </div>
+                    {notifications.length > 0 ? (
+                      <button
+                        type="button"
+                        className="btn-clear-notifs"
+                        onClick={handleClearNotifications}
+                        title="Clear all notifications"
+                      >
+                        <Trash2 size={13} /> Clear All
+                      </button>
+                    ) : null}
+                  </div>
+
+                  <div className="notif-list">
+                    {notifications.length === 0 ? (
+                      <div className="notif-empty-state">
+                        <CheckCircle2 size={24} color="#16a34a" />
+                        <p>No new notifications</p>
+                      </div>
+                    ) : (
+                      notifications.map((item) => (
+                        <div key={item.id} className="notif-item">
+                          <div className={`notif-icon-circle ${item.type}`}>
+                            {item.type === 'complaint' ? (
+                              <ClipboardList size={14} />
+                            ) : (
+                              <Truck size={14} />
+                            )}
+                          </div>
+                          <div className="notif-content">
+                            <p className="notif-msg">{item.msg}</p>
+                            <span className="notif-time">{item.time}</span>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn-dismiss-notif"
+                            onClick={() => handleDismissNotification(item.id)}
+                            title="Dismiss notification"
+                          >
+                            <X size={12} />
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </header>
+
+        <div className="workspace-body">
           <PageErrorBoundary routeKey={location.pathname}>
             <Outlet />
           </PageErrorBoundary>
-        </main>
-      </div>
+        </div>
+      </main>
     </div>
   );
 }
