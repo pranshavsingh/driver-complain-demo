@@ -86,8 +86,9 @@ export function UsersPage(): ReactElement {
 
       setShowCreateModal(false);
       void usersResource.reload();
-    } catch (err: any) {
-      setModalError(err.message || 'Failed to create user ID');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setModalError(msg || 'Failed to create user ID');
     } finally {
       setSubmitting(false);
     }
@@ -97,8 +98,9 @@ export function UsersPage(): ReactElement {
     try {
       await api.users.approve(userId);
       void usersResource.reload();
-    } catch (err: any) {
-      alert(err.message || 'Failed to approve user');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      alert(msg || 'Failed to approve user');
     }
   };
 
@@ -107,8 +109,9 @@ export function UsersPage(): ReactElement {
     try {
       await api.users.reject(userId);
       void usersResource.reload();
-    } catch (err: any) {
-      alert(err.message || 'Failed to reject user');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      alert(msg || 'Failed to reject user');
     }
   };
 
@@ -123,8 +126,9 @@ export function UsersPage(): ReactElement {
     try {
       await api.users.update(targetUser.id, { isActive: nextActive });
       void usersResource.reload();
-    } catch (err: any) {
-      alert(err.message || `Failed to ${actionLabel} user`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      alert(msg || `Failed to ${actionLabel} user`);
     }
   };
 
@@ -142,8 +146,9 @@ export function UsersPage(): ReactElement {
       });
       setEditingUser(null);
       void usersResource.reload();
-    } catch (err: any) {
-      alert(err.message || 'Failed to update user');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      alert(msg || 'Failed to update user');
     } finally {
       setSubmitting(false);
     }

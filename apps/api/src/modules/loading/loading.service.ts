@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { uploadBuffer, cloudinaryFolder } from '../../lib/cloudinary';
 import { emitToUsers } from '../../realtime/socket';
@@ -54,7 +55,15 @@ export async function getDriverTripStats(driverId: string): Promise<{
 }
 
 async function serializeLoadingRecord(
-  rec: any,
+  rec: Record<string, unknown> & {
+    id: string;
+    driverId: string;
+    complaintId?: string | null;
+    driver?: {
+      user?: { firstName?: string; lastName?: string } | null;
+      vehicles?: { plateNumber?: string }[] | null;
+    } | null;
+  },
   overrideStats?: { completedTripsCount?: number; monthlyTripsCount?: number },
 ): Promise<LoadingRecord> {
   const driverUser = rec.driver?.user;
@@ -178,11 +187,11 @@ export async function markReachedLoadingPoint(opts: {
 
   // Broadcast realtime event to all admins
   const adminIds = await getActiveAdminUserIds();
-  emitToUsers(adminIds, REALTIME_EVENTS.loadingReached as any, {
+  emitToUsers(adminIds, REALTIME_EVENTS.loadingReached, {
     complaintId: record.id,
     complaintNo: 'LOADING-REACHED',
     title: `Driver ${serialized.driverName || 'Driver'} arrived at loading point`,
-    status: 'IN_PROGRESS' as any,
+    status: 'IN_PROGRESS',
     at: record.reachedAt.toISOString(),
   });
 
@@ -256,11 +265,11 @@ export async function markLoadingCompleted(opts: {
 
   // Broadcast realtime event to admins
   const adminIds = await getActiveAdminUserIds();
-  emitToUsers(adminIds, REALTIME_EVENTS.loadingCompleted as any, {
+  emitToUsers(adminIds, REALTIME_EVENTS.loadingCompleted, {
     complaintId: updated.id,
     complaintNo: 'LOADING-COMPLETED',
     title: `Driver ${serialized.driverName || 'Driver'} completed loading (Duration: ${serialized.formattedWaitingTime})`,
-    status: 'RESOLVED' as any,
+    status: 'RESOLVED',
     at: completedAt.toISOString(),
   });
 
@@ -462,11 +471,11 @@ export async function completeUnloading(opts: {
   // Reuses the existing loading:completed event so the admin Trip Analytics page — which
   // already subscribes to it — refreshes without needing a new event type.
   const adminIds = await getActiveAdminUserIds();
-  emitToUsers(adminIds, REALTIME_EVENTS.loadingCompleted as any, {
+  emitToUsers(adminIds, REALTIME_EVENTS.loadingCompleted, {
     complaintId: updated.id,
     complaintNo: 'UNLOADING-COMPLETED',
     title: `Driver ${serialized.driverName || 'Driver'} finished unloading (Duration: ${serialized.formattedUnloadingDuration})`,
-    status: 'RESOLVED' as any,
+    status: 'RESOLVED',
     at: unloadingCompletedAt.toISOString(),
   });
 
@@ -580,7 +589,7 @@ export interface TripFilters {
   month?: number;
 }
 
-function tripWhere(filters: TripFilters): any {
+function tripWhere(filters: TripFilters): Prisma.LoadingRecordWhereInput {
   const search = filters.search?.trim();
 
   let fromDate = filters.from;
@@ -609,7 +618,7 @@ function tripWhere(filters: TripFilters): any {
     ...(filters.status === 'ACTIVE' ? { status: 'TRIP_STARTED' } : {}),
     ...(filters.status === 'COMPLETED' ? { status: 'TRIP_COMPLETED' } : {}),
     ...(filters.status && filters.status !== 'ALL' && filters.status !== 'ACTIVE' && filters.status !== 'COMPLETED'
-      ? { status: filters.status as any }
+      ? { status: filters.status as Prisma.EnumLoadingStatusFilter }
       : {}),
     ...(search
       ? {
@@ -675,7 +684,7 @@ export async function getDriverMonthlyTripSummaries(opts: {
   month?: number;
   driverId?: string;
   search?: string;
-}): Promise<any[]> {
+}): Promise<Record<string, unknown>[]> {
   const currentYear = opts.year || new Date().getFullYear();
 
   let fromDate: Date;
@@ -815,7 +824,7 @@ export async function exportTripsToCsv(filters: TripFilters): Promise<string> {
     'Completion Address',
   ];
 
-  const escapeCsv = (val: any) => {
+  const escapeCsv = (val: unknown) => {
     if (val === null || val === undefined) return '""';
     const str = String(val).replace(/"/g, '""');
     return `"${str}"`;

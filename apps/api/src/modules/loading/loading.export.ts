@@ -9,11 +9,38 @@ const STATUS_LABELS: Record<string, string> = {
   UNLOADING: 'Unloading',
 };
 
+export interface TripExportRow {
+  status?: string | null;
+  driver?: {
+    user?: {
+      firstName?: string | null;
+      lastName?: string | null;
+      employeeId?: string | null;
+    } | null;
+    vehicles?: { plateNumber?: string | null }[] | null;
+  } | null;
+  tripStartedAt?: Date | string | null;
+  tripCompletedAt?: Date | string | null;
+  tripStartAddress?: string | null;
+  reachedAddress?: string | null;
+  tripCompletedAddress?: string | null;
+  tripDurationMinutes?: number | null;
+  waitingTimeMinutes?: number | null;
+  unloadingCompletedAt?: Date | string | null;
+  unloadingDurationMinutes?: number | null;
+  tripStartLatitude?: number | null;
+  tripStartLongitude?: number | null;
+  tripCompletedLatitude?: number | null;
+  tripCompletedLongitude?: number | null;
+  tripCompletedPhotoUrl?: string | null;
+  unloadingPhotoUrl?: string | null;
+}
+
 export function exportTripFilename(now = new Date()): string {
   return `trip-details-${now.toISOString().slice(0, 10)}.xlsx`;
 }
 
-export async function writeTripsXlsx(out: Writable, batches: AsyncIterable<any[]>): Promise<void> {
+export async function writeTripsXlsx(out: Writable, batches: AsyncIterable<TripExportRow[]>): Promise<void> {
   const workbook = new ExcelJS.stream.xlsx.WorkbookWriter({ stream: out, useStyles: true });
   const sheet = workbook.addWorksheet('Trip Details', { views: [{ state: 'frozen', ySplit: 1 }] });
   sheet.columns = [
@@ -39,12 +66,12 @@ export async function writeTripsXlsx(out: Writable, batches: AsyncIterable<any[]
 
   for await (const rows of batches) {
     for (const row of rows) {
-      const user = row.driver.user;
+      const user = row.driver?.user;
       sheet.addRow({
-        driver: `${user.firstName} ${user.lastName}`,
-        employeeId: user.employeeId,
-        vehicle: row.driver.vehicles[0]?.plateNumber ?? '',
-        status: STATUS_LABELS[row.status as string] ?? 'In progress',
+        driver: user ? `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() : '',
+        employeeId: user?.employeeId ?? '',
+        vehicle: row.driver?.vehicles?.[0]?.plateNumber ?? '',
+        status: STATUS_LABELS[row.status ?? ''] ?? 'In progress',
         startedAt: row.tripStartedAt,
         completedAt: row.tripCompletedAt,
         startLocation: row.tripStartAddress ?? row.reachedAddress ?? '',

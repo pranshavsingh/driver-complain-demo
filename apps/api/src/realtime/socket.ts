@@ -1,7 +1,6 @@
 import type { Server as HttpServer } from 'node:http';
 import { Server, type Socket } from 'socket.io';
 import type { Role, ComplaintEventPayload, RealtimeEvent } from '@driver-complaint/shared-types';
-import { corsOrigins } from '../config/env';
 import { verifyAccessToken } from '../lib/jwt';
 import { logger } from '../lib/logger';
 import { redis, duplicateRedis } from '../lib/redis';
@@ -93,7 +92,7 @@ export function initRealtime(server: HttpServer): RealtimeServer {
     if (sub) {
       // @ts-expect-error Optional dependency resolved dynamically at runtime
       import('@socket.io/redis-adapter')
-        .then(({ createAdapter }: any) => {
+        .then(({ createAdapter }: { createAdapter: (pubClient: unknown, subClient: unknown) => unknown }) => {
           instance.adapter(createAdapter(redis, sub));
           logger.info('Socket.IO Redis adapter attached (horizontal scaling enabled)');
         })

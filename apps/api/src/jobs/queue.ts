@@ -1,15 +1,8 @@
-/**
- * BullMQ job queue definitions.
- *
- * DSA: FIFO Queue backed by Redis. Jobs are enqueued from Express request
- * handlers and dequeued by a separate worker process, decoupling heavy I/O
- * (Cloudinary uploads, Whisper transcription) from the HTTP lifecycle.
- *
- * Falls back gracefully: when Redis is unavailable, `enqueue*()` returns false
- * and the caller should proceed with inline processing (the pre-scaling path).
- */
+import { createRequire } from 'node:module';
 import { logger } from '../lib/logger';
 import { redis } from '../lib/redis';
+
+const require = createRequire(import.meta.url);
 
 /** Queue names. */
 export const QUEUES = {
@@ -18,23 +11,23 @@ export const QUEUES = {
   TOKEN_CLEANUP: 'token-cleanup',
 } as const;
 
-// Queue and Worker types — resolved dynamically so the app boots without bullmq.
-type BullQueue = any;
-type BullWorker = any;
+export interface GenericQueue {
+  add(name: string, data: unknown, opts?: unknown): Promise<unknown>;
+  close(): Promise<void>;
+}
 
-const queues = new Map<string, BullQueue>();
+const queues = new Map<string, GenericQueue>();
 
 /** Lazily create / reuse a named queue. Returns null when Redis is unavailable. */
-async function getQueue(name: string): Promise<BullQueue | null> {
+async function getQueue(name: string): Promise<GenericQueue | null> {
   if (!redis) return null;
 
   const existing = queues.get(name);
   if (existing) return existing;
 
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { Queue } = require('bullmq');
-    const q = new Queue(name, { connection: redis });
+    const q = new Queue(name, { connection: redis }) as GenericQueue;
     queues.set(name, q);
     return q;
   } catch {

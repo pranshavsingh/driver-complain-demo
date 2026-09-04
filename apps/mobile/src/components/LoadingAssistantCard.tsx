@@ -191,8 +191,9 @@ export function LoadingAssistantCard({
       setCompletedRecord(null);
       await fetchActiveAndStats();
       Alert.alert('📍 Reached Loading Point', 'Arrival milestone recorded! Loading timer started.');
-    } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to record loading arrival');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      Alert.alert('Error', msg || 'Failed to record loading arrival');
     } finally {
       setSubmitting(false);
     }
@@ -232,8 +233,9 @@ export function LoadingAssistantCard({
         '✅ Loading Done & 🚛 Trip Started',
         `Loading completed in ${completedRecordData.formattedWaitingTime || '< 1 min'}. Your trip timer has started!`,
       );
-    } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to complete loading / start trip');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      Alert.alert('Error', msg || 'Failed to complete loading / start trip');
     } finally {
       setSubmitting(false);
     }
@@ -269,8 +271,9 @@ export function LoadingAssistantCard({
         '📦 Reached Unloading Point',
         `Trip completed in ${record.formattedTripDuration || '< 1 min'}. Unloading timer started — tap "Unloading Done" once the vehicle is empty.`,
       );
-    } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to record arrival at unloading point');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      Alert.alert('Error', msg || 'Failed to record arrival at unloading point');
     } finally {
       setSubmitting(false);
     }
@@ -307,8 +310,9 @@ export function LoadingAssistantCard({
         '🏁 Unloading Done!',
         `Unloaded in ${record.formattedUnloadingDuration || '< 1 min'}. Total Trips: ${record.completedTripsCount ?? 1}`,
       );
-    } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to complete unloading');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      Alert.alert('Error', msg || 'Failed to complete unloading');
     } finally {
       setSubmitting(false);
     }

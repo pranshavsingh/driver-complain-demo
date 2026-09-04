@@ -237,8 +237,9 @@ export function TripDetailsPage(): ReactElement {
   const handleExportCsv = async () => {
     try {
       await api.loading.exportCsv(queryObj);
-    } catch (err: any) {
-      alert('Failed to export CSV: ' + (err.message || 'Unknown error'));
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      alert('Failed to export CSV: ' + msg);
     }
   };
 

@@ -2,7 +2,6 @@ import express, { type Express } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
 import { pinoHttp } from 'pino-http';
-import { corsOrigins } from './config/env';
 import { logger } from './lib/logger';
 import { Sentry } from './lib/sentry';
 import { requestId } from './middleware/request-id';

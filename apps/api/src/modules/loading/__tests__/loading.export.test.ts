@@ -2,14 +2,14 @@ import { PassThrough, Readable } from 'node:stream';
 import { describe, it, expect } from 'vitest';
 import ExcelJS from 'exceljs';
 import { formatDurationText } from '../loading.service';
-import { exportTripFilename, writeTripsXlsx } from '../loading.export';
+import { exportTripFilename, writeTripsXlsx, type TripExportRow } from '../loading.export';
 
 // No database and no Cloudinary: this file exercises the pure duration formatter and the
 // streamed XLSX writer by feeding it hand-built rows in the shape iterateTripRecords yields.
 // The lifecycle itself is covered by loading.service.test.ts, which does need Postgres.
 
 /** One row in the shape `iterateTripRecords` yields (Prisma record + driver/user/vehicles). */
-function tripRow(overrides: Record<string, unknown> = {}): any {
+function tripRow(overrides: Record<string, unknown> = {}): TripExportRow {
   return {
     id: 'trip-1',
     status: 'TRIP_COMPLETED',
@@ -36,11 +36,11 @@ function tripRow(overrides: Record<string, unknown> = {}): any {
     unloadingPhotoUrl: 'https://cdn.test/unloaded.jpg',
     unloadingDurationMinutes: 90,
     ...overrides,
-  };
+  } as TripExportRow;
 }
 
 /** Render the workbook to a buffer, exactly as the HTTP response would receive it. */
-async function render(rows: any[]): Promise<ExcelJS.Worksheet> {
+async function render(rows: TripExportRow[]): Promise<ExcelJS.Worksheet> {
   const chunks: Buffer[] = [];
   const out = new PassThrough();
   out.on('data', (c: Buffer) => chunks.push(c));

@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "prisma generate && prisma db push --accept-data-loss",
+    "build": "prisma generate",
     "prestart": "prisma generate && prisma db push --accept-data-loss",
     "dev": "node --env-file-if-exists=.env --import tsx --import ./src/instrument.ts --watch src/index.ts",
     "start": "node --env-file-if-exists=.env --import tsx --import ./src/instrument.ts src/index.ts",

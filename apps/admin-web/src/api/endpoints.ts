@@ -18,6 +18,8 @@ import {
   type UpdateComplaintStatus,
   type UserPublic,
   type VehiclePublic,
+  type CreateUser,
+  type UpdateUser,
   LoadingRecordSchema,
   type LoadingRecord,
   DriverMonthlyTripSummarySchema,
@@ -111,14 +113,14 @@ export const users = {
   me: (): Promise<UserPublic> => request(UserPublicSchema, '/users/me'),
   admins: (): Promise<AdminSummary[]> => request(z.array(AdminSummarySchema), '/users/admins'),
   list: (query?: { role?: string; approvalStatus?: string; isActive?: boolean; search?: string }): Promise<UserPublic[]> =>
-    request(z.array(UserPublicSchema), '/users', { query: query as any }),
-  create: (input: any): Promise<UserPublic> =>
+    request(z.array(UserPublicSchema), '/users', { query: query as Record<string, QueryValue> }),
+  create: (input: CreateUser): Promise<UserPublic> =>
     request(UserPublicSchema, '/users', { method: 'POST', body: input }),
   approve: (id: string): Promise<UserPublic> =>
     request(UserPublicSchema, `/users/${id}/approve`, { method: 'POST' }),
   reject: (id: string): Promise<UserPublic> =>
     request(UserPublicSchema, `/users/${id}/reject`, { method: 'POST' }),
-  update: (id: string, input: any): Promise<UserPublic> =>
+  update: (id: string, input: UpdateUser): Promise<UserPublic> =>
     request(UserPublicSchema, `/users/${id}`, { method: 'PATCH', body: input }),
 };
 
@@ -190,12 +192,12 @@ export interface TripFilterQuery {
 
 export const loading = {
   list: (query?: TripFilterQuery): Promise<{ data: LoadingRecord[] }> =>
-    request(z.object({ data: z.array(LoadingRecordSchema) }), '/loading', { query: query as any }),
+    request(z.object({ data: z.array(LoadingRecordSchema) }), '/loading', { query: query as Record<string, QueryValue> }),
 
   monthlySummary: (query?: TripFilterQuery): Promise<{ data: DriverMonthlyTripSummary[] }> =>
-    request(z.object({ data: z.array(DriverMonthlyTripSummarySchema as any) }), '/loading/monthly-summary', { query: query as any }),
+    request(z.object({ data: z.array(DriverMonthlyTripSummarySchema) }), '/loading/monthly-summary', { query: query as Record<string, QueryValue> }),
 
   exportCsv: (query?: TripFilterQuery): Promise<void> =>
-    download('/loading/export-csv', { query: query as any }, `trips-report-${Date.now()}.csv`),
+    download('/loading/export-csv', { query: query as Record<string, QueryValue> }, `trips-report-${Date.now()}.csv`),
 };
 

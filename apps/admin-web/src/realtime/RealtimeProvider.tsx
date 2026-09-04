@@ -102,7 +102,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }): ReactEl
         // pushed into the UI as a half-populated row.
         const parsed = ComplaintEventPayloadSchema.safeParse(raw);
         if (!parsed.success) return;
-        for (const handler of handlers.current) handler({ event: event as any, payload: parsed.data });
+        for (const handler of handlers.current) handler({ event: event as RealtimeEvent, payload: parsed.data });
       });
     }
 

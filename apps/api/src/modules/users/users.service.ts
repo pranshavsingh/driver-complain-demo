@@ -5,8 +5,8 @@ import type {
   CreateUser,
   UpdateUser,
   ApprovalStatus,
-  ComplaintCategory,
 } from '@driver-complaint/shared-types';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { toUserPublic, toAdminSummary } from '../../lib/serializers';
 import { ApiError } from '../../errors/api-error';
@@ -92,7 +92,7 @@ export async function listUsers(filters?: {
   isActive?: boolean;
   search?: string;
 }): Promise<UserPublic[]> {
-  const where: any = {};
+  const where: Prisma.UserWhereInput = {};
   if (filters?.role) where.role = filters.role;
   if (filters?.approvalStatus) where.approvalStatus = filters.approvalStatus;
   if (filters?.isActive !== undefined) where.isActive = filters.isActive;

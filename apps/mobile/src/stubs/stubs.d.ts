@@ -1,36 +1,35 @@
 declare module 'expo-audio' {
-  export const AudioQuality: any;
-  export const IOSOutputFormat: any;
-  export function requestRecordingPermissionsAsync(): Promise<any>;
-  export function setAudioModeAsync(options?: any): Promise<void>;
-  export function useAudioRecorder(options?: any): any;
-  export function useAudioRecorderState(recorder?: any, interval?: number): any;
-  export function useAudioPlayer(source?: any): any;
-  export function useAudioPlayerStatus(player?: any): any;
-  export type RecordingOptions = any;
+  export const AudioQuality: unknown;
+  export const IOSOutputFormat: unknown;
+  export function requestRecordingPermissionsAsync(): Promise<unknown>;
+  export function setAudioModeAsync(options?: unknown): Promise<void>;
+  export function useAudioRecorder(options?: unknown): unknown;
+  export function useAudioRecorderState(recorder?: unknown, interval?: number): unknown;
+  export function useAudioPlayer(source?: unknown): unknown;
+  export function useAudioPlayerStatus(player?: unknown): unknown;
+  export type RecordingOptions = unknown;
 }
 
 declare module 'expo-video' {
-  export const VideoView: any;
-  export function useVideoPlayer(source?: any, setup?: any): any;
+  export const VideoView: unknown;
+  export function useVideoPlayer(source?: unknown, setup?: unknown): unknown;
 }
 
 declare module '@expo/vector-icons' {
-  export const Ionicons: any;
-  export const MaterialCommunityIcons: any;
-  export const FontAwesome: any;
-  export const Feather: any;
+  export const Ionicons: unknown;
+  export const MaterialCommunityIcons: unknown;
+  export const FontAwesome: unknown;
+  export const Feather: unknown;
 }
 
 declare module 'expo-av' {
-  export const Audio: any;
-  export const Video: any;
+  export const Audio: unknown;
+  export const Video: unknown;
 }
 
 declare module 'expo-location' {
-  export const Accuracy: any;
-  export function requestForegroundPermissionsAsync(): Promise<any>;
-  export function getCurrentPositionAsync(options?: any): Promise<any>;
-  export function reverseGeocodeAsync(coords: any): Promise<any>;
+  export const Accuracy: unknown;
+  export function requestForegroundPermissionsAsync(): Promise<unknown>;
+  export function getCurrentPositionAsync(options?: unknown): Promise<unknown>;
+  export function reverseGeocodeAsync(coords: unknown): Promise<unknown>;
 }
-

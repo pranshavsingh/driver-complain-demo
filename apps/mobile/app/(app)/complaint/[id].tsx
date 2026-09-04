@@ -119,7 +119,7 @@ export default function ComplaintDetailScreen(): ReactElement {
 /** Audio playback player component for voice note attachments */
 function VoiceAttachmentPlayer({ attachment }: { attachment: ComplaintAttachmentPublic }): ReactElement {
   const [isPlaying, setIsPlaying] = useState(false);
-  const soundRef = useRef<any>(null);
+  const soundRef = useRef<{ pauseAsync: () => Promise<unknown>; unloadAsync: () => Promise<unknown> } | null>(null);
 
   const togglePlayback = (): void => {
     void (async () => {
@@ -138,7 +138,7 @@ function VoiceAttachmentPlayer({ attachment }: { attachment: ComplaintAttachment
         const { sound } = await Audio.Sound.createAsync(
           { uri: attachment.url },
           { shouldPlay: true },
-          (status: any) => {
+          (status: { isLoaded?: boolean; didJustFinish?: boolean }) => {
             if (status.isLoaded) {
               if (status.didJustFinish) {
                 setIsPlaying(false);

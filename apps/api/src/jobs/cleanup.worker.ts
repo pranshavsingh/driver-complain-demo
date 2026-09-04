@@ -6,10 +6,13 @@
  * Runs as a repeatable BullMQ job or, when Redis is unavailable, as a
  * setInterval fallback within the API process.
  */
+import { createRequire } from 'node:module';
 import { redis } from '../lib/redis';
 import { logger } from '../lib/logger';
 import { prisma } from '../lib/prisma';
 import { QUEUES } from './queue';
+
+const require = createRequire(import.meta.url);
 
 /** How often to run cleanup (every 6 hours). */
 const CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1000;
@@ -55,7 +58,6 @@ async function runCleanup(): Promise<void> {
 export async function startCleanupScheduler(): Promise<void> {
   if (redis) {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
       const { Worker, Queue } = require('bullmq');
 
       const worker = new Worker(
@@ -66,8 +68,9 @@ export async function startCleanupScheduler(): Promise<void> {
         { connection: redis, concurrency: 1 },
       );
 
-      worker.on('failed', (_job: any, err: any) => {
-        logger.error({ err: err?.message }, 'Cleanup job failed');
+      worker.on('failed', (_job: unknown, err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.error({ err: msg }, 'Cleanup job failed');
       });
 
       // Schedule a repeating job.

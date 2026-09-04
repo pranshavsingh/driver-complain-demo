@@ -6,9 +6,27 @@
  *
  * DSA: FIFO Queue consumption with priority ordering (URGENT complaints first).
  */
+import { createRequire } from 'node:module';
 import { redis } from '../lib/redis';
 import { logger } from '../lib/logger';
 import { QUEUES } from './queue';
+import type { AttachmentKind } from '@driver-complaint/shared-types';
+
+const require = createRequire(import.meta.url);
+
+export interface ComplaintMediaJobData {
+  complaintId: string;
+  driverUserId: string;
+  files: Record<string, { base64: string; originalName?: string }>;
+  priority: string;
+}
+
+export interface LoadingPhotoJobData {
+  loadingRecordId: string;
+  stage: 'reached' | 'completed' | 'trip-completed';
+  fileBase64: string;
+  folder: string;
+}
 
 /** Start media workers. No-op when Redis is unavailable. */
 export async function startMediaWorkers(): Promise<void> {
@@ -17,20 +35,23 @@ export async function startMediaWorkers(): Promise<void> {
     return;
   }
 
-  let Worker: any;
+  let WorkerConstructor: new (name: string, processor: (job: { id?: string; data: unknown }) => Promise<void>, opts?: unknown) => {
+    on(event: string, fn: (...args: unknown[]) => void): void;
+  };
+
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    ({ Worker } = require('bullmq'));
+    const bullmq = require('bullmq');
+    WorkerConstructor = bullmq.Worker;
   } catch {
     logger.info('bullmq not installed — media workers disabled');
     return;
   }
 
   // ──── Complaint Media Worker ────
-  const complaintWorker = new Worker(
+  const complaintWorker = new WorkerConstructor(
     QUEUES.COMPLAINT_MEDIA,
-    async (job: any) => {
-      const { complaintId, driverUserId, files, priority } = job.data;
+    async (job: { id?: string; data: unknown }) => {
+      const { complaintId, driverUserId, files, priority } = job.data as ComplaintMediaJobData;
       logger.info({ complaintId, priority, jobId: job.id }, 'Processing complaint media');
 
       // Dynamic imports to avoid circular dependencies at module load time.
@@ -56,7 +77,7 @@ export async function startMediaWorkers(): Promise<void> {
 
       // 2. Upload all files to Cloudinary.
       type UploadResult = {
-        kind: string;
+        kind: AttachmentKind;
         originalName: string | null;
         transcription: string | null;
         asset: Awaited<ReturnType<typeof uploadBuffer>>;
@@ -87,7 +108,7 @@ export async function startMediaWorkers(): Promise<void> {
             data: uploads.map(({ kind, asset, originalName, transcription }) => ({
               complaintId,
               uploadedById: driverUserId,
-              kind: kind as any,
+              kind,
               url: asset.url,
               publicId: asset.publicId,
               resourceType: asset.resourceType,
@@ -154,15 +175,17 @@ export async function startMediaWorkers(): Promise<void> {
     },
   );
 
-  complaintWorker.on('failed', (job: any, err: any) => {
-    logger.error({ jobId: job?.id, err: err?.message }, 'Complaint media job failed');
+  complaintWorker.on('failed', (job: unknown, err: unknown) => {
+    const jobObj = job as { id?: string } | undefined;
+    const errObj = err as { message?: string } | undefined;
+    logger.error({ jobId: jobObj?.id, err: errObj?.message }, 'Complaint media job failed');
   });
 
   // ──── Loading Photo Worker ────
-  const loadingWorker = new Worker(
+  const loadingWorker = new WorkerConstructor(
     QUEUES.LOADING_PHOTO,
-    async (job: any) => {
-      const { loadingRecordId, stage, fileBase64, folder } = job.data;
+    async (job: { id?: string; data: unknown }) => {
+      const { loadingRecordId, stage, fileBase64, folder } = job.data as LoadingPhotoJobData;
       logger.info({ loadingRecordId, stage, jobId: job.id }, 'Processing loading photo');
 
       const { uploadBuffer } = await import('../lib/cloudinary');
@@ -193,8 +216,10 @@ export async function startMediaWorkers(): Promise<void> {
     { connection: redis, concurrency: 5 },
   );
 
-  loadingWorker.on('failed', (job: any, err: any) => {
-    logger.error({ jobId: job?.id, err: err?.message }, 'Loading photo job failed');
+  loadingWorker.on('failed', (job: unknown, err: unknown) => {
+    const jobObj = job as { id?: string } | undefined;
+    const errObj = err as { message?: string } | undefined;
+    logger.error({ jobId: jobObj?.id, err: errObj?.message }, 'Loading photo job failed');
   });
 
   logger.info('Media workers started (complaint-media, loading-photo)');

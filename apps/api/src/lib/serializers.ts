@@ -41,6 +41,11 @@ export function toAdminSummary(user: User): AdminSummary {
 }
 
 export function toUserPublic(user: User): UserPublic {
+  const u = user as User & {
+    approvalStatus?: ApprovalStatus;
+    category?: string | null;
+    createdByAdminId?: string | null;
+  };
   return {
     id: user.id,
     employeeId: user.employeeId,
@@ -50,9 +55,9 @@ export function toUserPublic(user: User): UserPublic {
     email: user.email ?? null,
     phone: user.phone ?? null,
     isActive: user.isActive,
-    approvalStatus: (user as any).approvalStatus ?? 'APPROVED',
-    category: (user as any).category ?? null,
-    createdByAdminId: (user as any).createdByAdminId ?? null,
+    approvalStatus: u.approvalStatus ?? 'APPROVED',
+    category: (u.category as UserPublic['category']) ?? null,
+    createdByAdminId: u.createdByAdminId ?? null,
     createdAt: user.createdAt.toISOString(),
     updatedAt: user.updatedAt.toISOString(),
   };
@@ -96,6 +101,12 @@ export function toVehiclePublic(vehicle: Vehicle): VehiclePublic {
 }
 
 export function toComplaintPublic(complaint: Complaint): ComplaintPublic {
+  const c = complaint as Complaint & {
+    transcription?: string | null;
+    category?: ComplaintPublic['category'];
+    pendingAssigneeId?: string | null;
+    assignmentStatus?: ComplaintPublic['assignmentStatus'];
+  };
   return {
     id: complaint.id,
     complaintNo: complaint.complaintNo,
@@ -103,13 +114,13 @@ export function toComplaintPublic(complaint: Complaint): ComplaintPublic {
     vehicleId: complaint.vehicleId ?? null,
     title: complaint.title,
     description: complaint.description,
-    transcription: (complaint as any).transcription ?? null,
-    category: (complaint as any).category ?? 'SUPPORT',
+    transcription: c.transcription ?? null,
+    category: c.category ?? 'SUPPORT',
     status: complaint.status,
     priority: complaint.priority,
     assignedToId: complaint.assignedToId ?? null,
-    pendingAssigneeId: (complaint as any).pendingAssigneeId ?? null,
-    assignmentStatus: (complaint as any).assignmentStatus ?? 'NONE',
+    pendingAssigneeId: c.pendingAssigneeId ?? null,
+    assignmentStatus: c.assignmentStatus ?? 'NONE',
     resolvedAt: iso(complaint.resolvedAt),
     createdAt: complaint.createdAt.toISOString(),
     updatedAt: complaint.updatedAt.toISOString(),
@@ -144,6 +155,7 @@ export function toDeviceTokenPublic(t: DeviceToken): DeviceTokenPublic {
 }
 
 export function toComplaintAttachmentPublic(a: ComplaintAttachment): ComplaintAttachmentPublic {
+  const att = a as ComplaintAttachment & { transcription?: string | null };
   return {
     id: a.id,
     complaintId: a.complaintId,
@@ -156,7 +168,7 @@ export function toComplaintAttachmentPublic(a: ComplaintAttachment): ComplaintAt
     bytes: a.bytes ?? null,
     durationSec: a.durationSec ?? null,
     originalName: a.originalName ?? null,
-    transcription: (a as any).transcription ?? null,
+    transcription: att.transcription ?? null,
     createdAt: a.createdAt.toISOString(),
   };
 }

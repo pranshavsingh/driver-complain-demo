@@ -78,7 +78,7 @@ export const users = {
 
 export const vehicles = {
   /** The vehicles assigned to the signed-in driver. Usually exactly one. */
-  mine: (): Promise<VehiclePublic[]> => request(z.array(VehiclePublicSchema as any) as any, '/vehicles/mine'),
+  mine: (): Promise<VehiclePublic[]> => request(z.array(VehiclePublicSchema), '/vehicles/mine'),
 };
 
 export const complaints = {

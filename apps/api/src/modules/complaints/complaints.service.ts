@@ -28,7 +28,7 @@ async function findLeastLoadedAdmin(category: string): Promise<string | null> {
       role: { in: ['ADMIN', 'SUPER_ADMIN', 'EXECUTIVE'] },
       isActive: true,
       approvalStatus: 'APPROVED',
-      category: category as any,
+      category: category as Prisma.EnumComplaintCategoryFilter,
     },
     select: { id: true },
   });

@@ -1,5 +1,4 @@
 import rateLimit from 'express-rate-limit';
-import type { Request, Response } from 'express';
 import { env } from '../config/env';
 
 /**

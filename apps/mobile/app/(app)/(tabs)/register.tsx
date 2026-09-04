@@ -199,7 +199,7 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
       title: titleText,
       description: descriptionText,
       priority,
-      category: category ? (category as any) : undefined,
+      category: category ? (category as ComplaintCategory) : undefined,
       vehicleNumber: activeVehicleNumber,
     });
 

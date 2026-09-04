@@ -115,7 +115,7 @@ async function performRefresh(): Promise<boolean> {
       body: { refreshToken },
       anonymous: true,
     });
-    await setTokens(tokens as any);
+    await setTokens(tokens as { accessToken: string; refreshToken: string; expiresIn: number });
     return true;
   } catch {
     return false;
@@ -209,7 +209,7 @@ async function fetchRaw(path: string, opts: RequestOptions): Promise<Response> {
  * has to be obvious the first time it is seen in testing.
  */
 export async function request<T>(
-  schema: z.ZodType<T, any, any> | any,
+  schema: z.ZodType<T>,
   path: string,
   opts: RequestOptions = {},
 ): Promise<T> {

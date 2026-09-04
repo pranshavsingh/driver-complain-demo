@@ -261,7 +261,7 @@ function VoicePreview({
   onRemove: () => void;
 }): ReactElement {
   const [isPlaying, setIsPlaying] = useState(false);
-  const soundRef = useRef<any>(null);
+  const soundRef = useRef<{ pauseAsync: () => Promise<unknown>; unloadAsync: () => Promise<unknown> } | null>(null);
 
   const toggle = (): void => {
     void (async () => {
@@ -280,7 +280,7 @@ function VoicePreview({
         const { sound } = await Audio.Sound.createAsync(
           { uri },
           { shouldPlay: true },
-          (status: any) => {
+          (status: { isLoaded?: boolean; didJustFinish?: boolean }) => {
             if (status.isLoaded) {
               if (status.didJustFinish) {
                 setIsPlaying(false);

@@ -23,7 +23,7 @@ export function useVoiceRecorder(onRecorded: (note: VoiceNote) => void): VoiceRe
   const [elapsedSec, setElapsedSec] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
-  const recordingRef = useRef<any>(null);
+  const recordingRef = useRef<{ stopAndUnloadAsync: () => Promise<unknown>; getURI: () => string | null } | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startTimeRef = useRef<number>(0);
 

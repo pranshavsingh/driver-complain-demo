@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import { CreateUserSchema, UpdateUserSchema } from '@driver-complaint/shared-types';
+import { CreateUserSchema, UpdateUserSchema, type Role, type ApprovalStatus } from '@driver-complaint/shared-types';
 import * as usersService from './users.service';
 import { ApiError } from '../../errors/api-error';
 import { sendSuccess } from '../../lib/http';
@@ -29,8 +29,8 @@ export async function createUser(req: Request, res: Response): Promise<void> {
 export async function listUsers(req: Request, res: Response): Promise<void> {
   const { role, approvalStatus, isActive, search } = req.query;
   const filters = {
-    ...(typeof role === 'string' ? { role: role as any } : {}),
-    ...(typeof approvalStatus === 'string' ? { approvalStatus: approvalStatus as any } : {}),
+    ...(typeof role === 'string' ? { role: role as Role } : {}),
+    ...(typeof approvalStatus === 'string' ? { approvalStatus: approvalStatus as ApprovalStatus } : {}),
     ...(typeof isActive === 'string' ? { isActive: isActive === 'true' } : {}),
     ...(typeof search === 'string' ? { search } : {}),
   };

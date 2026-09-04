@@ -1,3 +1,4 @@
+import type { LoadingStatus } from '@prisma/client';
 import type { Request, Response } from 'express';
 import {
   markReachedLoadingPoint,
@@ -164,7 +165,7 @@ export async function handleListLoadingRecords(req: Request, res: Response): Pro
   }
 
   const driverId = typeof req.query.driverId === 'string' ? req.query.driverId : undefined;
-  const status = typeof req.query.status === 'string' ? (req.query.status as any) : undefined;
+  const status = typeof req.query.status === 'string' ? (req.query.status as LoadingStatus) : undefined;
   const limit = req.query.limit ? Number(req.query.limit) : 50;
 
   const records = await listLoadingRecords({ driverId, status, limit });
