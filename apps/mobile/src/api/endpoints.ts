@@ -93,34 +93,19 @@ export function normalizeFileUri(uri: string): string {
 }
 
 /** React Native resolves this native URI when it builds the multipart request. */
-async function appendFile(form: FormData, field: string, file: FileToUpload): Promise<void> {
+function appendFile(form: FormData, field: string, file: FileToUpload): void {
   const cleanUri = normalizeFileUri(file.uri);
   const defaultName = field === 'voice' ? 'voice.m4a' : field === 'video' ? 'video.mp4' : 'photo.jpg';
   const defaultType = field === 'voice' ? 'audio/m4a' : field === 'video' ? 'video/mp4' : 'image/jpeg';
   const fileName = file.name || defaultName;
   const mimeType = file.type || defaultType;
 
-  console.log(`[endpoints] Converting ${field} to Blob from: ${cleanUri}`);
-  try {
-    const res = await fetch(cleanUri);
-    const blob = await res.blob();
-    if (typeof File !== 'undefined') {
-      const fileObj = new File([blob], fileName, { type: mimeType });
-      form.append(field, fileObj as unknown as Blob);
-    } else {
-      (form as any).append(field, blob, fileName);
-    }
-    console.log(`[endpoints] Appended ${field} as native Blob/File:`, {
-      size: blob.size,
-      fileName,
-      mimeType,
-    });
-    return;
-  } catch (blobErr) {
-    console.warn(`[endpoints] blob conversion failed for ${field}, trying direct part:`, blobErr);
-  }
+  console.log(`[endpoints] Appending ${field} to FormData:`, {
+    cleanUri,
+    name: fileName,
+    type: mimeType,
+  });
 
-  // Fallback for older legacy runtimes
   form.append(field, {
     uri: cleanUri,
     name: fileName,
@@ -160,7 +145,7 @@ export const complaints = {
     if (input.vehicleNumber) form.append('vehicleNumber', input.vehicleNumber);
     if (input.priority) form.append('priority', input.priority);
     for (const [field, file] of Object.entries(evidence)) {
-      if (file) await appendFile(form, field, file);
+      if (file) appendFile(form, field, file);
     }
     return request(ComplaintPublicSchema, '/complaints', { method: 'POST', body: form });
   },
@@ -191,7 +176,7 @@ export const loading = {
     if (input.address) form.append('address', input.address);
     if (input.locationName) form.append('locationName', input.locationName);
     if (input.complaintId) form.append('complaintId', input.complaintId);
-    await appendFile(form, 'photo', photo);
+    appendFile(form, 'photo', photo);
     return request(LoadingRecordSchema, '/loading/reached', { method: 'POST', body: form });
   },
 
@@ -205,7 +190,7 @@ export const loading = {
     form.append('latitude', String(input.latitude));
     form.append('longitude', String(input.longitude));
     if (input.address) form.append('address', input.address);
-    await appendFile(form, 'photo', photo);
+    appendFile(form, 'photo', photo);
     return request(LoadingRecordSchema, `/loading/${encodeURIComponent(loadingId)}/complete`, {
       method: 'PATCH',
       body: form,

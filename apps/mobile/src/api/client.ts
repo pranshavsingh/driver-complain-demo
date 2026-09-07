@@ -212,18 +212,62 @@ async function sendOnce(
     controller.abort();
   }, timeoutMs);
 
+  console.log(`[NET-REQ] ${opts.method ?? 'GET'} ${url}`);
+  if (isMultipart && opts.body && typeof opts.body === 'object' && '_parts' in (opts.body as Record<string, unknown>)) {
+    const parts = (opts.body as { _parts: [string, unknown][] })._parts;
+    console.log('[NET-FORM] Fields:', parts.map(([k, v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : String(v)}`).join(', '));
+  }
+
+  if (isMultipart) {
+    // In Expo SDK 52+ / React Native 0.86, global `fetch` is overridden by expo/fetch,
+    // which throws `[Error: Unsupported FormDataPart implementation]` on native `{ uri, name, type }` parts.
+    // React Native's `XMLHttpRequest` directly uses the native NetworkingModule on Android/iOS,
+    // which natively streams `{ uri, name, type }` files from disk without reading into JS memory!
+    return await new Promise<Response>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open(opts.method ?? 'POST', url);
+      xhr.timeout = timeoutMs;
+      for (const [k, v] of Object.entries(headers)) {
+        xhr.setRequestHeader(k, v);
+      }
+      xhr.onload = () => {
+        const responseHeaders = new Headers();
+        const allHeaders = xhr.getAllResponseHeaders() || '';
+        allHeaders.split('\r\n').forEach((line) => {
+          const parts = line.split(': ');
+          if (parts[0]) responseHeaders.append(parts[0], parts.slice(1).join(': '));
+        });
+        const res = new Response(xhr.response || xhr.responseText, {
+          status: xhr.status,
+          statusText: xhr.statusText,
+          headers: responseHeaders,
+        });
+        console.log(`[NET-RES] ${res.status} ${opts.method ?? 'POST'} ${url}`);
+        resolve(res);
+      };
+      xhr.onerror = (e) => {
+        console.warn(`[NET-ERR] XHR error on ${url}:`, e);
+        reject(networkError(e, false));
+      };
+      xhr.ontimeout = () => {
+        console.warn(`[NET-ERR] XHR timeout on ${url}`);
+        reject(networkError(new Error('Upload timed out'), true));
+      };
+      xhr.send(opts.body as FormData);
+    });
+  }
+
   try {
-    return await fetch(url, {
+    const res = await fetch(url, {
       method: opts.method ?? 'GET',
       headers,
-      body: isMultipart
-        ? (opts.body as FormData)
-        : opts.body === undefined
-          ? undefined
-          : JSON.stringify(opts.body),
+      body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
       signal: controller.signal,
     });
+    console.log(`[NET-RES] ${res.status} ${opts.method ?? 'GET'} ${url}`);
+    return res;
   } catch (err) {
+    console.warn(`[NET-ERR] ${opts.method ?? 'GET'} ${url}:`, err);
     throw networkError(err, timedOut);
   } finally {
     clearTimeout(timer);
