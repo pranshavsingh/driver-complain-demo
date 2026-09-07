@@ -55,7 +55,7 @@ export async function getDriverTripStats(driverId: string): Promise<{
 }
 
 async function serializeLoadingRecord(
-  rec: Record<string, unknown> & {
+  rec: Record<string, any> & {
     id: string;
     driverId: string;
     complaintId?: string | null;

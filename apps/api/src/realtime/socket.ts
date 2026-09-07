@@ -93,7 +93,7 @@ export function initRealtime(server: HttpServer): RealtimeServer {
       // @ts-expect-error Optional dependency resolved dynamically at runtime
       import('@socket.io/redis-adapter')
         .then(({ createAdapter }: { createAdapter: (pubClient: unknown, subClient: unknown) => unknown }) => {
-          instance.adapter(createAdapter(redis, sub));
+          instance.adapter(createAdapter(redis, sub) as any);
           logger.info('Socket.IO Redis adapter attached (horizontal scaling enabled)');
         })
         .catch(() => {

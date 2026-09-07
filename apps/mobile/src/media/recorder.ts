@@ -5,6 +5,7 @@ import {
   useAudioRecorder,
   useAudioRecorderState,
   requestRecordingPermissionsAsync,
+  RecordingPresets,
   type RecordingOptions,
 } from 'expo-audio';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -30,25 +31,7 @@ export interface VoiceRecorder {
  * Standard recording options: High quality AAC in m4a container.
  */
 const VOICE_RECORDING_OPTIONS: RecordingOptions = {
-  extension: '.m4a',
-  sampleRate: 44100,
-  numberOfChannels: 2,
-  bitRate: 128000,
-  android: {
-    outputFormat: 'mpeg4',
-    audioEncoder: 'aac',
-  },
-  ios: {
-    outputFormat: 'aac ',
-    audioQuality: 127,
-    linearPCMBitDepth: 16,
-    linearPCMIsBigEndian: false,
-    linearPCMIsFloat: false,
-  },
-  web: {
-    mimeType: 'audio/webm',
-    bitsPerSecond: 128000,
-  },
+  ...RecordingPresets.HIGH_QUALITY,
 };
 
 /**
@@ -205,8 +188,13 @@ export function useVoiceRecorder(onRecorded: (note: VoiceNote) => void): VoiceRe
       }
 
       // Step 3: Prepare the recorder
-      if (typeof recorder.prepareToRecordAsync === 'function') {
-        await recorder.prepareToRecordAsync();
+      try {
+        if (typeof recorder.prepareToRecordAsync === 'function') {
+          await recorder.prepareToRecordAsync();
+        }
+      } catch (prepErr) {
+        // Can throw if already prepared; safe to proceed to record
+        console.log('[recorder] prepareToRecordAsync notice:', prepErr);
       }
 
       // Step 4: Start recording
@@ -215,10 +203,13 @@ export function useVoiceRecorder(onRecorded: (note: VoiceNote) => void): VoiceRe
       recordingRef.current = true;
       setIsRecording(true);
 
-      if (recorder.uri) {
+      const status = typeof recorder.getStatus === 'function' ? recorder.getStatus() : null;
+      if (status?.url) {
+        capturedUriRef.current = status.url;
+      } else if (recorder.uri) {
         capturedUriRef.current = recorder.uri;
       }
-      console.log('[recorder] Recording active! recorder.uri =', recorder.uri);
+      console.log('[recorder] Recording active! status.url =', status?.url, 'recorder.uri =', recorder.uri);
     } catch (e: unknown) {
       console.warn('[recorder] start error:', e);
       recordingRef.current = false;
@@ -248,11 +239,26 @@ export function useVoiceRecorder(onRecorded: (note: VoiceNote) => void): VoiceRe
 
       const durSec = Math.max(1, Math.round((Date.now() - startTimeRef.current) / 1000));
 
-      const uriBeforeStop = recorder.uri || capturedUriRef.current || recorderState.url;
+      // 1. Get status URL before stopping
+      let preStopUrl: string | null = null;
+      try {
+        if (typeof recorder.getStatus === 'function') {
+          const st = recorder.getStatus();
+          if (st?.url) preStopUrl = st.url;
+        }
+      } catch {
+        // ignore
+      }
 
+      // 2. Stop recorder and capture returned status bundle
+      let stopResultUrl: string | null = null;
       if (typeof recorder.stop === 'function') {
         try {
-          await recorder.stop();
+          const stopResult = (await recorder.stop()) as { url?: string } | undefined;
+          console.log('[recorder] stopResult:', JSON.stringify(stopResult));
+          if (stopResult?.url) {
+            stopResultUrl = stopResult.url;
+          }
         } catch (stopErr) {
           console.warn('[recorder] stop() call error:', stopErr);
         }
@@ -268,9 +274,10 @@ export function useVoiceRecorder(onRecorded: (note: VoiceNote) => void): VoiceRe
       }
 
       let finalUri =
-        recorder.uri ||
+        stopResultUrl ||
         capturedUriRef.current ||
-        uriBeforeStop ||
+        preStopUrl ||
+        recorder.uri ||
         recorderState.url ||
         null;
 
@@ -280,54 +287,27 @@ export function useVoiceRecorder(onRecorded: (note: VoiceNote) => void): VoiceRe
         finalUri = await findLatestRecordingFile();
       }
 
-      // Normalize file URI format if needed
+      // Normalize file URI format without corrupting encoded characters
       if (finalUri && typeof finalUri === 'string') {
-        try {
-          for (let i = 0; i < 3; i++) {
-            if (!finalUri.includes('%')) break;
-            const decoded = decodeURIComponent(finalUri);
-            if (decoded === finalUri) break;
-            finalUri = decoded;
-          }
-        } catch {
-          // ignore
-        }
+        finalUri = finalUri.trim();
         if (finalUri.startsWith('file:/') && !finalUri.startsWith('file:///')) {
           finalUri = finalUri.replace(/^file:\/+/, 'file:///');
+        } else if (finalUri.startsWith('/')) {
+          finalUri = `file://${finalUri}`;
         }
       }
 
-async function prepareVoiceFileForUpload(sourceUri: string): Promise<string> {
-  try {
-    let cleanSource = sourceUri;
-    if (cleanSource.startsWith('file:/') && !cleanSource.startsWith('file:///')) {
-      cleanSource = cleanSource.replace(/^file:\/+/, 'file:///');
-    }
-    const destFileName = `voice_note_${Date.now()}.m4a`;
-    const targetUri = `${FileSystem.cacheDirectory || FileSystem.documentDirectory}${destFileName}`;
-
-    console.log('[recorder] Copying recorded audio from:', cleanSource, 'to:', targetUri);
-    await FileSystem.copyAsync({
-      from: cleanSource,
-      to: targetUri,
-    });
-
-    const info = await FileSystem.getInfoAsync(targetUri);
-    console.log('[recorder] Verified copied audio file info:', JSON.stringify(info));
-
-    if (info.exists && info.size > 0) {
-      return targetUri;
-    }
-  } catch (err) {
-    console.warn('[recorder] prepareVoiceFileForUpload copy error:', err);
-  }
-  return sourceUri;
-}
+      console.log('[recorder] Resolved finalUri:', finalUri, 'duration:', durSec);
 
       if (finalUri && finalUri.length > 0) {
-        const readyUri = await prepareVoiceFileForUpload(finalUri);
-        console.log('[recorder] Ready for upload uri =', readyUri);
-        onRecorded({ uri: readyUri, name: 'voice.m4a', type: 'audio/m4a', durationSec: durSec });
+        try {
+          const fileInfo = await FileSystem.getInfoAsync(finalUri);
+          console.log('[recorder] Verified recording file info:', JSON.stringify(fileInfo));
+        } catch (infoErr) {
+          console.warn('[recorder] getInfoAsync check error:', infoErr);
+        }
+
+        onRecorded({ uri: finalUri, name: 'voice.m4a', type: 'audio/m4a', durationSec: durSec });
       } else {
         setError('No audio captured. Please check microphone permissions.');
         Alert.alert(
@@ -379,3 +359,4 @@ async function prepareVoiceFileForUpload(sourceUri: string): Promise<string> {
     cancel,
   };
 }
+

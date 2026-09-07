@@ -238,9 +238,9 @@ describe('loading.service — getDriverMonthlyTripSummaries', () => {
     });
 
     expect(summaries).toHaveLength(1);
-    expect(summaries[0].completedTripsCount).toBe(2);
-    expect(summaries[0].totalUnloadingTimeMinutes).toBe(120);
-    expect(summaries[0].avgUnloadingTimeMinutes).toBe(60);
+    expect(summaries[0]!.completedTripsCount).toBe(2);
+    expect(summaries[0]!.totalUnloadingTimeMinutes).toBe(120);
+    expect(summaries[0]!.avgUnloadingTimeMinutes).toBe(60);
   });
 
   it('reports zero rather than NaN for a driver-month with no unloading data', async () => {
@@ -255,7 +255,7 @@ describe('loading.service — getDriverMonthlyTripSummaries', () => {
       driverId: driver1Id,
     });
 
-    expect(summaries[0].totalUnloadingTimeMinutes).toBe(0);
-    expect(summaries[0].avgUnloadingTimeMinutes).toBe(0);
+    expect(summaries[0]!.totalUnloadingTimeMinutes).toBe(0);
+    expect(summaries[0]!.avgUnloadingTimeMinutes).toBe(0);
   });
 });

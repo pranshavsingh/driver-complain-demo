@@ -72,7 +72,7 @@ const extendedPrisma = basePrisma.$extends({
 });
 
 // Proxy extendedPrisma to wrap $transaction automatically with retry logic as well
-export const prisma = new Proxy(extendedPrisma, {
+export const prisma: PrismaClient = new Proxy(extendedPrisma, {
   get(target, prop, receiver) {
     if (prop === '$transaction') {
       return async (...args: any[]) => {
@@ -81,7 +81,7 @@ export const prisma = new Proxy(extendedPrisma, {
     }
     return Reflect.get(target, prop, receiver);
   },
-});
+}) as unknown as PrismaClient;
 
 
 

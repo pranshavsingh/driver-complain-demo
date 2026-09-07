@@ -83,22 +83,11 @@ export const vehicles = {
 
 export function normalizeFileUri(uri: string): string {
   if (!uri) return uri;
-  let clean = uri;
-  try {
-    for (let i = 0; i < 3; i++) {
-      if (!clean.includes('%')) break;
-      const decoded = decodeURIComponent(clean);
-      if (decoded === clean) break;
-      clean = decoded;
-    }
-  } catch {
-    // Ignore decode error
-  }
+  let clean = uri.trim();
   if (clean.startsWith('file:/') && !clean.startsWith('file:///')) {
     clean = clean.replace(/^file:\/+/, 'file:///');
-  }
-  if (clean.includes('@')) {
-    clean = clean.replace(/@/g, '%40');
+  } else if (clean.startsWith('/')) {
+    clean = `file://${clean}`;
   }
   return clean;
 }
@@ -106,10 +95,19 @@ export function normalizeFileUri(uri: string): string {
 /** React Native resolves this native URI when it builds the multipart request. */
 function appendFile(form: FormData, field: string, file: FileToUpload): void {
   const cleanUri = normalizeFileUri(file.uri);
+  const defaultName = field === 'voice' ? 'voice.m4a' : field === 'video' ? 'video.mp4' : 'photo.jpg';
+  const defaultType = field === 'voice' ? 'audio/m4a' : field === 'video' ? 'video/mp4' : 'image/jpeg';
+
+  console.log(`[endpoints] Appending ${field} to FormData:`, {
+    cleanUri,
+    name: file.name || defaultName,
+    type: file.type || defaultType,
+  });
+
   form.append(field, {
     uri: cleanUri,
-    name: file.name || `${field}.m4a`,
-    type: file.type || (field === 'voice' ? 'audio/m4a' : 'image/jpeg'),
+    name: file.name || defaultName,
+    type: file.type || defaultType,
   } as unknown as Blob);
 }
 
