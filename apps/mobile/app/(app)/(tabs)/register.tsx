@@ -1,5 +1,6 @@
 import { useMemo, useState, useEffect, type ReactElement } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Image,
   KeyboardAvoidingView,
@@ -16,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import {
   CreateComplaintSchema,
+  type ComplaintCategory,
   type Priority,
   type VehiclePublic,
 } from '@driver-complaint/shared-types';
@@ -57,6 +59,7 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
   const [evidence, setEvidence] = useState<EvidenceState>(NO_EVIDENCE);
   const [error, setError] = useState<unknown>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [submitStatus, setSubmitStatus] = useState<string | null>(null);
   const [showVehicleDropdown, setShowVehicleDropdown] = useState(false);
 
   useEffect(() => {
@@ -210,6 +213,8 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
 
     setError(null);
     setSubmitting(true);
+    const hasFiles = Boolean(evidence.photo || evidence.voice || evidence.video);
+    setSubmitStatus(hasFiles ? 'Connecting to server…' : 'Sending…');
 
     api.complaints
       .create(parsed.data, toEvidenceUpload(evidence))
@@ -218,6 +223,7 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
         setManualVehicleInput('');
         setEvidence(NO_EVIDENCE);
         setPriority('MEDIUM');
+        setSubmitStatus(null);
         router.push('/(app)/(tabs)/history');
       })
       .catch((err: unknown) => {
@@ -225,6 +231,7 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
       })
       .finally(() => {
         setSubmitting(false);
+        setSubmitStatus(null);
       });
   };
 
@@ -446,14 +453,20 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
 
           <Pressable
             style={styles.actionIconBtn}
-            onPress={recorder.start}
-            disabled={submitting || recorder.isRecording}
+            onPress={() => {
+              if (recorder.isRecording) {
+                void recorder.stop();
+              } else {
+                void recorder.start();
+              }
+            }}
+            disabled={submitting}
             accessibilityLabel="Record voice note"
           >
             <Ionicons
-              name={evidence.voice ? 'mic' : 'mic-outline'}
+              name={recorder.isRecording ? 'radio-button-on' : evidence.voice ? 'mic' : 'mic-outline'}
               size={22}
-              color={evidence.voice ? '#075E54' : '#64748B'}
+              color={recorder.isRecording ? '#DC2626' : evidence.voice ? '#075E54' : '#64748B'}
             />
           </Pressable>
 
@@ -481,9 +494,19 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
             disabled={(!textInput.trim() && !hasAttachments) || !activeVehicleNumber || submitting}
             accessibilityLabel="Send complaint"
           >
-            <Ionicons name="send" size={16} color="#FFFFFF" />
+            {submitting ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Ionicons name="send" size={16} color="#FFFFFF" />
+            )}
           </Pressable>
         </View>
+        {submitStatus ? (
+          <View style={styles.submitStatusBar}>
+            <ActivityIndicator size="small" color="#075E54" />
+            <Text style={styles.submitStatusText}>{submitStatus}</Text>
+          </View>
+        ) : null}
       </KeyboardAvoidingView>
     </View>
   );
@@ -807,5 +830,20 @@ const styles = StyleSheet.create({
   },
   sendBtnDisabled: {
     opacity: 0.5,
+  },
+  submitStatusBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: '#E0F2FE',
+    borderTopWidth: 1,
+    borderTopColor: '#BAE6FD',
+  },
+  submitStatusText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#0369A1',
   },
 });

@@ -22,7 +22,7 @@ import {
   type VehiclePublic,
   type LoadingRecord,
 } from '@driver-complaint/shared-types';
-import { request, requestNoContent } from './client';
+import { request, requestNoContent, warmUpServer } from './client';
 import { clearTokens, getRefreshToken } from './tokens';
 
 /** A file picked or recorded on the device, in the shape React Native's FormData wants. */
@@ -97,19 +97,29 @@ export const complaints = {
    *
    * Multipart even with no evidence: the endpoint runs multer before zod either way, and one
    * code path means the with-evidence case is the one that gets exercised every time.
+   *
+   * warmUpServer() pings /health first so Render.com's sleeping free-tier server has time
+   * to wake before the large multipart body arrives — without this, the upload fails with
+   * "Network request failed" during the server's ~30-60 s cold-start window.
    */
-  create: (input: CreateComplaint, evidence: EvidenceUpload = {}): Promise<ComplaintPublic> => {
+  create: async (input: CreateComplaint, evidence: EvidenceUpload = {}): Promise<ComplaintPublic> => {
+    // Wake the server before sending the complaint
+    await warmUpServer();
     const form = new FormData();
     form.append('title', input.title);
     form.append('description', input.description);
     if (input.category) form.append('category', input.category);
     if (input.vehicleId) form.append('vehicleId', input.vehicleId);
+    if (input.vehicleNumber) form.append('vehicleNumber', input.vehicleNumber);
     if (input.priority) form.append('priority', input.priority);
     for (const [field, file] of Object.entries(evidence)) {
-      // React Native's FormData accepts this {uri,name,type} object and streams the file from
-      // disk; the DOM typings only know about Blob, hence the cast. Do NOT "fix" it by reading
-      // the file into a Blob — that loads several megabytes into JS memory on a cheap phone.
-      if (file) form.append(field, file as unknown as Blob);
+      if (file) {
+        form.append(field, {
+          uri: file.uri,
+          name: file.name || `${field}.jpg`,
+          type: file.type || 'image/jpeg',
+        } as unknown as Blob);
+      }
     }
     return request(ComplaintPublicSchema, '/complaints', { method: 'POST', body: form });
   },
@@ -129,10 +139,11 @@ export const loading = {
   active: (): Promise<ActiveLoadingResponse> =>
     request(ActiveLoadingResponseSchema, '/loading/active'),
 
-  reached: (
+  reached: async (
     input: { latitude: number; longitude: number; address?: string; locationName?: string; complaintId?: string },
     photo: FileToUpload,
   ): Promise<LoadingRecord> => {
+    await warmUpServer();
     const form = new FormData();
     form.append('latitude', String(input.latitude));
     form.append('longitude', String(input.longitude));
@@ -143,11 +154,12 @@ export const loading = {
     return request(LoadingRecordSchema, '/loading/reached', { method: 'POST', body: form });
   },
 
-  completed: (
+  completed: async (
     loadingId: string,
     input: { latitude: number; longitude: number; address?: string },
     photo: FileToUpload,
   ): Promise<LoadingRecord> => {
+    await warmUpServer();
     const form = new FormData();
     form.append('latitude', String(input.latitude));
     form.append('longitude', String(input.longitude));
@@ -170,11 +182,12 @@ export const loading = {
   },
 
   /** "Reached unloading point" — ends transit and starts the unloading clock. */
-  completeTrip: (
+  completeTrip: async (
     loadingId: string,
     input: { latitude: number; longitude: number; address?: string },
     photo: FileToUpload,
   ): Promise<LoadingRecord> => {
+    await warmUpServer();
     const form = new FormData();
     form.append('latitude', String(input.latitude));
     form.append('longitude', String(input.longitude));
@@ -187,11 +200,12 @@ export const loading = {
   },
 
   /** "Unloading done" — closes the cycle out and increments the completed-trip count. */
-  completeUnloading: (
+  completeUnloading: async (
     loadingId: string,
     input: { latitude: number; longitude: number; address?: string },
     photo: FileToUpload,
   ): Promise<LoadingRecord> => {
+    await warmUpServer();
     const form = new FormData();
     form.append('latitude', String(input.latitude));
     form.append('longitude', String(input.longitude));

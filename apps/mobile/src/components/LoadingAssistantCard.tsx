@@ -118,7 +118,7 @@ export function LoadingAssistantCard({
         latitude: pos.coords.latitude,
         longitude: pos.coords.longitude,
       });
-      if (geo && geo.length > 0) {
+      if (geo && geo.length > 0 && geo[0]) {
         const item = geo[0];
         addressStr = [item.name, item.street, item.city, item.region].filter(Boolean).join(', ');
       }

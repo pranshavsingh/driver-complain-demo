@@ -5,7 +5,7 @@ import {
   AuthTokensSchema,
   type ApiErrorPayload,
 } from '@driver-complaint/shared-types';
-import { apiBase } from '../config/env';
+import { apiBase, apiUrl } from '../config/env';
 import { getAccessToken, getRefreshToken, notifySessionEnded, setTokens } from './tokens';
 
 /**
@@ -29,14 +29,21 @@ export class ApiClientError extends Error {
 }
 
 /**
- * Request deadlines, because the driver is on a truck on 3G.
+ * Request timeouts and retry policy.
  *
- * React Native's fetch has no timeout of its own: a request that stalls mid-handshake hangs
- * forever, and the driver sits looking at a spinner with no way to retry. The upload budget is
- * far longer — a 2 MB photo over a weak uplink legitimately takes a minute.
+ * The API is hosted on Render.com's free tier which spins down after ~15 min of inactivity.
+ * A cold-start request will fail with a network error while the server wakes (~30–60 s).
+ *
+ * Strategy:
+ * - Regular JSON requests: 40 s timeout, retry up to 3 times on network error.
+ * - Multipart uploads: 120 s timeout, retry up to 2 times on network error.
+ * - Between retries, wait exponentially: 5 s, 15 s, 30 s (capped at 30 s).
+ *   This covers the Render.com ~30-60 s cold-start window without hammering the server.
  */
-const REQUEST_TIMEOUT_MS = 20_000;
+const REQUEST_TIMEOUT_MS = 40_000;
 const UPLOAD_TIMEOUT_MS = 120_000;
+/** How many times to retry a request on transient network errors (not HTTP errors). */
+const MAX_RETRIES = 3;
 
 export type QueryValue = string | number | boolean | undefined | null;
 
@@ -93,15 +100,59 @@ function networkError(err: unknown, timedOut: boolean): ApiClientError {
   if (timedOut) {
     return new ApiClientError(0, {
       code: 'NETWORK_TIMEOUT',
-      message: 'The connection is too slow to finish this. Move to better signal and try again.',
+      message:
+        'The server is taking too long to respond. Move to better signal and try again, or wait a moment for the server to wake up.',
       details: null,
     });
   }
   return new ApiClientError(0, {
     code: 'NETWORK_ERROR',
-    message: 'No connection to the server. Check your signal and try again.',
+    message:
+      'Cannot reach the server. Check your internet connection and try again.',
     details: err instanceof Error ? err.message : null,
   });
+}
+
+/** Sleep for `ms` milliseconds. */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Exponential backoff delay for retry N (0-indexed).
+ * Sequence: 3 s, 8 s, 15 s, 25 s — covers Render.com cold-start window.
+ */
+function retryDelay(attempt: number): number {
+  const delays = [3_000, 8_000, 15_000, 25_000];
+  return delays[Math.min(attempt, delays.length - 1)] ?? 25_000;
+}
+
+/**
+ * Warm up the API server with a lightweight /health ping before an upload.
+ *
+ * Render.com free tier sleeps after ~15 min of inactivity. Sending the full multipart
+ * request while the server is waking produces a "Network request failed" error in React
+ * Native's HTTP stack because the TCP connection is refused. A /health ping costs almost
+ * nothing, polls until the server responds or a 75 s budget elapses, and ensures the
+ * real upload goes to a live server.
+ */
+export async function warmUpServer(): Promise<void> {
+  const healthUrl = `${apiUrl}/health`;
+  const deadline = Date.now() + 75_000; // 75 s wake budget
+  while (Date.now() < deadline) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8_000);
+      const res = await fetch(healthUrl, { signal: controller.signal });
+      clearTimeout(timer);
+      if (res.ok) return; // Server is awake
+    } catch {
+      // Server still sleeping — wait and poll again
+    }
+    if (Date.now() + 3_000 < deadline) {
+      await sleep(3_000);
+    }
+  }
 }
 
 let refreshInFlight: Promise<boolean> | null = null;
@@ -138,66 +189,107 @@ export async function refreshSession(): Promise<boolean> {
   return refreshInFlight;
 }
 
+/** One HTTP round-trip, with a timeout and proper error translation. */
+async function sendOnce(
+  url: string,
+  opts: RequestOptions,
+  isMultipart: boolean,
+  timeoutMs: number,
+): Promise<Response> {
+  const headers: Record<string, string> = {};
+  // Multipart deliberately has NO Content-Type header: React Native fills it in with the
+  // generated multipart boundary. Setting it here produces a body multer cannot parse.
+  if (opts.body !== undefined && !isMultipart) headers['Content-Type'] = 'application/json';
+  if (!opts.anonymous) {
+    const token = getAccessToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+  }
+
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+
+  try {
+    return await fetch(url, {
+      method: opts.method ?? 'GET',
+      headers,
+      body: isMultipart
+        ? (opts.body as FormData)
+        : opts.body === undefined
+          ? undefined
+          : JSON.stringify(opts.body),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    throw networkError(err, timedOut);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Send one request, transparently refreshing an expired access token and replaying once. */
 async function fetchRaw(path: string, opts: RequestOptions): Promise<Response> {
   const url = buildUrl(path, opts.query);
-  const isMultipart = opts.body instanceof FormData;
+  const isMultipart = Boolean(
+    opts.body &&
+      typeof opts.body === 'object' &&
+      (opts.body instanceof FormData ||
+        '_parts' in opts.body ||
+        typeof (opts.body as FormData).append === 'function'),
+  );
   const timeoutMs = opts.timeoutMs ?? (isMultipart ? UPLOAD_TIMEOUT_MS : REQUEST_TIMEOUT_MS);
+  const maxRetries = isMultipart ? MAX_RETRIES : MAX_RETRIES;
 
-  // Reads the access token at call time, so the replay below picks up the refreshed one.
-  const send = async (): Promise<Response> => {
-    const headers: Record<string, string> = {};
-    // Multipart deliberately has NO Content-Type header: React Native fills it in with the
-    // generated multipart boundary. Setting it here produces a body multer cannot parse.
-    if (opts.body !== undefined && !isMultipart) headers['Content-Type'] = 'application/json';
-    if (!opts.anonymous) {
-      const token = getAccessToken();
-      if (token) headers.Authorization = `Bearer ${token}`;
+  // Retry loop for transient network errors (Render.com cold-start, flaky 3G, etc.).
+  // HTTP errors (4xx, 5xx) are NOT retried — those are definitive server responses.
+  let lastErr: ApiClientError | null = null;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (attempt > 0) {
+      const delay = retryDelay(attempt - 1);
+      console.warn(`[api] Network error, retrying in ${String(delay / 1000)} s (attempt ${String(attempt)}/${String(maxRetries)})...`);
+      await sleep(delay);
     }
-
-    const controller = new AbortController();
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      controller.abort();
-    }, timeoutMs);
-
     try {
-      return await fetch(url, {
-        method: opts.method ?? 'GET',
-        headers,
-        body: isMultipart
-          ? (opts.body as FormData)
-          : opts.body === undefined
-            ? undefined
-            : JSON.stringify(opts.body),
-        signal: controller.signal,
-      });
+      const res = await sendOnce(url, opts, isMultipart, timeoutMs);
+      if (res.status !== 401 || opts.anonymous) return res;
+
+      // Access tokens live 15 minutes and the app stays open all shift. Refresh and replay so the
+      // expiry is invisible to the driver.
+      const refreshed = await refreshSession();
+      if (!refreshed) {
+        notifySessionEnded();
+        return res;
+      }
+
+      // Replaying a multipart body is safe: the FormData holds a file URI, and React Native reads
+      // the file off disk again on each send.
+      const replay = await sendOnce(url, opts, isMultipart, timeoutMs);
+      // A 401 on a freshly-minted token is not an expiry — the account was deactivated, or the
+      // token family was revoked. End the session rather than looping.
+      if (replay.status === 401) notifySessionEnded();
+      return replay;
     } catch (err) {
-      throw networkError(err, timedOut);
-    } finally {
-      clearTimeout(timer);
+      if (err instanceof ApiClientError) {
+        // Only retry on transport-level failures (NETWORK_ERROR, NETWORK_TIMEOUT).
+        // HTTP errors (ApiClientError with a real status) should not be retried.
+        if (err.status === 0) {
+          lastErr = err;
+          continue; // Retry the loop
+        }
+      }
+      throw err; // HTTP error or unexpected — don't retry
     }
-  };
-
-  const res = await send();
-  if (res.status !== 401 || opts.anonymous) return res;
-
-  // Access tokens live 15 minutes and the app stays open all shift. Refresh and replay so the
-  // expiry is invisible to the driver.
-  const refreshed = await refreshSession();
-  if (!refreshed) {
-    notifySessionEnded();
-    return res;
   }
 
-  // Replaying a multipart body is safe: the FormData holds a file URI, and React Native reads
-  // the file off disk again on each send.
-  const replay = await send();
-  // A 401 on a freshly-minted token is not an expiry — the account was deactivated, or the
-  // token family was revoked. End the session rather than looping.
-  if (replay.status === 401) notifySessionEnded();
-  return replay;
+  // All retries exhausted.
+  throw lastErr ?? new ApiClientError(0, {
+    code: 'NETWORK_ERROR',
+    message: 'Cannot reach the server after multiple attempts. Check your internet connection.',
+    details: null,
+  });
 }
 
 /**
@@ -221,7 +313,7 @@ export async function request<T>(
   if (!envelope.success) {
     throw new ApiClientError(res.status, {
       code: 'MALFORMED_RESPONSE',
-      message: 'This version of the app does not understand the server’s reply. Update the app.',
+      message: 'This version of the app does not understand the server\u2019s reply. Update the app.',
       details: envelope.error.issues.map((i) => i.message).join('\n'),
     });
   }

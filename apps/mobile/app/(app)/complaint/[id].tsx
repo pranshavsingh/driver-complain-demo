@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, type ReactElement } from 'react';
+import { type ReactElement } from 'react';
 import { Image, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Audio } from 'expo-av';
+import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import type { ComplaintAttachmentPublic, ComplaintUpdatePublic } from '@driver-complaint/shared-types';
 import * as api from '../../../src/api/endpoints';
@@ -116,52 +116,18 @@ export default function ComplaintDetailScreen(): ReactElement {
   );
 }
 
-/** Audio playback player component for voice note attachments */
+/** Voice player component for voice attachments */
 function VoiceAttachmentPlayer({ attachment }: { attachment: ComplaintAttachmentPublic }): ReactElement {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const soundRef = useRef<{ pauseAsync: () => Promise<unknown>; unloadAsync: () => Promise<unknown> } | null>(null);
+  const player = useAudioPlayer(attachment.url);
+  const status = useAudioPlayerStatus(player);
 
   const togglePlayback = (): void => {
-    void (async () => {
-      try {
-        if (isPlaying && soundRef.current) {
-          await soundRef.current.pauseAsync();
-          setIsPlaying(false);
-          return;
-        }
-
-        if (soundRef.current) {
-          await soundRef.current.unloadAsync();
-          soundRef.current = null;
-        }
-
-        const { sound } = await Audio.Sound.createAsync(
-          { uri: attachment.url },
-          { shouldPlay: true },
-          (status: { isLoaded?: boolean; didJustFinish?: boolean }) => {
-            if (status.isLoaded) {
-              if (status.didJustFinish) {
-                setIsPlaying(false);
-              }
-            }
-          },
-        );
-        soundRef.current = sound;
-        setIsPlaying(true);
-      } catch (err) {
-        console.warn('Voice playback error:', err);
-        setIsPlaying(false);
-      }
-    })();
+    if (status.playing) {
+      player.pause();
+    } else {
+      player.play();
+    }
   };
-
-  useEffect(() => {
-    return () => {
-      if (soundRef.current) {
-        void soundRef.current.unloadAsync();
-      }
-    };
-  }, []);
 
   const durationText = attachment.durationSec ? ` (${formatDuration(attachment.durationSec)})` : '';
 
@@ -169,7 +135,7 @@ function VoiceAttachmentPlayer({ attachment }: { attachment: ComplaintAttachment
     <View style={styles.attachmentWrapper}>
       <Text style={styles.voiceAttachedText}>🎙️ Voice note attached{durationText}</Text>
       <Button
-        label={isPlaying ? 'Pause Voice Note' : 'Play Voice Note'}
+        label={status.playing ? 'Pause Voice Note' : 'Play Voice Note'}
         variant="secondary"
         onPress={togglePlayback}
       />

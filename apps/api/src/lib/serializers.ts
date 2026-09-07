@@ -21,6 +21,7 @@ import type {
   NotificationPublic,
   DeviceTokenPublic,
   PartySummary,
+  ApprovalStatus,
 } from '@driver-complaint/shared-types';
 
 const iso = (d: Date | null | undefined): string | null => (d ? d.toISOString() : null);

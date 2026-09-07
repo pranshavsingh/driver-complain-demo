@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState, type ReactElement } from 'react';
+import { useState, type ReactElement } from 'react';
 import { Alert, Image, StyleSheet, Text, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { Audio } from 'expo-av';
+import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import type { EvidenceUpload, FileToUpload } from '../api/endpoints';
 import { Button } from '../components/Button';
@@ -260,56 +260,22 @@ function VoicePreview({
   disabled: boolean;
   onRemove: () => void;
 }): ReactElement {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const soundRef = useRef<{ pauseAsync: () => Promise<unknown>; unloadAsync: () => Promise<unknown> } | null>(null);
+  const player = useAudioPlayer(uri);
+  const status = useAudioPlayerStatus(player);
 
   const toggle = (): void => {
-    void (async () => {
-      try {
-        if (isPlaying && soundRef.current) {
-          await soundRef.current.pauseAsync();
-          setIsPlaying(false);
-          return;
-        }
-
-        if (soundRef.current) {
-          await soundRef.current.unloadAsync();
-          soundRef.current = null;
-        }
-
-        const { sound } = await Audio.Sound.createAsync(
-          { uri },
-          { shouldPlay: true },
-          (status: { isLoaded?: boolean; didJustFinish?: boolean }) => {
-            if (status.isLoaded) {
-              if (status.didJustFinish) {
-                setIsPlaying(false);
-              }
-            }
-          },
-        );
-        soundRef.current = sound;
-        setIsPlaying(true);
-      } catch (err) {
-        console.warn('Playback error:', err);
-        setIsPlaying(false);
-      }
-    })();
+    if (status.playing) {
+      player.pause();
+    } else {
+      player.play();
+    }
   };
-
-  useEffect(() => {
-    return () => {
-      if (soundRef.current) {
-        void soundRef.current.unloadAsync();
-      }
-    };
-  }, []);
 
   return (
     <View style={styles.actions}>
       <Text style={styles.attached}>Voice note attached · {formatDuration(durationSec)}</Text>
       <Button
-        label={isPlaying ? 'Stop playing' : 'Play it back'}
+        label={status.playing ? 'Stop playing' : 'Play it back'}
         variant="secondary"
         onPress={toggle}
       />

@@ -20,7 +20,7 @@ export const DASHBOARD_TILES: GridTile[] = [
     id: 'LOADING',
     title: 'Loading / Unloading',
     subtitle: 'GPS Proof & Waiting Timer',
-    icon: 'truck',
+    icon: 'car',
     bgColor: '#FFE4E6', // Pastel Pink
     borderColor: '#FDA4AF',
     textColor: '#9F1239',
