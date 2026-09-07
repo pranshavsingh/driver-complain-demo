@@ -4,7 +4,7 @@ import { useApiResource } from '../hooks/useApiResource';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { Pagination } from '../components/Pagination';
 import { formatDateTime } from '../lib/format';
-import { Fuel, Download, RotateCw, Search, X, ExternalLink, ImageIcon } from '../components/Icons';
+import { Fuel, Download, RotateCw, Search, X, ExternalLink, ImageIcon, ClipboardList } from '../components/Icons';
 
 export function FuelLogsPage(): ReactElement {
   const [typeFilter, setTypeFilter] = useState<string>('');
@@ -76,34 +76,43 @@ export function FuelLogsPage(): ReactElement {
     logsRes.reload();
   };
 
+  const handleClearFilters = () => {
+    setSearch('');
+    setTypeFilter('');
+    setVehicleId('');
+    setStartDate('');
+    setEndDate('');
+    setPage(1);
+  };
+
+  const isFiltered = Boolean(search || typeFilter || vehicleId || startDate || endDate);
+
   return (
-    <div className="space-y-6 p-6">
+    <div className="page-container">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="page-header">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-            <Fuel className="text-emerald-600" size={28} />
-            Fuel & DEF Management & Logs
+          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Fuel size={24} color="#15803d" /> Fuel & DEF Management & Logs
           </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+          <p className="page-subtitle">
             Real-time fleet fuel fill logs, DEF consumption, expense metrics, and receipt auditing.
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="header-action-group">
           <button
+            type="button"
+            className="btn-secondary"
             onClick={handleRefresh}
-            className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition"
+            disabled={logsRes.loading || statsRes.loading}
           >
-            <RotateCw size={16} />
-            Refresh
+            <RotateCw size={14} style={{ marginRight: 6 }} className={logsRes.loading || statsRes.loading ? 'spin' : ''} />
+            {logsRes.loading || statsRes.loading ? 'Refreshing…' : 'Refresh Data'}
           </button>
 
-          <button
-            onClick={handleExportCsv}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition"
-          >
-            <Download size={16} />
+          <button type="button" className="btn-primary" onClick={handleExportCsv}>
+            <Download size={15} style={{ marginRight: 6 }} />
             Export CSV
           </button>
         </div>
@@ -111,87 +120,86 @@ export function FuelLogsPage(): ReactElement {
 
       <ErrorBanner error={logsRes.error || statsRes.error} />
 
-      {/* Metric Summary KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="p-5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm">
-          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 text-xs font-semibold uppercase tracking-wider">
-            <span>Total Fuel Expense</span>
-            <span className="p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400">
-              ⛽
-            </span>
+      {/* 4 Stat Cards */}
+      <div className="stat-cards-grid">
+        <div className="stat-card stat-success">
+          <div className="stat-card-header">
+            <span className="stat-card-title">Total Fuel Expense</span>
+            <Fuel size={20} color="#15803d" />
           </div>
-          <div className="text-2xl font-bold text-slate-900 dark:text-white mt-2">
+          <div className="stat-card-value">
             ₹{stats.totalFuelCost.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
           </div>
-          <p className="text-xs text-slate-500 mt-1">
+          <div className="stat-card-footer">
             {stats.totalFuelVolumeLtr.toFixed(1)} Litres filled
-          </p>
+          </div>
         </div>
 
-        <div className="p-5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm">
-          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 text-xs font-semibold uppercase tracking-wider">
-            <span>Total DEF Expense</span>
-            <span className="p-1.5 rounded-lg bg-sky-50 dark:bg-sky-950/40 text-sky-600 dark:text-sky-400">
-              💧
-            </span>
+        <div className="stat-card stat-info">
+          <div className="stat-card-header">
+            <span className="stat-card-title">Total DEF Expense</span>
+            <span style={{ fontSize: 18 }}>💧</span>
           </div>
-          <div className="text-2xl font-bold text-slate-900 dark:text-white mt-2">
+          <div className="stat-card-value">
             ₹{stats.totalDefCost.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
           </div>
-          <p className="text-xs text-slate-500 mt-1">
+          <div className="stat-card-footer">
             {stats.totalDefVolumeLtr.toFixed(1)} Litres DEF
-          </p>
+          </div>
         </div>
 
-        <div className="p-5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm">
-          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 text-xs font-semibold uppercase tracking-wider">
-            <span>Total Fuel Volume</span>
-            <Fuel className="text-amber-500" size={18} />
+        <div className="stat-card stat-warning">
+          <div className="stat-card-header">
+            <span className="stat-card-title">Total Fuel Volume</span>
+            <Fuel size={20} color="#b45309" />
           </div>
-          <div className="text-2xl font-bold text-slate-900 dark:text-white mt-2">
-            {stats.totalFuelVolumeLtr.toFixed(1)} L
-          </div>
-          <p className="text-xs text-slate-500 mt-1">Combined fleet volume</p>
+          <div className="stat-card-value">{stats.totalFuelVolumeLtr.toFixed(1)} L</div>
+          <div className="stat-card-footer">Combined fleet volume</div>
         </div>
 
-        <div className="p-5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm">
-          <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 text-xs font-semibold uppercase tracking-wider">
-            <span>Total Log Entries</span>
-            <span className="p-1.5 rounded-lg bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400">
-              📋
-            </span>
+        <div className="stat-card">
+          <div className="stat-card-header">
+            <span className="stat-card-title">Total Log Entries</span>
+            <ClipboardList size={20} color="#64748b" />
           </div>
-          <div className="text-2xl font-bold text-slate-900 dark:text-white mt-2">
-            {stats.totalEntriesCount}
-          </div>
-          <p className="text-xs text-slate-500 mt-1">Logged by drivers</p>
+          <div className="stat-card-value">{stats.totalEntriesCount}</div>
+          <div className="stat-card-footer">Logged by drivers</div>
         </div>
       </div>
 
-      {/* Filter Bar */}
-      <div className="p-4 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm space-y-3">
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-          {/* Search */}
-          <div className="relative md:col-span-2">
-            <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
-            <input
-              type="text"
-              placeholder="Search driver name, emp ID, or vehicle..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500"
-            />
+      {/* Filter Card */}
+      <div className="filter-card">
+        <div className="filter-grid">
+          {/* Search Box */}
+          <div className="filter-group filter-wide">
+            <label className="filter-label">Search</label>
+            <div className="filter-input-box">
+              <Search className="filter-icon" size={16} />
+              <input
+                type="text"
+                className="filter-input"
+                placeholder="Search driver name, emp ID, or vehicle number..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              {search ? (
+                <button type="button" className="clear-search" onClick={() => setSearch('')}>
+                  <X size={14} />
+                </button>
+              ) : null}
+            </div>
           </div>
 
           {/* Type Filter */}
-          <div>
+          <div className="filter-group">
+            <label className="filter-label">Type</label>
             <select
+              className="filter-select"
               value={typeFilter}
               onChange={(e) => {
                 setTypeFilter(e.target.value);
                 setPage(1);
               }}
-              className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500"
             >
               <option value="">All Types (Fuel & DEF)</option>
               <option value="FUEL">Fuel ⛽</option>
@@ -200,14 +208,15 @@ export function FuelLogsPage(): ReactElement {
           </div>
 
           {/* Vehicle Filter */}
-          <div>
+          <div className="filter-group">
+            <label className="filter-label">Vehicle</label>
             <select
+              className="filter-select"
               value={vehicleId}
               onChange={(e) => {
                 setVehicleId(e.target.value);
                 setPage(1);
               }}
-              className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500"
             >
               <option value="">All Vehicles</option>
               {vehicles.map((v) => (
@@ -219,62 +228,78 @@ export function FuelLogsPage(): ReactElement {
           </div>
 
           {/* Start Date */}
-          <div>
+          <div className="filter-group">
+            <label className="filter-label">Start Date</label>
             <input
               type="date"
+              className="filter-input-date"
               value={startDate}
               onChange={(e) => {
                 setStartDate(e.target.value);
                 setPage(1);
               }}
-              placeholder="Start Date"
-              className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500"
             />
           </div>
 
           {/* End Date */}
-          <div>
+          <div className="filter-group">
+            <label className="filter-label">End Date</label>
             <input
               type="date"
+              className="filter-input-date"
               value={endDate}
               onChange={(e) => {
                 setEndDate(e.target.value);
                 setPage(1);
               }}
-              placeholder="End Date"
-              className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500"
             />
           </div>
+
+          {/* Clear Filters */}
+          {isFiltered ? (
+            <div className="filter-group" style={{ justifyContent: 'flex-end' }}>
+              <button type="button" className="btn-clear-filters" onClick={handleClearFilters}>
+                Clear Filters
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
 
-      {/* Data Table */}
-      <div className="rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-sm">
+      {/* Table Card */}
+      <div className="table-card">
+        <div className="table-card-header">
+          <h2 className="table-card-title">
+            <Fuel size={20} color="#15803d" /> Fuel & DEF Fill Records
+            <span className="badge-pill">{totalItems} logs</span>
+          </h2>
+        </div>
+
+        <div className="table-responsive">
+          <table className="admin-table">
             <thead>
-              <tr className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">
-                <th className="py-3.5 px-4">Date & Time</th>
-                <th className="py-3.5 px-4">Driver Details</th>
-                <th className="py-3.5 px-4">Vehicle</th>
-                <th className="py-3.5 px-4">Type</th>
-                <th className="py-3.5 px-4">Quantity (L)</th>
-                <th className="py-3.5 px-4">Total Price</th>
-                <th className="py-3.5 px-4">Rate / Litre</th>
-                <th className="py-3.5 px-4">Odometer</th>
-                <th className="py-3.5 px-4">Receipt Bill</th>
+              <tr>
+                <th>Date & Time</th>
+                <th>Driver Details</th>
+                <th>Vehicle</th>
+                <th>Type</th>
+                <th>Quantity</th>
+                <th>Total Price</th>
+                <th>Rate / Litre</th>
+                <th>Odometer</th>
+                <th>Receipt Bill</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-200 dark:divide-slate-700 text-slate-700 dark:text-slate-200">
+            <tbody>
               {logsRes.loading ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-400">
+                  <td colSpan={9} style={{ textAlign: 'center', padding: '36px 16px', color: 'var(--muted)' }}>
                     Loading fuel fill entries...
                   </td>
                 </tr>
               ) : filteredLogs.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-400">
+                  <td colSpan={9} style={{ textAlign: 'center', padding: '36px 16px', color: 'var(--muted)' }}>
                     No fuel / DEF entries found matching your filters.
                   </td>
                 </tr>
@@ -287,56 +312,65 @@ export function FuelLogsPage(): ReactElement {
                   const calculatedRate = log.ratePerLtr ?? (log.quantityLtr > 0 ? (log.totalPrice / log.quantityLtr).toFixed(2) : 0);
 
                   return (
-                    <tr key={log.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/50 transition">
-                      <td className="py-3.5 px-4 whitespace-nowrap text-xs text-slate-500 dark:text-slate-400">
+                    <tr key={log.id}>
+                      <td className="created-date-text" style={{ whiteSpace: 'nowrap' }}>
                         {formatDateTime(log.createdAt)}
                       </td>
-                      <td className="py-3.5 px-4 whitespace-nowrap">
-                        <div className="font-semibold text-slate-900 dark:text-white">{driverName}</div>
-                        <div className="text-xs text-slate-500">ID: {empId}</div>
+                      <td>
+                        <div className="driver-name-text">{driverName}</div>
+                        <div className="assignee-text" style={{ fontSize: 11 }}>ID: {empId}</div>
                       </td>
-                      <td className="py-3.5 px-4 whitespace-nowrap font-mono font-medium text-slate-900 dark:text-white">
-                        {log.vehicle?.plateNumber ?? 'N/A'}
+                      <td>
+                        <span className="vehicle-badge">{log.vehicle?.plateNumber ?? 'N/A'}</span>
                       </td>
-                      <td className="py-3.5 px-4 whitespace-nowrap">
+                      <td>
                         <span
-                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                            isFuel
-                              ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700'
-                              : 'bg-sky-100 dark:bg-sky-950/60 text-sky-800 dark:text-sky-300 border border-sky-300 dark:border-sky-700'
-                          }`}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            padding: '3px 10px',
+                            borderRadius: 12,
+                            fontSize: 12,
+                            fontWeight: 700,
+                            background: isFuel ? 'rgba(34, 197, 94, 0.15)' : 'rgba(56, 189, 248, 0.15)',
+                            color: isFuel ? 'var(--success-text)' : '#0284c7',
+                            border: `1px solid ${isFuel ? 'var(--success-border)' : '#38bdf8'}`,
+                          }}
                         >
                           {isFuel ? '⛽ Fuel' : '💧 DEF'}
                         </span>
                       </td>
-                      <td className="py-3.5 px-4 whitespace-nowrap font-semibold text-slate-900 dark:text-white">
+                      <td style={{ fontWeight: 700 }}>
                         {log.quantityLtr} L
                       </td>
-                      <td className="py-3.5 px-4 whitespace-nowrap font-semibold text-emerald-600 dark:text-emerald-400">
+                      <td style={{ fontWeight: 700, color: 'var(--success-text)' }}>
                         ₹{log.totalPrice.toLocaleString('en-IN')}
                       </td>
-                      <td className="py-3.5 px-4 whitespace-nowrap text-xs text-slate-500">
+                      <td className="created-date-text">
                         ₹{calculatedRate} / L
                       </td>
-                      <td className="py-3.5 px-4 whitespace-nowrap text-xs text-slate-500">
+                      <td className="created-date-text">
                         {log.odometerKm ? `${log.odometerKm.toLocaleString()} KM` : '—'}
                       </td>
-                      <td className="py-3.5 px-4 whitespace-nowrap">
+                      <td>
                         {log.receiptUrl ? (
                           <button
+                            type="button"
+                            className="btn-view"
                             onClick={() =>
                               setSelectedPhoto({
                                 url: log.receiptUrl,
                                 title: `${log.type} Receipt — ${log.vehicle?.plateNumber ?? ''} (${formatDateTime(log.createdAt)})`,
                               })
                             }
-                            className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 hover:underline"
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', border: 'none' }}
                           >
                             <ImageIcon size={14} />
                             View Bill
                           </button>
                         ) : (
-                          <span className="text-xs text-slate-400">No Photo</span>
+                          <span style={{ fontSize: 12, color: 'var(--muted)' }}>No Photo</span>
                         )}
                       </td>
                     </tr>
@@ -349,7 +383,7 @@ export function FuelLogsPage(): ReactElement {
 
         {/* Pagination Footer */}
         {totalPages > 1 && (
-          <div className="p-4 border-t border-slate-200 dark:border-slate-700 flex justify-end">
+          <div style={{ padding: 16, borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end' }}>
             <Pagination
               meta={{ page, pageSize, total: totalItems, totalPages }}
               onPageChange={setPage}
@@ -363,36 +397,68 @@ export function FuelLogsPage(): ReactElement {
         )}
       </div>
 
-
       {/* Receipt Photo Lightbox Modal */}
       {selectedPhoto && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
-          <div className="relative max-w-3xl w-full bg-white dark:bg-slate-900 rounded-2xl overflow-hidden shadow-2xl border border-slate-700">
-            <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-800">
-              <h3 className="font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-                <ImageIcon className="text-emerald-500" size={18} />
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 100,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(0,0,0,0.75)',
+            padding: 16,
+            backdropFilter: 'blur(4px)',
+          }}
+        >
+          <div
+            style={{
+              position: 'relative',
+              maxWidth: 700,
+              width: '100%',
+              background: 'var(--surface)',
+              borderRadius: 16,
+              overflow: 'hidden',
+              boxShadow: '0 20px 25px -5px rgba(0,0,0,0.3)',
+              border: '1px solid var(--border)',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '16px 20px',
+                borderBottom: '1px solid var(--border)',
+              }}
+            >
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text)' }}>
+                <ImageIcon color="#15803d" size={18} />
                 {selectedPhoto.title}
               </h3>
               <button
+                type="button"
                 onClick={() => setSelectedPhoto(null)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white"
+                style={{ background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer', padding: 4 }}
               >
                 <X size={20} />
               </button>
             </div>
-            <div className="p-4 bg-slate-950 flex items-center justify-center max-h-[75vh]">
+            <div style={{ padding: 16, background: '#0b0f19', display: 'flex', alignItems: 'center', justifyContent: 'center', maxHeight: '70vh' }}>
               <img
                 src={selectedPhoto.url}
                 alt="Fuel receipt"
-                className="max-h-[70vh] max-w-full object-contain rounded-lg shadow-lg"
+                style={{ maxHeight: '65vh', maxWidth: '100%', objectFit: 'contain', borderRadius: 8 }}
               />
             </div>
-            <div className="p-3 bg-slate-100 dark:bg-slate-800 flex justify-end">
+            <div style={{ padding: '12px 20px', background: 'var(--bg)', display: 'flex', justifyContent: 'flex-end' }}>
               <a
                 href={selectedPhoto.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-emerald-600 text-white hover:bg-emerald-700"
+                className="btn-primary"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13 }}
               >
                 <ExternalLink size={14} />
                 Open Original Image
