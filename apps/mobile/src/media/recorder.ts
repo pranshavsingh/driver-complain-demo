@@ -204,10 +204,10 @@ export function useVoiceRecorder(onRecorded: (note: VoiceNote) => void): VoiceRe
         }
       }
 
-      // Step 3: Prepare the recorder
+      // Step 3: Prepare the recorder with options
       try {
         if (typeof recorder.prepareToRecordAsync === 'function') {
-          await recorder.prepareToRecordAsync();
+          await recorder.prepareToRecordAsync(VOICE_RECORDING_OPTIONS);
         }
       } catch (prepErr) {
         // Can throw if already prepared; safe to proceed to record
@@ -221,12 +221,11 @@ export function useVoiceRecorder(onRecorded: (note: VoiceNote) => void): VoiceRe
       setIsRecording(true);
 
       const status = typeof recorder.getStatus === 'function' ? recorder.getStatus() : null;
-      if (status?.url) {
-        capturedUriRef.current = status.url;
-      } else if (recorder.uri) {
-        capturedUriRef.current = recorder.uri;
+      const initialUri = status?.url || (recorder as unknown as { uri?: string })?.uri || null;
+      if (initialUri) {
+        capturedUriRef.current = initialUri;
       }
-      console.log('[recorder] Recording active! status.url =', status?.url, 'recorder.uri =', recorder.uri);
+      console.log('[recorder] Recording active! status.url =', status?.url, 'recorder.uri =', initialUri);
     } catch (e: unknown) {
       console.warn('[recorder] start error:', e);
       recordingRef.current = false;
