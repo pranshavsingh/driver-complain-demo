@@ -5,7 +5,6 @@ import {
   useAudioRecorder,
   useAudioRecorderState,
   requestRecordingPermissionsAsync,
-  RecordingPresets,
   type RecordingOptions,
 } from 'expo-audio';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -31,7 +30,25 @@ export interface VoiceRecorder {
  * Standard recording options: High quality AAC in m4a container.
  */
 const VOICE_RECORDING_OPTIONS: RecordingOptions = {
-  ...RecordingPresets.HIGH_QUALITY,
+  extension: '.m4a',
+  sampleRate: 44100,
+  numberOfChannels: 2,
+  bitRate: 128000,
+  android: {
+    outputFormat: 'mpeg4',
+    audioEncoder: 'aac',
+  },
+  ios: {
+    outputFormat: 'aac ',
+    audioQuality: 127,
+    linearPCMBitDepth: 16,
+    linearPCMIsBigEndian: false,
+    linearPCMIsFloat: false,
+  },
+  web: {
+    mimeType: 'audio/webm',
+    bitsPerSecond: 128000,
+  },
 };
 
 /**
