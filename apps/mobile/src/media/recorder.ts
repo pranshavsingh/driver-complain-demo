@@ -282,6 +282,16 @@ export function useVoiceRecorder(onRecorded: (note: VoiceNote) => void): VoiceRe
 
       // Normalize file URI format if needed
       if (finalUri && typeof finalUri === 'string') {
+        try {
+          for (let i = 0; i < 3; i++) {
+            if (!finalUri.includes('%')) break;
+            const decoded = decodeURIComponent(finalUri);
+            if (decoded === finalUri) break;
+            finalUri = decoded;
+          }
+        } catch {
+          // ignore
+        }
         if (finalUri.startsWith('file:/') && !finalUri.startsWith('file:///')) {
           finalUri = finalUri.replace(/^file:\/+/, 'file:///');
         }

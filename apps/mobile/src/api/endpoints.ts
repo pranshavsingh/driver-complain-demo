@@ -81,6 +81,25 @@ export const vehicles = {
   mine: (): Promise<VehiclePublic[]> => request(z.array(VehiclePublicSchema), '/vehicles/mine'),
 };
 
+export function normalizeFileUri(uri: string): string {
+  if (!uri) return uri;
+  let clean = uri;
+  try {
+    for (let i = 0; i < 3; i++) {
+      if (!clean.includes('%')) break;
+      const decoded = decodeURIComponent(clean);
+      if (decoded === clean) break;
+      clean = decoded;
+    }
+  } catch {
+    // Ignore decode error
+  }
+  if (clean.startsWith('file:/') && !clean.startsWith('file:///')) {
+    clean = clean.replace(/^file:\/+/, 'file:///');
+  }
+  return clean;
+}
+
 export const complaints = {
   /**
    * The driver's own complaints. The API scopes this by the caller's role — a driver never
@@ -115,9 +134,9 @@ export const complaints = {
     for (const [field, file] of Object.entries(evidence)) {
       if (file) {
         form.append(field, {
-          uri: file.uri,
-          name: file.name || `${field}.jpg`,
-          type: file.type || 'image/jpeg',
+          uri: normalizeFileUri(file.uri),
+          name: file.name || `${field}.m4a`,
+          type: file.type || (field === 'voice' ? 'audio/m4a' : 'image/jpeg'),
         } as unknown as Blob);
       }
     }
