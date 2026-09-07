@@ -527,4 +527,15 @@ export function Trash2({ size = 20, color = 'currentColor', className, style }: 
   );
 }
 
+export function Fuel({ size = 20, color = 'currentColor', className, style }: IconProps): ReactElement {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
+      <path d="M3 22V4a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v18" />
+      <path d="M13 11h2a2 2 0 0 1 2 2v4a2 2 0 0 0 2 2h0a2 2 0 0 0 2-2V9l-3-3" />
+      <path d="M3 11h10" />
+    </svg>
+  );
+}
+
+
 

@@ -201,3 +201,25 @@ export const loading = {
     download('/loading/export-csv', { query: query as Record<string, QueryValue> }, `trips-report-${Date.now()}.csv`),
 };
 
+export interface FuelFilterQuery {
+  driverId?: string;
+  vehicleId?: string;
+  type?: string;
+  startDate?: string;
+  endDate?: string;
+  page?: number;
+  limit?: number;
+}
+
+export const fuel = {
+  list: (query?: FuelFilterQuery): Promise<any> =>
+    request(z.any(), '/fuel', { query: query as Record<string, QueryValue> }),
+
+  stats: (query?: { startDate?: string; endDate?: string; vehicleId?: string }): Promise<any> =>
+    request(z.any(), '/fuel/stats', { query: query as Record<string, QueryValue> }),
+
+  exportCsv: (query?: FuelFilterQuery): Promise<void> =>
+    download('/fuel/export-csv', { query: query as Record<string, QueryValue> }, `fuel-def-logs-${Date.now()}.csv`),
+};
+
+

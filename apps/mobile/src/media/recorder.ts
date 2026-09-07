@@ -6,6 +6,8 @@ import {
   useAudioRecorderState,
   requestRecordingPermissionsAsync,
   type RecordingOptions,
+  IOSOutputFormat,
+  AudioQuality,
 } from 'expo-audio';
 import * as FileSystem from 'expo-file-system/legacy';
 import { MAX_VOICE_SECONDS } from './limits';
@@ -39,8 +41,8 @@ const VOICE_RECORDING_OPTIONS: RecordingOptions = {
     audioEncoder: 'aac',
   },
   ios: {
-    outputFormat: 'aac ',
-    audioQuality: 127,
+    outputFormat: IOSOutputFormat.MPEG4AAC,
+    audioQuality: AudioQuality.MAX,
     linearPCMBitDepth: 16,
     linearPCMIsBigEndian: false,
     linearPCMIsFloat: false,
@@ -96,41 +98,70 @@ async function checkAndRequestMicPermission(): Promise<boolean> {
   return false;
 }
 
+interface ValidatedRecording {
+  valid: true;
+  normalizedUri: string;
+  size: number;
+}
+
+interface InvalidRecording {
+  valid: false;
+  reason: string;
+}
+
+type RecordingValidationResult = ValidatedRecording | InvalidRecording;
+
 /**
- * Fallback scanner: locate the newest valid recording file directly from the Expo Audio cache directory.
+ * Enterprise validation: verifies that the recording URI belongs strictly to the current recording session,
+ * is an actual non-empty file on disk, and was created during this session.
+ * NEVER guesses or falls back to old cache files.
  */
-async function findLatestRecordingFile(): Promise<string | null> {
+async function validateCurrentSessionRecording(
+  rawUri: string | null | undefined,
+  sessionStartTimeMs: number,
+): Promise<RecordingValidationResult> {
+  if (!rawUri || typeof rawUri !== 'string' || rawUri.trim().length === 0) {
+    return { valid: false, reason: 'Recorder did not return a valid file URI for this session' };
+  }
+
+  let normalized = rawUri.trim();
+  if (normalized.startsWith('file:/') && !normalized.startsWith('file:///')) {
+    normalized = normalized.replace(/^file:\/+/, 'file:///');
+  } else if (normalized.startsWith('/')) {
+    normalized = `file://${normalized}`;
+  }
+
   try {
-    const cacheDir = FileSystem.cacheDirectory;
-    if (!cacheDir) return null;
+    const fileInfo = await FileSystem.getInfoAsync(normalized);
+    if (!fileInfo.exists) {
+      return { valid: false, reason: `Recording file does not exist at ${normalized}` };
+    }
+    if (fileInfo.isDirectory) {
+      return { valid: false, reason: `Recording URI points to a directory, not a file: ${normalized}` };
+    }
+    if (fileInfo.size === undefined || fileInfo.size <= 0) {
+      return { valid: false, reason: 'Recording file is empty (0 bytes)' };
+    }
 
-    const audioDir = cacheDir + 'Audio/';
-    const dirInfo = await FileSystem.getInfoAsync(audioDir);
-    if (!dirInfo.exists) return null;
-
-    const files = await FileSystem.readDirectoryAsync(audioDir);
-    const m4aFiles = files.filter((f) => f.endsWith('.m4a') || f.endsWith('.3gp'));
-    if (m4aFiles.length === 0) return null;
-
-    let newestUri: string | null = null;
-    let newestTime = 0;
-
-    for (const file of m4aFiles) {
-      const filePath = audioDir + file;
-      const info = await FileSystem.getInfoAsync(filePath);
-      if (info.exists && !info.isDirectory && info.size > 0) {
-        const modTime = info.modificationTime ?? 0;
-        if (modTime >= newestTime) {
-          newestTime = modTime;
-          newestUri = filePath;
-        }
+    // Check modification time if available to ensure this file was produced in the current session
+    if (typeof fileInfo.modificationTime === 'number' && fileInfo.modificationTime > 0) {
+      const modTimeMs =
+        fileInfo.modificationTime > 1e11
+          ? fileInfo.modificationTime
+          : fileInfo.modificationTime * 1000;
+      // Allow 3s grace period before sessionStartTimeMs for platform clock jitter
+      if (modTimeMs < sessionStartTimeMs - 3000) {
+        return {
+          valid: false,
+          reason: `Stale file detected: modification time (${new Date(modTimeMs).toISOString()}) is older than session start (${new Date(sessionStartTimeMs).toISOString()})`,
+        };
       }
     }
 
-    return newestUri;
+    return { valid: true, normalizedUri: normalized, size: fileInfo.size };
   } catch (err) {
-    console.warn('[recorder] findLatestRecordingFile error:', err);
-    return null;
+    const msg = err instanceof Error ? err.message : String(err);
+    return { valid: false, reason: `Filesystem inspection failed: ${msg}` };
   }
 }
 
@@ -214,9 +245,9 @@ export function useVoiceRecorder(onRecorded: (note: VoiceNote) => void): VoiceRe
         console.log('[recorder] prepareToRecordAsync notice:', prepErr);
       }
 
-      // Step 4: Start recording
-      recorder.record();
+      // Step 4: Start recording session
       startTimeRef.current = Date.now();
+      recorder.record();
       recordingRef.current = true;
       setIsRecording(true);
 
@@ -225,7 +256,7 @@ export function useVoiceRecorder(onRecorded: (note: VoiceNote) => void): VoiceRe
       if (initialUri) {
         capturedUriRef.current = initialUri;
       }
-      console.log('[recorder] Recording active! status.url =', status?.url, 'recorder.uri =', initialUri);
+      console.log('[recorder] Recording active! sessionStartTime:', startTimeRef.current);
     } catch (e: unknown) {
       console.warn('[recorder] start error:', e);
       recordingRef.current = false;
@@ -243,17 +274,18 @@ export function useVoiceRecorder(onRecorded: (note: VoiceNote) => void): VoiceRe
     if (!recordingRef.current) return;
     recordingRef.current = false;
     setIsRecording(false);
+    const sessionStartTime = startTimeRef.current;
 
     try {
       // Buffer minimum 800ms before stop so MediaRecorder has time to write audio headers
-      const elapsedMs = Date.now() - (startTimeRef.current || 0);
+      const elapsedMs = Date.now() - (sessionStartTime || 0);
       if (elapsedMs < 800) {
         await new Promise<void>((resolve) => {
           setTimeout(() => resolve(), 800 - elapsedMs);
         });
       }
 
-      const durSec = Math.max(1, Math.round((Date.now() - startTimeRef.current) / 1000));
+      const durSec = Math.max(1, Math.round((Date.now() - sessionStartTime) / 1000));
 
       // 1. Get status URL before stopping
       let preStopUrl: string | null = null;
@@ -280,16 +312,22 @@ export function useVoiceRecorder(onRecorded: (note: VoiceNote) => void): VoiceRe
         }
       }
 
-      // Restore audio session
+      // 3. Immediately restore audio session to loudspeaker playback mode
       if (typeof setAudioModeAsync === 'function') {
         try {
-          await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
+          await setAudioModeAsync({
+            allowsRecording: false,
+            playsInSilentMode: true,
+            shouldRouteThroughEarpiece: false,
+            interruptionMode: 'duckOthers',
+          });
         } catch {
           // Non-fatal
         }
       }
 
-      let finalUri =
+      // 4. Resolve candidate URI strictly from THIS recording session
+      const candidateUri =
         stopResultUrl ||
         capturedUriRef.current ||
         preStopUrl ||
@@ -297,44 +335,31 @@ export function useVoiceRecorder(onRecorded: (note: VoiceNote) => void): VoiceRe
         recorderState.url ||
         null;
 
-      // Fallback: search Expo Audio cache directory for the recorded file if native property returned empty
-      if (!finalUri || finalUri.length === 0) {
-        console.log('[recorder] finalUri empty from recorder object, searching cache directory...');
-        finalUri = await findLatestRecordingFile();
+      // 5. Strict session validation — NEVER search cache or fallback to old files!
+      const validation = await validateCurrentSessionRecording(candidateUri, sessionStartTime);
+
+      if (!validation.valid) {
+        console.warn('[recorder] Recording session rejected:', {
+          reason: validation.reason,
+          candidateUri,
+          sessionStartTime,
+          elapsedMs: Date.now() - sessionStartTime,
+        });
+
+        const userMsg = "We couldn't save your voice recording. Please try recording again.";
+        setError(userMsg);
+        Alert.alert('Recording Failed', userMsg);
+        return;
       }
 
-      // Normalize file URI format without corrupting encoded characters
-      if (finalUri && typeof finalUri === 'string') {
-        finalUri = finalUri.trim();
-        if (finalUri.startsWith('file:/') && !finalUri.startsWith('file:///')) {
-          finalUri = finalUri.replace(/^file:\/+/, 'file:///');
-        } else if (finalUri.startsWith('/')) {
-          finalUri = `file://${finalUri}`;
-        }
-      }
+      console.log('[recorder] Validated recording URI:', validation.normalizedUri, 'size:', validation.size, 'duration:', durSec);
 
-      console.log('[recorder] Resolved finalUri:', finalUri, 'duration:', durSec);
-
-      if (finalUri && finalUri.length > 0) {
-        try {
-          const fileInfo = await FileSystem.getInfoAsync(finalUri);
-          console.log('[recorder] Verified recording file info:', JSON.stringify(fileInfo));
-        } catch (infoErr) {
-          console.warn('[recorder] getInfoAsync check error:', infoErr);
-        }
-
-        onRecorded({ uri: finalUri, name: 'voice.m4a', type: 'audio/m4a', durationSec: durSec });
-      } else {
-        setError('No audio captured. Please check microphone permissions.');
-        Alert.alert(
-          'Microphone / Recording Issue',
-          'No audio was captured. Please ensure Microphone permission is allowed for Expo Go in your phone Settings.',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Open Settings', onPress: () => void Linking.openSettings() },
-          ],
-        );
-      }
+      onRecorded({
+        uri: validation.normalizedUri,
+        name: 'voice.m4a',
+        type: 'audio/m4a',
+        durationSec: durSec,
+      });
     } catch (e) {
       console.warn('[recorder] stop error:', e);
       setError('Failed to stop recording');
@@ -351,7 +376,12 @@ export function useVoiceRecorder(onRecorded: (note: VoiceNote) => void): VoiceRe
       }
       if (typeof setAudioModeAsync === 'function') {
         try {
-          await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
+          await setAudioModeAsync({
+            allowsRecording: false,
+            playsInSilentMode: true,
+            shouldRouteThroughEarpiece: false,
+            interruptionMode: 'duckOthers',
+          });
         } catch {
           // Non-fatal
         }
@@ -375,4 +405,5 @@ export function useVoiceRecorder(onRecorded: (note: VoiceNote) => void): VoiceRe
     cancel,
   };
 }
+
 

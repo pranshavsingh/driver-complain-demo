@@ -27,17 +27,5 @@
     "turbo": "^2",
     "typescript": "^5",
     "typescript-eslint": "^8"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@prisma/client",
-      "@prisma/engines",
-      "prisma",
-      "esbuild"
-    ],
-    "overrides": {
-      "react-native-worklets": "0.10.1",
-      "react-native-reanimated": "4.5.1"
-    }
   }
 }

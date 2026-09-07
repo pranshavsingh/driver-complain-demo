@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, type ReactElement } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { Truck, LayoutDashboard, Users, ClipboardList, LogOut, Bell, Menu, X, Trash2, CheckCircle2 } from './Icons';
+import { Truck, LayoutDashboard, Users, ClipboardList, LogOut, Bell, Menu, X, Trash2, CheckCircle2, Fuel } from './Icons';
 import { isSuperAdmin, useAuth } from '../auth/AuthContext';
 import { useRealtime } from '../realtime/RealtimeProvider';
 import { ThemeSwitcher } from './ThemeSwitcher';
@@ -46,6 +46,7 @@ function getPageTitle(pathname: string): string {
   if (pathname.startsWith('/complaints')) return 'Complaints Management';
   if (pathname.startsWith('/loading')) return 'Loading & Detention Analytics';
   if (pathname.startsWith('/trips')) return 'Trip Analytics & Logs';
+  if (pathname.startsWith('/fuel-logs')) return 'Fuel & DEF Management & Logs';
   return 'Fleet Administration';
 }
 
@@ -160,7 +161,16 @@ export function Layout(): ReactElement {
             <Truck size={18} className="nav-icon" />
             <span className="nav-label">Trip Analytics & Logs</span>
           </NavLink>
+
+          <NavLink
+            to="/fuel-logs"
+            className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
+          >
+            <Fuel size={18} className="nav-icon" />
+            <span className="nav-label">Fuel / DEF Logs</span>
+          </NavLink>
         </nav>
+
 
         {/* Sidebar Footer with User Profile Identity & Restored Logout Button (Pinned at bottom, flex-shrink: 0) */}
         <div className="sidebar-footer">

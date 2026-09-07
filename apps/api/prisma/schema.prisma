@@ -133,6 +133,7 @@ model Driver {
   vehicles       Vehicle[]
   complaints     Complaint[]
   loadingRecords LoadingRecord[]
+  fuelRecords    FuelRecord[]
 }
 
 model Vehicle {
@@ -147,7 +148,9 @@ model Vehicle {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  complaints Complaint[]
+  complaints  Complaint[]
+  fuelRecords FuelRecord[]
+
 
   @@index([driverId])
 }
@@ -350,4 +353,33 @@ model LoadingRecord {
   @@index([status])
   @@index([reachedAt])
 }
+
+enum FuelType {
+  FUEL
+  DEF
+}
+
+model FuelRecord {
+  id              String   @id @default(uuid(7)) @db.Uuid
+  driverId        String   @db.Uuid
+  driver          Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  vehicleId       String   @db.Uuid
+  vehicle         Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  type            FuelType @default(FUEL)
+  quantityLtr     Float
+  totalPrice      Float
+  ratePerLtr      Float?
+  odometerKm      Int?
+  receiptUrl      String?
+  receiptPublicId String?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([driverId])
+  @@index([vehicleId])
+  @@index([type])
+  @@index([createdAt])
+}
+
 

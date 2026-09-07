@@ -37,7 +37,6 @@ config.resolver.nodeModulesPaths = [
 //    resolveRequest intercepts Metro's module resolution and points these imports
 //    at local no-op stubs so the app can load without the native modules.
 const STUBS = {
-  'expo-audio': path.resolve(projectRoot, 'src/stubs/expo-audio.js'),
   'expo-video': path.resolve(projectRoot, 'src/stubs/expo-video.js'),
   '@react-native-firebase/app': path.resolve(projectRoot, 'src/stubs/firebase.js'),
   '@react-native-firebase/messaging': path.resolve(projectRoot, 'src/stubs/firebase.js'),

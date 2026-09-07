@@ -44,7 +44,11 @@ export interface UploadedAsset {
  */
 export async function uploadBuffer(
   buffer: Buffer,
-  opts: { folder?: string; resourceType?: 'image' | 'video' | 'raw' | 'auto' } = {},
+  opts: {
+    folder?: string;
+    resourceType?: 'image' | 'video' | 'raw' | 'auto';
+    format?: string;
+  } = {},
 ): Promise<UploadedAsset> {
   if (!cloudinaryEnabled) {
     throw ApiError.badRequest('File uploads are not configured on this server');
@@ -52,7 +56,11 @@ export async function uploadBuffer(
 
   const result = await new Promise<UploadApiResponse>((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
-      { folder: opts.folder ?? cloudinaryFolder, resource_type: opts.resourceType ?? 'image' },
+      {
+        folder: opts.folder ?? cloudinaryFolder,
+        resource_type: opts.resourceType ?? 'image',
+        ...(opts.format ? { format: opts.format } : {}),
+      },
       (error, res) => {
         if (error || !res) {
           reject(error instanceof Error ? error : new Error('Cloudinary upload failed'));

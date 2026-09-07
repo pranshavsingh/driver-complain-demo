@@ -170,6 +170,7 @@ export async function create(
       asset: await uploadBuffer(file.buffer, {
         folder: `${cloudinaryFolder}/complaints`,
         resourceType: resourceTypeFor(kind),
+        format: kind === 'VOICE' ? 'm4a' : undefined,
       }),
     })),
   );

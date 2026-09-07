@@ -243,3 +243,35 @@ export const loading = {
     });
   },
 };
+
+export const fuel = {
+  create: async (
+    input: {
+      vehicleId?: string;
+      vehicleNumber?: string;
+      type: 'FUEL' | 'DEF';
+      quantityLtr: number;
+      totalPrice: number;
+      odometerKm?: number;
+      notes?: string;
+    },
+    receiptPhoto?: FileToUpload,
+  ): Promise<any> => {
+    await warmUpServer();
+    const form = new FormData();
+    if (input.vehicleId) form.append('vehicleId', input.vehicleId);
+    if (input.vehicleNumber) form.append('vehicleNumber', input.vehicleNumber);
+    form.append('type', input.type);
+    form.append('quantityLtr', String(input.quantityLtr));
+    form.append('totalPrice', String(input.totalPrice));
+    if (input.odometerKm !== undefined) form.append('odometerKm', String(input.odometerKm));
+    if (input.notes) form.append('notes', input.notes);
+    if (receiptPhoto) appendFile(form, 'receipt', receiptPhoto);
+
+    return request(z.any(), '/fuel', { method: 'POST', body: form });
+  },
+
+  mine: (page = 1, limit = 20): Promise<any> =>
+    request(z.any(), '/fuel', { query: { page, limit } }),
+};
+

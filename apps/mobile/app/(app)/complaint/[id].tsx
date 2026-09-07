@@ -2,7 +2,7 @@ import { type ReactElement } from 'react';
 import { Image, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
+import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import type { ComplaintAttachmentPublic, ComplaintUpdatePublic } from '@driver-complaint/shared-types';
 import * as api from '../../../src/api/endpoints';
@@ -118,27 +118,85 @@ export default function ComplaintDetailScreen(): ReactElement {
 
 /** Voice player component for voice attachments */
 function VoiceAttachmentPlayer({ attachment }: { attachment: ComplaintAttachmentPublic }): ReactElement {
-  const player = useAudioPlayer(attachment.url);
+  // Cloudinary video pipeline may assign .mp4 URL; replace with .m4a so Cloudinary delivers pure audio without video stream
+  const audioUrl = attachment.url ? attachment.url.replace(/\.mp4(\?.*)?$/i, '.m4a$1') : '';
+  const player = useAudioPlayer(audioUrl);
   const status = useAudioPlayerStatus(player);
 
-  const togglePlayback = (): void => {
-    if (status.playing) {
-      player.pause();
-    } else {
+  const togglePlayback = async (): Promise<void> => {
+    try {
+      console.log('[VoicePlayer] togglePlayback', {
+        audioUrl,
+        playing: status.playing,
+        isLoaded: status.isLoaded,
+        isBuffering: status.isBuffering,
+        currentTime: status.currentTime,
+        duration: status.duration,
+        didJustFinish: status.didJustFinish,
+        error: status.error,
+      });
+
+      if (status.playing) {
+        player.pause();
+        return;
+      }
+
+      // Configure Android & iOS audio routing to ensure audio outputs via loudspeaker
+      try {
+        await setAudioModeAsync({
+          allowsRecording: false,
+          playsInSilentMode: true,
+          shouldRouteThroughEarpiece: false,
+          interruptionMode: 'duckOthers',
+        });
+      } catch (modeErr) {
+        console.warn('[VoicePlayer] setAudioModeAsync error:', modeErr);
+      }
+
+      player.volume = 1.0;
+
+      // If playback already finished or near end, seek back to beginning to replay
+      const isAtEnd =
+        status.didJustFinish ||
+        (status.duration > 0 && status.currentTime >= status.duration - 0.2);
+      if (isAtEnd) {
+        await player.seekTo(0);
+      }
+
       player.play();
+    } catch (err) {
+      console.warn('[VoicePlayer] Play error:', err);
     }
   };
 
   const durationText = attachment.durationSec ? ` (${formatDuration(attachment.durationSec)})` : '';
+  const progressText =
+    status.playing || status.currentTime > 0
+      ? ` · ${formatDuration(Math.floor(status.currentTime))} / ${formatDuration(Math.floor(status.duration || attachment.durationSec || 0))}`
+      : '';
+
+  let buttonLabel = 'Play Voice Note';
+  if (status.playing) {
+    buttonLabel = 'Pause Voice Note';
+  } else if (status.isBuffering) {
+    buttonLabel = 'Loading Voice Note…';
+  } else if (status.didJustFinish || (status.duration > 0 && status.currentTime >= status.duration - 0.2)) {
+    buttonLabel = 'Replay Voice Note';
+  }
 
   return (
     <View style={styles.attachmentWrapper}>
-      <Text style={styles.voiceAttachedText}>🎙️ Voice note attached{durationText}</Text>
+      <Text style={styles.voiceAttachedText}>
+        🎙️ Voice note attached{durationText}{progressText}
+      </Text>
       <Button
-        label={status.playing ? 'Pause Voice Note' : 'Play Voice Note'}
+        label={buttonLabel}
         variant="secondary"
         onPress={togglePlayback}
       />
+      {status.error ? (
+        <Text style={styles.errorText}>Playback error: {status.error}</Text>
+      ) : null}
     </View>
   );
 }
@@ -222,5 +280,6 @@ const styles = StyleSheet.create({
   entryChange: { fontSize: fontSize.body, fontWeight: '700', color: colors.text },
   entryNote: { fontSize: fontSize.body, color: colors.text, marginTop: spacing.xs },
   entryMeta: { fontSize: fontSize.small, color: colors.textMuted, marginTop: spacing.xs },
+  errorText: { fontSize: fontSize.small, color: colors.danger, marginTop: spacing.xs },
 });
 

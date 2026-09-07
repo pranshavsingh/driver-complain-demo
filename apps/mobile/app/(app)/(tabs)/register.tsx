@@ -36,6 +36,7 @@ import { useVoiceRecorder, type VoiceNote } from '../../../src/media/recorder';
 import { captureVideo, videoCaptureAvailable } from '../../../src/media/video';
 import { radius, spacing } from '../../../src/theme';
 import { Ionicons } from '@expo/vector-icons';
+import { TakeFuelModal } from '../../../src/components/TakeFuelModal';
 
 export default function WhatsAppRegisterComplaintScreen(): ReactElement {
   const insets = useSafeAreaInsets();
@@ -61,6 +62,8 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
   const [submitting, setSubmitting] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<string | null>(null);
   const [showVehicleDropdown, setShowVehicleDropdown] = useState(false);
+  const [showTakeFuelModal, setShowTakeFuelModal] = useState(false);
+
 
   useEffect(() => {
     if (params.initialText) {
@@ -312,14 +315,28 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
           ) : null}
         </View>
 
-        {/* Selected Card / Department Badge (Replaces Priority Dropdown) */}
-        <View style={styles.selectedCardBadge}>
-          <Ionicons name="pricetag" size={14} color="#075E54" />
-          <Text style={styles.selectedCardBadgeText}>
-            Selected Category: <Text style={styles.cardNameHighlight}>{cardName}</Text>
-          </Text>
+        {/* Selected Category Badge (Left) & Fueling Action Button (Right) */}
+        <View style={styles.categoryBadgeRow}>
+          <View style={styles.selectedCardBadge}>
+            <Ionicons name="pricetag" size={14} color="#075E54" />
+            <Text style={styles.selectedCardBadgeText}>
+              Category: <Text style={styles.cardNameHighlight}>{cardName}</Text>
+            </Text>
+          </View>
+
+          {category === 'FUEL_DEF' ? (
+            <Pressable
+              style={styles.fuelingBtn}
+              onPress={() => setShowTakeFuelModal(true)}
+              accessibilityLabel="Open Take Fueling Form"
+            >
+              <Ionicons name="water" size={16} color="#FFFFFF" />
+              <Text style={styles.fuelingBtnText}>Fueling ⛽</Text>
+            </Pressable>
+          ) : null}
         </View>
       </View>
+
 
       {/* Dropdown Vehicle Options */}
       {showVehicleDropdown && vehicleList.length > 0 ? (
@@ -508,9 +525,17 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
           </View>
         ) : null}
       </KeyboardAvoidingView>
+
+      {/* Take Fuel / DEF Modal */}
+      <TakeFuelModal
+        visible={showTakeFuelModal}
+        onClose={() => setShowTakeFuelModal(false)}
+        vehicles={vehicleList}
+      />
     </View>
   );
 }
+
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#E5DDD5' },
@@ -617,6 +642,12 @@ const styles = StyleSheet.create({
   dropdownToggle: {
     padding: 4,
   },
+  categoryBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 2,
+  },
   selectedCardBadge: {
     alignSelf: 'flex-start',
     flexDirection: 'row',
@@ -626,15 +657,34 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: 5,
     borderRadius: radius.pill,
-    marginTop: 2,
     borderWidth: 1,
     borderColor: '#BAE6FD',
+  },
+  fuelingBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#15803D',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    gap: 5,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+  },
+  fuelingBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
   },
   selectedCardBadgeText: {
     fontSize: 12,
     fontWeight: '600',
     color: '#0369A1',
   },
+
   cardNameHighlight: {
     fontWeight: '800',
     color: '#075E54',

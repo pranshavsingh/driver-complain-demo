@@ -9,4 +9,6 @@ export * from './device';
 export * from './realtime';
 export * from './auth';
 export * from './loading';
+export * from './fuel';
+
 

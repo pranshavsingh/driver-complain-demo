@@ -11,11 +11,13 @@ import { radius, spacing } from '../../../src/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { DashboardGrid, type GridTile } from '../../../src/components/DashboardGrid';
 import { LoadingAssistantCard } from '../../../src/components/LoadingAssistantCard';
+import { TakeFuelModal } from '../../../src/components/TakeFuelModal';
 
 export default function DriverHomeDashboardScreen(): ReactElement {
   const insets = useSafeAreaInsets();
   const { user, logout } = useAuth();
   const [showLoadingAssistant, setShowLoadingAssistant] = useState(false);
+  const [showTakeFuelModal, setShowTakeFuelModal] = useState(false);
 
   const vehicles = useApiResource('vehicles:mine', () => api.vehicles.mine());
   const vehicleList = useMemo<VehiclePublic[]>(() => vehicles.data ?? [], [vehicles.data]);
@@ -51,7 +53,8 @@ export default function DriverHomeDashboardScreen(): ReactElement {
       return;
     }
 
-    // 3. Medical Emergency -> Triggers Emergency SOS Alert prompt
+
+    // 4. Medical Emergency -> Triggers Emergency SOS Alert prompt
     if (tile.id === 'MEDICAL_EMERGENCY') {
       Alert.alert(
         '🚨 MEDICAL EMERGENCY SOS',
@@ -78,7 +81,7 @@ export default function DriverHomeDashboardScreen(): ReactElement {
       return;
     }
 
-    // 4. All Service Issue Boxes (Breakdown, Tyre issue, Fuel/DEF, Accounts, Support) -> Navigate to Register Tab with Card Context
+    // 5. All Service Issue Boxes (Breakdown, Tyre issue, Accounts, Support) -> Navigate to Register Tab with Card Context
     let initialPriority = 'MEDIUM';
     if (tile.id === 'BREAKDOWN') initialPriority = 'HIGH';
     if (tile.id === 'ACCOUNTS') initialPriority = 'LOW';
@@ -150,9 +153,17 @@ export default function DriverHomeDashboardScreen(): ReactElement {
           </ScrollView>
         </View>
       </Modal>
+
+      {/* Take Fuel / DEF Modal */}
+      <TakeFuelModal
+        visible={showTakeFuelModal}
+        onClose={() => setShowTakeFuelModal(false)}
+        vehicles={vehicleList}
+      />
     </View>
   );
 }
+
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#F8FAFC' },

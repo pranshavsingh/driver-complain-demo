@@ -1,7 +1,7 @@
 import { useState, type ReactElement } from 'react';
 import { Alert, Image, StyleSheet, Text, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
+import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import type { EvidenceUpload, FileToUpload } from '../api/endpoints';
 import { Button } from '../components/Button';
@@ -263,11 +263,33 @@ function VoicePreview({
   const player = useAudioPlayer(uri);
   const status = useAudioPlayerStatus(player);
 
-  const toggle = (): void => {
-    if (status.playing) {
-      player.pause();
-    } else {
+  const toggle = async (): Promise<void> => {
+    try {
+      if (status.playing) {
+        player.pause();
+        return;
+      }
+
+      try {
+        await setAudioModeAsync({
+          allowsRecording: false,
+          playsInSilentMode: true,
+          shouldRouteThroughEarpiece: false,
+          interruptionMode: 'duckOthers',
+        });
+      } catch {
+        // non-fatal
+      }
+
+      player.volume = 1.0;
+
+      if (status.didJustFinish || (status.duration > 0 && status.currentTime >= status.duration - 0.2)) {
+        await player.seekTo(0);
+      }
+
       player.play();
+    } catch (e) {
+      console.warn('[VoicePreview] playback error:', e);
     }
   };
 
