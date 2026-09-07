@@ -97,7 +97,20 @@ export function normalizeFileUri(uri: string): string {
   if (clean.startsWith('file:/') && !clean.startsWith('file:///')) {
     clean = clean.replace(/^file:\/+/, 'file:///');
   }
+  if (clean.includes('@')) {
+    clean = clean.replace(/@/g, '%40');
+  }
   return clean;
+}
+
+/** React Native resolves this native URI when it builds the multipart request. */
+function appendFile(form: FormData, field: string, file: FileToUpload): void {
+  const cleanUri = normalizeFileUri(file.uri);
+  form.append(field, {
+    uri: cleanUri,
+    name: file.name || `${field}.m4a`,
+    type: file.type || (field === 'voice' ? 'audio/m4a' : 'image/jpeg'),
+  } as unknown as Blob);
 }
 
 export const complaints = {
@@ -132,13 +145,7 @@ export const complaints = {
     if (input.vehicleNumber) form.append('vehicleNumber', input.vehicleNumber);
     if (input.priority) form.append('priority', input.priority);
     for (const [field, file] of Object.entries(evidence)) {
-      if (file) {
-        form.append(field, {
-          uri: normalizeFileUri(file.uri),
-          name: file.name || `${field}.m4a`,
-          type: file.type || (field === 'voice' ? 'audio/m4a' : 'image/jpeg'),
-        } as unknown as Blob);
-      }
+      if (file) appendFile(form, field, file);
     }
     return request(ComplaintPublicSchema, '/complaints', { method: 'POST', body: form });
   },
@@ -169,7 +176,7 @@ export const loading = {
     if (input.address) form.append('address', input.address);
     if (input.locationName) form.append('locationName', input.locationName);
     if (input.complaintId) form.append('complaintId', input.complaintId);
-    form.append('photo', photo as unknown as Blob);
+    appendFile(form, 'photo', photo);
     return request(LoadingRecordSchema, '/loading/reached', { method: 'POST', body: form });
   },
 
@@ -183,7 +190,7 @@ export const loading = {
     form.append('latitude', String(input.latitude));
     form.append('longitude', String(input.longitude));
     if (input.address) form.append('address', input.address);
-    form.append('photo', photo as unknown as Blob);
+    appendFile(form, 'photo', photo);
     return request(LoadingRecordSchema, `/loading/${encodeURIComponent(loadingId)}/complete`, {
       method: 'PATCH',
       body: form,
@@ -211,7 +218,7 @@ export const loading = {
     form.append('latitude', String(input.latitude));
     form.append('longitude', String(input.longitude));
     if (input.address) form.append('address', input.address);
-    form.append('photo', photo as unknown as Blob);
+    appendFile(form, 'photo', photo);
     return request(LoadingRecordSchema, `/loading/${encodeURIComponent(loadingId)}/complete-trip`, {
       method: 'PATCH',
       body: form,
@@ -229,7 +236,7 @@ export const loading = {
     form.append('latitude', String(input.latitude));
     form.append('longitude', String(input.longitude));
     if (input.address) form.append('address', input.address);
-    form.append('photo', photo as unknown as Blob);
+    appendFile(form, 'photo', photo);
     return request(LoadingRecordSchema, `/loading/${encodeURIComponent(loadingId)}/complete-unloading`, {
       method: 'PATCH',
       body: form,

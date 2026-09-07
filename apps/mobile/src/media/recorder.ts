@@ -297,10 +297,37 @@ export function useVoiceRecorder(onRecorded: (note: VoiceNote) => void): VoiceRe
         }
       }
 
-      console.log('[recorder] Finished: finalUri =', finalUri, 'duration =', durSec);
+async function prepareVoiceFileForUpload(sourceUri: string): Promise<string> {
+  try {
+    let cleanSource = sourceUri;
+    if (cleanSource.startsWith('file:/') && !cleanSource.startsWith('file:///')) {
+      cleanSource = cleanSource.replace(/^file:\/+/, 'file:///');
+    }
+    const destFileName = `voice_note_${Date.now()}.m4a`;
+    const targetUri = `${FileSystem.cacheDirectory || FileSystem.documentDirectory}${destFileName}`;
+
+    console.log('[recorder] Copying recorded audio from:', cleanSource, 'to:', targetUri);
+    await FileSystem.copyAsync({
+      from: cleanSource,
+      to: targetUri,
+    });
+
+    const info = await FileSystem.getInfoAsync(targetUri);
+    console.log('[recorder] Verified copied audio file info:', JSON.stringify(info));
+
+    if (info.exists && info.size > 0) {
+      return targetUri;
+    }
+  } catch (err) {
+    console.warn('[recorder] prepareVoiceFileForUpload copy error:', err);
+  }
+  return sourceUri;
+}
 
       if (finalUri && finalUri.length > 0) {
-        onRecorded({ uri: finalUri, name: 'voice.m4a', type: 'audio/m4a', durationSec: durSec });
+        const readyUri = await prepareVoiceFileForUpload(finalUri);
+        console.log('[recorder] Ready for upload uri =', readyUri);
+        onRecorded({ uri: readyUri, name: 'voice.m4a', type: 'audio/m4a', durationSec: durSec });
       } else {
         setError('No audio captured. Please check microphone permissions.');
         Alert.alert(

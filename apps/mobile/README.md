@@ -36,7 +36,7 @@ never applies to this app — only the dashboard needs it.
 
 | Script             | What it does                                         |
 | ------------------ | ---------------------------------------------------- |
-| `start`            | Metro dev server                                     |
+| `start`            | Metro, targeting an installed development build      |
 | `start:dev-client` | Metro, targeting an installed development build      |
 | `android` / `ios`  | `expo run:*` — local native build + install          |
 | `prebuild`         | Regenerate `android/` + `ios/` from the app config   |
