@@ -9,9 +9,9 @@ import { ComplaintsListPage } from './pages/ComplaintsListPage';
 import { ComplaintDetailPage } from './pages/ComplaintDetailPage';
 import { LoadingTrackerPage } from './pages/LoadingTrackerPage';
 import { TripDetailsPage } from './pages/TripDetailsPage';
-import { FuelLogsPage } from './pages/FuelLogsPage';
 import { MaintenancePage } from './pages/MaintenancePage';
 import { UsersPage } from './pages/UsersPage';
+
 import { ThemeProvider } from './context/ThemeContext';
 import { NotFoundPage } from './pages/NotFoundPage';
 
@@ -44,7 +44,7 @@ export function App(): ReactElement {
         <Route path="/complaints/:id" element={<ComplaintDetailPage />} />
         <Route path="/loading" element={<LoadingTrackerPage />} />
         <Route path="/trips" element={<TripDetailsPage />} />
-        <Route path="/fuel-logs" element={<FuelLogsPage />} />
+        <Route path="/fuel-logs" element={<Navigate to="/maintenance?tab=fuel" replace />} />
         <Route path="/maintenance" element={<MaintenancePage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
@@ -52,4 +52,5 @@ export function App(): ReactElement {
     </ThemeProvider>
   );
 }
+
 

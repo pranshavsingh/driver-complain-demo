@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, type ReactElement } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { Truck, LayoutDashboard, Users, ClipboardList, LogOut, Bell, Menu, X, Trash2, CheckCircle2, Fuel, Wrench } from './Icons';
+import { Truck, LayoutDashboard, Users, ClipboardList, LogOut, Bell, Menu, X, Trash2, CheckCircle2, Wrench } from './Icons';
+
+
 import { isSuperAdmin, useAuth } from '../auth/AuthContext';
 import { useRealtime } from '../realtime/RealtimeProvider';
 import { ThemeSwitcher } from './ThemeSwitcher';
@@ -46,8 +48,8 @@ function getPageTitle(pathname: string): string {
   if (pathname.startsWith('/complaints')) return 'Complaints Management';
   if (pathname.startsWith('/loading')) return 'Loading & Detention Analytics';
   if (pathname.startsWith('/trips')) return 'Trip Analytics & Logs';
-  if (pathname.startsWith('/fuel-logs')) return 'Fuel & DEF Management & Logs';
-  if (pathname.startsWith('/maintenance')) return 'Vehicle Maintenance & Replacements';
+  if (pathname.startsWith('/maintenance') || pathname.startsWith('/fuel-logs'))
+    return 'Vehicle Maintenance & Servicing';
   return 'Fleet Administration';
 }
 
@@ -164,21 +166,18 @@ export function Layout(): ReactElement {
           </NavLink>
 
           <NavLink
-            to="/fuel-logs"
-            className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
-          >
-            <Fuel size={18} className="nav-icon" />
-            <span className="nav-label">Fuel / DEF Logs</span>
-          </NavLink>
-
-          <NavLink
             to="/maintenance"
-            className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
+            className={({ isActive }) =>
+              isActive || location.pathname.startsWith('/fuel-logs')
+                ? 'nav-item active'
+                : 'nav-item'
+            }
           >
             <Wrench size={18} className="nav-icon" />
             <span className="nav-label">Vehicle Maintenance</span>
           </NavLink>
         </nav>
+
 
 
 
