@@ -77,15 +77,15 @@ export const DASHBOARD_TILES: GridTile[] = [
     iconBgColor: '#FFFFFF',
   },
   {
-    id: 'MEDICAL_EMERGENCY',
-    title: 'Medical Emergency',
-    subtitle: 'Instant Dispatch Alert',
-    icon: 'medical',
-    bgColor: '#FEE2E2', // Emergency Pink/Red (matching diagram)
-    borderColor: '#FCA5A5',
-    textColor: '#991B1B',
+    id: 'VEHICLE_MAINTENANCE',
+    title: 'Vehicle Maintenance',
+    subtitle: 'Fuel, Tyre & Battery',
+    icon: 'construct',
+    bgColor: '#EFF6FF', // Crisp Soft Blue
+    borderColor: '#93C5FD',
+    textColor: '#1E40AF',
     iconBgColor: '#FFFFFF',
-    badge: 'SOS',
+    badge: 'NEW',
   },
   {
     id: 'SUPPORT',

@@ -32,6 +32,7 @@ enum ComplaintCategory {
   ACCOUNTS
   COMPLAINT_STATUS
   MEDICAL_EMERGENCY
+  VEHICLE_MAINTENANCE
   SUPPORT
 }
 
@@ -130,10 +131,11 @@ model Driver {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  vehicles       Vehicle[]
-  complaints     Complaint[]
-  loadingRecords LoadingRecord[]
-  fuelRecords    FuelRecord[]
+  vehicles           Vehicle[]
+  complaints         Complaint[]
+  loadingRecords     LoadingRecord[]
+  fuelRecords        FuelRecord[]
+  maintenanceRecords MaintenanceRecord[]
 }
 
 model Vehicle {
@@ -148,8 +150,9 @@ model Vehicle {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  complaints  Complaint[]
-  fuelRecords FuelRecord[]
+  complaints         Complaint[]
+  fuelRecords        FuelRecord[]
+  maintenanceRecords MaintenanceRecord[]
 
 
   @@index([driverId])
@@ -381,5 +384,36 @@ model FuelRecord {
   @@index([type])
   @@index([createdAt])
 }
+
+enum MaintenanceType {
+  TYRE
+  BATTERY
+}
+
+model MaintenanceRecord {
+  id              String          @id @default(uuid(7)) @db.Uuid
+  driverId        String          @db.Uuid
+  driver          Driver          @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  vehicleId       String          @db.Uuid
+  vehicle         Vehicle         @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  type            MaintenanceType @default(TYRE)
+  itemNumber      String
+  quantity        Int             @default(1)
+  photoUrl        String
+  photoPublicId   String?
+  odometerKm      Int?
+  brand           String?
+  position        String?
+  cost            Float?
+  notes           String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([driverId])
+  @@index([vehicleId])
+  @@index([type])
+  @@index([createdAt])
+}
+
 
 

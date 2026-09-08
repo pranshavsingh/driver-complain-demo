@@ -275,3 +275,41 @@ export const fuel = {
     request(z.any(), '/fuel', { query: { page, limit } }),
 };
 
+export const maintenance = {
+  create: async (
+    input: {
+      vehicleId?: string;
+      vehicleNumber?: string;
+      type: 'TYRE' | 'BATTERY';
+      itemNumber: string;
+      quantity?: number;
+      odometerKm?: number;
+      brand?: string;
+      position?: string;
+      cost?: number;
+      notes?: string;
+    },
+    photo?: FileToUpload,
+  ): Promise<any> => {
+    await warmUpServer();
+    const form = new FormData();
+    if (input.vehicleId) form.append('vehicleId', input.vehicleId);
+    if (input.vehicleNumber) form.append('vehicleNumber', input.vehicleNumber);
+    form.append('type', input.type);
+    form.append('itemNumber', input.itemNumber);
+    if (input.quantity !== undefined) form.append('quantity', String(input.quantity));
+    if (input.odometerKm !== undefined) form.append('odometerKm', String(input.odometerKm));
+    if (input.brand) form.append('brand', input.brand);
+    if (input.position) form.append('position', input.position);
+    if (input.cost !== undefined) form.append('cost', String(input.cost));
+    if (input.notes) form.append('notes', input.notes);
+    if (photo) appendFile(form, 'photo', photo);
+
+    return request(z.any(), '/maintenance', { method: 'POST', body: form });
+  },
+
+  mine: (page = 1, limit = 20): Promise<any> =>
+    request(z.any(), '/maintenance', { query: { page, limit } }),
+};
+
+

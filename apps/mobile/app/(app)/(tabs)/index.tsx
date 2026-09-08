@@ -11,13 +11,14 @@ import { radius, spacing } from '../../../src/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { DashboardGrid, type GridTile } from '../../../src/components/DashboardGrid';
 import { LoadingAssistantCard } from '../../../src/components/LoadingAssistantCard';
-import { TakeFuelModal } from '../../../src/components/TakeFuelModal';
+import { VehicleMaintenanceModal, type MaintenanceTab } from '../../../src/components/VehicleMaintenanceModal';
 
 export default function DriverHomeDashboardScreen(): ReactElement {
   const insets = useSafeAreaInsets();
   const { user, logout } = useAuth();
   const [showLoadingAssistant, setShowLoadingAssistant] = useState(false);
-  const [showTakeFuelModal, setShowTakeFuelModal] = useState(false);
+  const [showMaintenanceModal, setShowMaintenanceModal] = useState(false);
+  const [maintenanceInitialTab, setMaintenanceInitialTab] = useState<MaintenanceTab>('FUEL');
 
   const vehicles = useApiResource('vehicles:mine', () => api.vehicles.mine());
   const vehicleList = useMemo<VehiclePublic[]>(() => vehicles.data ?? [], [vehicles.data]);
@@ -53,35 +54,14 @@ export default function DriverHomeDashboardScreen(): ReactElement {
       return;
     }
 
-
-    // 4. Medical Emergency -> Triggers Emergency SOS Alert prompt
-    if (tile.id === 'MEDICAL_EMERGENCY') {
-      Alert.alert(
-        '🚨 MEDICAL EMERGENCY SOS',
-        'Send an immediate Emergency SOS alert with your location to Dispatch?',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'SEND SOS ALERT NOW',
-            style: 'destructive',
-            onPress: () => {
-              router.push({
-                pathname: '/(app)/(tabs)/register',
-                params: {
-                  cardName: tile.title,
-                  category: tile.id,
-                  initialText: '🚨 MEDICAL EMERGENCY SOS: Urgent medical/accident assistance required!',
-                  initialPriority: 'URGENT',
-                },
-              });
-            },
-          },
-        ],
-      );
+    // 3. Vehicle Maintenance -> Opens Vehicle Maintenance Modal (Fuel, Tyre, Battery logs)
+    if (tile.id === 'VEHICLE_MAINTENANCE') {
+      setMaintenanceInitialTab('FUEL');
+      setShowMaintenanceModal(true);
       return;
     }
 
-    // 5. All Service Issue Boxes (Breakdown, Tyre issue, Accounts, Support) -> Navigate to Register Tab with Card Context
+    // 4. All Service Issue Boxes (Fuel / DEF, Breakdown, Tyre issue, Accounts, Support) -> Navigate to Complaint Registration Chat UI
     let initialPriority = 'MEDIUM';
     if (tile.id === 'BREAKDOWN') initialPriority = 'HIGH';
     if (tile.id === 'ACCOUNTS') initialPriority = 'LOW';
@@ -154,15 +134,18 @@ export default function DriverHomeDashboardScreen(): ReactElement {
         </View>
       </Modal>
 
-      {/* Take Fuel / DEF Modal */}
-      <TakeFuelModal
-        visible={showTakeFuelModal}
-        onClose={() => setShowTakeFuelModal(false)}
+      {/* Vehicle Maintenance (Fuel/DEF, Tyre, Battery) Modal */}
+      <VehicleMaintenanceModal
+        visible={showMaintenanceModal}
+        onClose={() => setShowMaintenanceModal(false)}
         vehicles={vehicleList}
+        initialTab={maintenanceInitialTab}
       />
     </View>
   );
 }
+
+
 
 
 const styles = StyleSheet.create({

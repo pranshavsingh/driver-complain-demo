@@ -76,6 +76,7 @@ export const ComplaintCategorySchema = z.enum([
   'ACCOUNTS',
   'COMPLAINT_STATUS',
   'MEDICAL_EMERGENCY',
+  'VEHICLE_MAINTENANCE',
   'SUPPORT',
 ]);
 export type ComplaintCategory = z.infer<typeof ComplaintCategorySchema>;
@@ -84,6 +85,11 @@ export const COMPLAINT_CATEGORIES = ComplaintCategorySchema.options;
 export const FuelTypeSchema = z.enum(['FUEL', 'DEF']);
 export type FuelType = z.infer<typeof FuelTypeSchema>;
 export const FUEL_TYPES = FuelTypeSchema.options;
+
+export const MaintenanceTypeSchema = z.enum(['TYRE', 'BATTERY']);
+export type MaintenanceType = z.infer<typeof MaintenanceTypeSchema>;
+export const MAINTENANCE_TYPES = MaintenanceTypeSchema.options;
+
 
 
 
