@@ -11,13 +11,12 @@ import {
   Download,
   RotateCw,
   Search,
-  X,
   ExternalLink,
   ImageIcon,
   Disc,
   Battery,
+  X,
 } from '../components/Icons';
-
 
 export function MaintenancePage(): ReactElement {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -27,7 +26,7 @@ export function MaintenancePage(): ReactElement {
     setSearchParams({ tab });
   };
 
-  // --- Photo / Lightbox State ---
+  // --- Universal Photo / Lightbox State ---
   const [selectedPhoto, setSelectedPhoto] = useState<{
     url: string;
     title: string;
@@ -242,15 +241,14 @@ export function MaintenancePage(): ReactElement {
 
   return (
     <div className="page-container">
-      {/* Top Header */}
+      {/* Top Page Header */}
       <div className="page-header">
         <div>
           <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <Wrench size={24} color="#0284c7" /> Vehicle Maintenance & Servicing
           </h1>
           <p className="page-subtitle">
-            Centralized hub for tyre replacements, battery tracking, fuel fills, and DEF consumption
-            auditing.
+            Centralized hub for tyre replacements, battery tracking, fuel fills, and DEF consumption auditing
           </p>
         </div>
 
@@ -266,7 +264,7 @@ export function MaintenancePage(): ReactElement {
               style={{ marginRight: 6 }}
               className={isLoading ? 'spin' : ''}
             />
-            {isLoading ? 'Refreshing…' : 'Refresh Data'}
+            {isLoading ? 'Refreshing…' : 'Refresh'}
           </button>
 
           <button type="button" className="btn-primary" onClick={handleExportCsv}>
@@ -278,53 +276,27 @@ export function MaintenancePage(): ReactElement {
 
       <ErrorBanner error={activeError} />
 
-      {/* Main Tab Navigation Bar */}
-      <div
-        style={{
-          display: 'flex',
-          gap: 10,
-          marginBottom: 20,
-          borderBottom: '1px solid var(--border)',
-          paddingBottom: 12,
-        }}
-      >
+      {/* Navigation Tabs */}
+      <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
         <button
           type="button"
+          className={`btn-${activeTab === 'replacements' ? 'primary' : 'secondary'}`}
           onClick={() => setTab('replacements')}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 8,
-            padding: '10px 20px',
-            borderRadius: 8,
-            fontSize: 14,
-            fontWeight: 700,
-            cursor: 'pointer',
-            border:
-              activeTab === 'replacements'
-                ? '1.5px solid #0284c7'
-                : '1px solid var(--border)',
-            backgroundColor:
-              activeTab === 'replacements' ? '#0284c7' : 'var(--surface)',
-            color: activeTab === 'replacements' ? '#ffffff' : 'var(--text)',
-            boxShadow:
-              activeTab === 'replacements'
-                ? '0 4px 6px -1px rgba(2, 132, 199, 0.25)'
-                : 'none',
-            transition: 'all 0.15s ease',
-          }}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
         >
-          <Disc size={18} color={activeTab === 'replacements' ? '#ffffff' : '#0284c7'} />
-          <span>🛞 Tyre & 🔋 Battery Replacements</span>
+          <Disc size={16} />
+          <span>Tyre & Battery Replacements</span>
           <span
             style={{
-              fontSize: 11,
+              marginLeft: 4,
+              fontSize: 12,
+              fontWeight: 700,
               padding: '2px 8px',
               borderRadius: 12,
               backgroundColor:
                 activeTab === 'replacements'
                   ? 'rgba(255, 255, 255, 0.25)'
-                  : 'var(--surface-muted)',
+                  : 'var(--bg)',
               color: activeTab === 'replacements' ? '#ffffff' : 'var(--muted)',
             }}
           >
@@ -334,38 +306,23 @@ export function MaintenancePage(): ReactElement {
 
         <button
           type="button"
+          className={`btn-${activeTab === 'fuel' ? 'primary' : 'secondary'}`}
           onClick={() => setTab('fuel')}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 8,
-            padding: '10px 20px',
-            borderRadius: 8,
-            fontSize: 14,
-            fontWeight: 700,
-            cursor: 'pointer',
-            border:
-              activeTab === 'fuel' ? '1.5px solid #15803d' : '1px solid var(--border)',
-            backgroundColor: activeTab === 'fuel' ? '#15803d' : 'var(--surface)',
-            color: activeTab === 'fuel' ? '#ffffff' : 'var(--text)',
-            boxShadow:
-              activeTab === 'fuel'
-                ? '0 4px 6px -1px rgba(21, 128, 61, 0.25)'
-                : 'none',
-            transition: 'all 0.15s ease',
-          }}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
         >
-          <Fuel size={18} color={activeTab === 'fuel' ? '#ffffff' : '#15803d'} />
-          <span>⛽ Fuel & DEF Consumption Logs</span>
+          <Fuel size={16} />
+          <span>Fuel & DEF Consumption Logs</span>
           <span
             style={{
-              fontSize: 11,
+              marginLeft: 4,
+              fontSize: 12,
+              fontWeight: 700,
               padding: '2px 8px',
               borderRadius: 12,
               backgroundColor:
                 activeTab === 'fuel'
                   ? 'rgba(255, 255, 255, 0.25)'
-                  : 'var(--surface-muted)',
+                  : 'var(--bg)',
               color: activeTab === 'fuel' ? '#ffffff' : 'var(--muted)',
             }}
           >
@@ -381,7 +338,7 @@ export function MaintenancePage(): ReactElement {
         <>
           {/* 4 Stat Cards */}
           <div className="stat-cards-grid">
-            <div className="stat-card stat-info">
+            <div className="stat-card stat-info selected">
               <div className="stat-card-header">
                 <span className="stat-card-title">Tyre Replacements</span>
                 <Disc size={20} color="#0284c7" />
@@ -390,7 +347,7 @@ export function MaintenancePage(): ReactElement {
               <div className="stat-card-footer">Total verified tyre entries</div>
             </div>
 
-            <div className="stat-card stat-warning">
+            <div className="stat-card stat-warning selected">
               <div className="stat-card-header">
                 <span className="stat-card-title">Battery Replacements</span>
                 <Battery size={20} color="#d97706" />
@@ -399,7 +356,7 @@ export function MaintenancePage(): ReactElement {
               <div className="stat-card-footer">Total battery entries</div>
             </div>
 
-            <div className="stat-card stat-success">
+            <div className="stat-card stat-success selected">
               <div className="stat-card-header">
                 <span className="stat-card-title">Total Replacement Logs</span>
                 <Wrench size={20} color="#16a34a" />
@@ -418,39 +375,34 @@ export function MaintenancePage(): ReactElement {
             </div>
           </div>
 
-          {/* Filters Toolbar */}
-          <div className="card filters-card" style={{ marginBottom: 20 }}>
-            <div className="filters-grid">
-              {/* Search Box */}
-              <div className="filter-group" style={{ flex: 2, minWidth: 220 }}>
-                <label className="filter-label">Search</label>
-                <div className="search-input-wrapper">
-                  <Search size={16} className="search-icon" />
+          {/* Structured Filter Card Panel (Matching ComplaintsListPage) */}
+          <div className="filter-card">
+            <div className="filter-grid">
+              {/* Row 1 - Search */}
+              <div className="filter-group filter-wide">
+                <label htmlFor="maint-search" className="filter-label">
+                  Search
+                </label>
+                <div className="filter-input-box">
+                  <Search size={15} className="filter-icon" />
                   <input
-                    type="text"
-                    className="input-field"
-                    placeholder="Search serial no, driver, vehicle, brand..."
+                    id="maint-search"
+                    className="filter-input"
+                    placeholder="Search serial no, driver, vehicle plate, brand..."
                     value={maintSearch}
                     onChange={(e) => setMaintSearch(e.target.value)}
                   />
-                  {maintSearch ? (
-                    <button
-                      type="button"
-                      className="btn-clear-search"
-                      onClick={() => setMaintSearch('')}
-                      title="Clear search"
-                    >
-                      <X size={14} />
-                    </button>
-                  ) : null}
                 </div>
               </div>
 
-              {/* Type Filter */}
+              {/* Category Filter */}
               <div className="filter-group">
-                <label className="filter-label">Category</label>
+                <label htmlFor="maint-type" className="filter-label">
+                  Category
+                </label>
                 <select
-                  className="select-field"
+                  id="maint-type"
+                  className="filter-select"
                   value={maintTypeFilter}
                   onChange={(e) => {
                     setMaintTypeFilter(e.target.value);
@@ -465,16 +417,19 @@ export function MaintenancePage(): ReactElement {
 
               {/* Vehicle Filter */}
               <div className="filter-group">
-                <label className="filter-label">Vehicle</label>
+                <label htmlFor="maint-vehicle" className="filter-label">
+                  Vehicle
+                </label>
                 <select
-                  className="select-field"
+                  id="maint-vehicle"
+                  className="filter-select"
                   value={maintVehicleId}
                   onChange={(e) => {
                     setMaintVehicleId(e.target.value);
                     setMaintPage(1);
                   }}
                 >
-                  <option value="">All Vehicles</option>
+                  <option value="">Any vehicle</option>
                   {vehicles.map((v: any) => (
                     <option key={v.id} value={v.id}>
                       {v.plateNumber} {v.make ? `(${v.make} ${v.model ?? ''})` : ''}
@@ -483,12 +438,15 @@ export function MaintenancePage(): ReactElement {
                 </select>
               </div>
 
-              {/* Date Range */}
+              {/* Row 2 - Date Range & Actions */}
               <div className="filter-group">
-                <label className="filter-label">From Date</label>
+                <label htmlFor="maint-start-date" className="filter-label">
+                  From Date
+                </label>
                 <input
+                  id="maint-start-date"
                   type="date"
-                  className="input-field"
+                  className="filter-input-date"
                   value={maintStartDate}
                   onChange={(e) => {
                     setMaintStartDate(e.target.value);
@@ -498,10 +456,13 @@ export function MaintenancePage(): ReactElement {
               </div>
 
               <div className="filter-group">
-                <label className="filter-label">To Date</label>
+                <label htmlFor="maint-end-date" className="filter-label">
+                  To Date
+                </label>
                 <input
+                  id="maint-end-date"
                   type="date"
-                  className="input-field"
+                  className="filter-input-date"
                   value={maintEndDate}
                   onChange={(e) => {
                     setMaintEndDate(e.target.value);
@@ -509,34 +470,40 @@ export function MaintenancePage(): ReactElement {
                   }}
                 />
               </div>
-            </div>
 
-            {isMaintFiltered ? (
-              <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
-                <button
-                  type="button"
-                  className="btn-link"
-                  onClick={handleClearMaintFilters}
-                  style={{ fontSize: 13, color: '#dc2626' }}
-                >
-                  Clear all filters
-                </button>
-              </div>
-            ) : null}
+              {isMaintFiltered ? (
+                <div className="filter-group filter-action-btn-group" style={{ gridColumn: 'span 2' }}>
+                  <button
+                    type="button"
+                    className="btn-clear-filters"
+                    onClick={handleClearMaintFilters}
+                  >
+                    Clear all filters
+                  </button>
+                </div>
+              ) : null}
+            </div>
           </div>
 
-          {/* Table */}
-          <div className="card table-card">
+          {/* Table Card Panel */}
+          <div className="table-card">
+            <div className="table-card-header">
+              <h3 className="table-card-title">
+                <Disc size={18} color="#0284c7" /> Tyre & Battery Records
+                <span className="badge-pill">{totalMaintItems} Records</span>
+              </h3>
+            </div>
+
             {maintLogsRes.loading && rawMaintLogs.length === 0 ? (
-              <div className="loading-state">
-                <RotateCw size={24} className="spin" />
-                <p>Loading replacement records…</p>
+              <div className="notif-empty-state" style={{ padding: 48 }}>
+                <RotateCw size={28} className="spin" color="var(--accent)" />
+                <p style={{ marginTop: 8 }}>Loading replacement records…</p>
               </div>
             ) : filteredMaintLogs.length === 0 ? (
-              <div className="empty-state">
-                <Wrench size={40} color="#94a3b8" />
-                <h3>No maintenance logs found</h3>
-                <p>
+              <div className="notif-empty-state" style={{ padding: 48 }}>
+                <Wrench size={36} color="var(--muted)" />
+                <h3 style={{ margin: '8px 0 4px', color: 'var(--text)' }}>No maintenance logs found</h3>
+                <p style={{ margin: 0, color: 'var(--muted)', fontSize: 13 }}>
                   {isMaintFiltered
                     ? 'Try adjusting your filters or search terms.'
                     : 'No tyre or battery replacement entries have been recorded yet.'}
@@ -544,7 +511,7 @@ export function MaintenancePage(): ReactElement {
               </div>
             ) : (
               <div className="table-responsive">
-                <table className="data-table">
+                <table className="admin-table">
                   <thead>
                     <tr>
                       <th>Date & Time</th>
@@ -571,23 +538,21 @@ export function MaintenancePage(): ReactElement {
 
                       return (
                         <tr key={item.id}>
-                          <td style={{ whiteSpace: 'nowrap', fontSize: 13 }}>
+                          <td className="created-date-text">
                             {formatDateTime(item.createdAt)}
                           </td>
 
                           <td>
-                            <div style={{ fontWeight: 600, color: 'var(--text)' }}>
-                              {vehiclePlate}
-                            </div>
+                            <span className="vehicle-badge">{vehiclePlate}</span>
                             {vehicleInfo ? (
-                              <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                                 {vehicleInfo}
                               </div>
                             ) : null}
                           </td>
 
                           <td>
-                            <div style={{ fontWeight: 500 }}>{driverName}</div>
+                            <span className="driver-name-text">{driverName}</span>
                             <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                               ID: {empId}
                             </div>
@@ -596,30 +561,32 @@ export function MaintenancePage(): ReactElement {
                           <td>
                             {item.type === 'TYRE' ? (
                               <span
-                                className="badge"
                                 style={{
-                                  backgroundColor: '#e0f2fe',
-                                  color: '#0369a1',
-                                  border: '1px solid #bae6fd',
-                                  fontWeight: 700,
                                   display: 'inline-flex',
                                   alignItems: 'center',
                                   gap: 4,
+                                  padding: '2px 8px',
+                                  borderRadius: 4,
+                                  backgroundColor: 'rgba(2, 132, 199, 0.15)',
+                                  color: '#0284c7',
+                                  fontSize: 12,
+                                  fontWeight: 700,
                                 }}
                               >
                                 <Disc size={13} /> Tyre
                               </span>
                             ) : (
                               <span
-                                className="badge"
                                 style={{
-                                  backgroundColor: '#fef3c7',
-                                  color: '#b45309',
-                                  border: '1px solid #fde68a',
-                                  fontWeight: 700,
                                   display: 'inline-flex',
                                   alignItems: 'center',
                                   gap: 4,
+                                  padding: '2px 8px',
+                                  borderRadius: 4,
+                                  backgroundColor: 'rgba(217, 119, 6, 0.15)',
+                                  color: '#d97706',
+                                  fontSize: 12,
+                                  fontWeight: 700,
                                 }}
                               >
                                 <Battery size={13} /> Battery
@@ -628,27 +595,15 @@ export function MaintenancePage(): ReactElement {
                           </td>
 
                           <td>
-                            <div
-                              style={{
-                                fontFamily: 'monospace',
-                                fontWeight: 700,
-                                fontSize: 14,
-                                color: 'var(--text)',
-                                backgroundColor: 'var(--surface-muted)',
-                                border: '1px solid var(--border)',
-                                padding: '3px 8px',
-                                borderRadius: 4,
-                                display: 'inline-block',
-                              }}
-                            >
+                            <span className="complaint-no">
                               {item.itemNumber}
-                            </div>
+                            </span>
                           </td>
 
                           <td>
-                            <div style={{ fontSize: 13, fontWeight: 500 }}>
-                              Qty: <strong>{item.quantity}</strong>
-                              {item.brand ? ` • ${item.brand}` : ''}
+                            <div style={{ fontSize: 13, fontWeight: 600 }}>
+                              Qty: {item.quantity}
+                              {item.brand ? ` · ${item.brand}` : ''}
                             </div>
                             {item.position ? (
                               <div style={{ fontSize: 11, color: 'var(--muted)' }}>
@@ -661,12 +616,11 @@ export function MaintenancePage(): ReactElement {
                             {item.photoUrl ? (
                               <button
                                 type="button"
-                                className="thumbnail-preview-btn"
                                 onClick={() =>
                                   setSelectedPhoto({
                                     url: item.photoUrl,
                                     title: `Proof Photo: ${item.type === 'TYRE' ? 'New Tyre' : 'New Battery'} (${item.itemNumber})`,
-                                    subtitle: `Vehicle: ${vehiclePlate} • Driver: ${driverName}`,
+                                    subtitle: `Vehicle: ${vehiclePlate} · Driver: ${driverName}`,
                                     date: formatDateTime(item.createdAt),
                                   })
                                 }
@@ -697,7 +651,7 @@ export function MaintenancePage(): ReactElement {
                                     position: 'absolute',
                                     bottom: 0,
                                     right: 0,
-                                    backgroundColor: 'rgba(0,0,0,0.6)',
+                                    backgroundColor: 'rgba(0,0,0,0.65)',
                                     color: '#fff',
                                     padding: 2,
                                     borderTopLeftRadius: 4,
@@ -707,15 +661,13 @@ export function MaintenancePage(): ReactElement {
                                 </div>
                               </button>
                             ) : (
-                              <span style={{ fontSize: 12, color: 'var(--muted)' }}>
-                                No Photo
-                              </span>
+                              <span className="muted">—</span>
                             )}
                           </td>
 
                           <td>
                             {item.odometerKm ? (
-                              <div style={{ fontSize: 12, color: 'var(--text)' }}>
+                              <div style={{ fontSize: 12, fontWeight: 600 }}>
                                 {item.odometerKm.toLocaleString()} KM
                               </div>
                             ) : null}
@@ -723,25 +675,25 @@ export function MaintenancePage(): ReactElement {
                               <div
                                 style={{
                                   fontSize: 12,
-                                  fontWeight: 600,
-                                  color: '#15803d',
+                                  fontWeight: 700,
+                                  color: '#16a34a',
                                 }}
                               >
                                 ₹{item.cost.toLocaleString('en-IN')}
                               </div>
                             ) : null}
                             {!item.odometerKm && !item.cost ? (
-                              <span style={{ fontSize: 12, color: 'var(--muted)' }}>—</span>
+                              <span className="muted">—</span>
                             ) : null}
                           </td>
 
                           <td>
                             {item.notes ? (
-                              <span style={{ fontSize: 12, color: 'var(--text)' }}>
+                              <span style={{ fontSize: 13, color: 'var(--text)' }}>
                                 {item.notes}
                               </span>
                             ) : (
-                              <span style={{ fontSize: 12, color: 'var(--muted)' }}>—</span>
+                              <span className="muted">—</span>
                             )}
                           </td>
                         </tr>
@@ -752,8 +704,8 @@ export function MaintenancePage(): ReactElement {
               </div>
             )}
 
-            {/* Pagination */}
-            <div className="table-footer" style={{ padding: '12px 16px' }}>
+            {/* Pagination Footer */}
+            <div className="table-footer-pagination">
               <Pagination
                 meta={{
                   page: maintPage,
@@ -778,7 +730,7 @@ export function MaintenancePage(): ReactElement {
         <>
           {/* 4 Stat Cards */}
           <div className="stat-cards-grid">
-            <div className="stat-card stat-success">
+            <div className="stat-card stat-success selected">
               <div className="stat-card-header">
                 <span className="stat-card-title">Total Fuel Expense</span>
                 <Fuel size={20} color="#15803d" />
@@ -791,7 +743,7 @@ export function MaintenancePage(): ReactElement {
               </div>
             </div>
 
-            <div className="stat-card stat-info">
+            <div className="stat-card stat-info selected">
               <div className="stat-card-header">
                 <span className="stat-card-title">Total DEF Expense</span>
                 <span style={{ fontSize: 18 }}>💧</span>
@@ -804,7 +756,7 @@ export function MaintenancePage(): ReactElement {
               </div>
             </div>
 
-            <div className="stat-card stat-warning">
+            <div className="stat-card stat-warning selected">
               <div className="stat-card-header">
                 <span className="stat-card-title">Total Fuel Volume</span>
                 <Fuel size={20} color="#b45309" />
@@ -825,39 +777,34 @@ export function MaintenancePage(): ReactElement {
             </div>
           </div>
 
-          {/* Filters Toolbar */}
-          <div className="card filters-card" style={{ marginBottom: 20 }}>
-            <div className="filters-grid">
-              {/* Search Box */}
-              <div className="filter-group" style={{ flex: 2, minWidth: 220 }}>
-                <label className="filter-label">Search</label>
-                <div className="search-input-wrapper">
-                  <Search size={16} className="search-icon" />
+          {/* Structured Filter Card Panel */}
+          <div className="filter-card">
+            <div className="filter-grid">
+              {/* Row 1 - Search */}
+              <div className="filter-group filter-wide">
+                <label htmlFor="fuel-search" className="filter-label">
+                  Search
+                </label>
+                <div className="filter-input-box">
+                  <Search size={15} className="filter-icon" />
                   <input
-                    type="text"
-                    className="input-field"
-                    placeholder="Search driver, employee ID, vehicle..."
+                    id="fuel-search"
+                    className="filter-input"
+                    placeholder="Search driver, employee ID, vehicle plate..."
                     value={fuelSearch}
                     onChange={(e) => setFuelSearch(e.target.value)}
                   />
-                  {fuelSearch ? (
-                    <button
-                      type="button"
-                      className="btn-clear-search"
-                      onClick={() => setFuelSearch('')}
-                      title="Clear search"
-                    >
-                      <X size={14} />
-                    </button>
-                  ) : null}
                 </div>
               </div>
 
               {/* Type Filter */}
               <div className="filter-group">
-                <label className="filter-label">Type</label>
+                <label htmlFor="fuel-type" className="filter-label">
+                  Type
+                </label>
                 <select
-                  className="select-field"
+                  id="fuel-type"
+                  className="filter-select"
                   value={fuelTypeFilter}
                   onChange={(e) => {
                     setFuelTypeFilter(e.target.value);
@@ -872,16 +819,19 @@ export function MaintenancePage(): ReactElement {
 
               {/* Vehicle Filter */}
               <div className="filter-group">
-                <label className="filter-label">Vehicle</label>
+                <label htmlFor="fuel-vehicle" className="filter-label">
+                  Vehicle
+                </label>
                 <select
-                  className="select-field"
+                  id="fuel-vehicle"
+                  className="filter-select"
                   value={fuelVehicleId}
                   onChange={(e) => {
                     setFuelVehicleId(e.target.value);
                     setFuelPage(1);
                   }}
                 >
-                  <option value="">All Vehicles</option>
+                  <option value="">Any vehicle</option>
                   {vehicles.map((v: any) => (
                     <option key={v.id} value={v.id}>
                       {v.plateNumber} {v.make ? `(${v.make} ${v.model ?? ''})` : ''}
@@ -890,12 +840,15 @@ export function MaintenancePage(): ReactElement {
                 </select>
               </div>
 
-              {/* Date Range */}
+              {/* Row 2 - Date Range & Actions */}
               <div className="filter-group">
-                <label className="filter-label">From Date</label>
+                <label htmlFor="fuel-start-date" className="filter-label">
+                  From Date
+                </label>
                 <input
+                  id="fuel-start-date"
                   type="date"
-                  className="input-field"
+                  className="filter-input-date"
                   value={fuelStartDate}
                   onChange={(e) => {
                     setFuelStartDate(e.target.value);
@@ -905,10 +858,13 @@ export function MaintenancePage(): ReactElement {
               </div>
 
               <div className="filter-group">
-                <label className="filter-label">To Date</label>
+                <label htmlFor="fuel-end-date" className="filter-label">
+                  To Date
+                </label>
                 <input
+                  id="fuel-end-date"
                   type="date"
-                  className="input-field"
+                  className="filter-input-date"
                   value={fuelEndDate}
                   onChange={(e) => {
                     setFuelEndDate(e.target.value);
@@ -916,34 +872,40 @@ export function MaintenancePage(): ReactElement {
                   }}
                 />
               </div>
-            </div>
 
-            {isFuelFiltered ? (
-              <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
-                <button
-                  type="button"
-                  className="btn-link"
-                  onClick={handleClearFuelFilters}
-                  style={{ fontSize: 13, color: '#dc2626' }}
-                >
-                  Clear all filters
-                </button>
-              </div>
-            ) : null}
+              {isFuelFiltered ? (
+                <div className="filter-group filter-action-btn-group" style={{ gridColumn: 'span 2' }}>
+                  <button
+                    type="button"
+                    className="btn-clear-filters"
+                    onClick={handleClearFuelFilters}
+                  >
+                    Clear all filters
+                  </button>
+                </div>
+              ) : null}
+            </div>
           </div>
 
-          {/* Table */}
-          <div className="card table-card">
+          {/* Table Card Panel */}
+          <div className="table-card">
+            <div className="table-card-header">
+              <h3 className="table-card-title">
+                <Fuel size={18} color="#15803d" /> Fuel & DEF Consumption Logs
+                <span className="badge-pill">{totalFuelItems} Entries</span>
+              </h3>
+            </div>
+
             {fuelLogsRes.loading && rawFuelLogs.length === 0 ? (
-              <div className="loading-state">
-                <RotateCw size={24} className="spin" />
-                <p>Loading fuel records…</p>
+              <div className="notif-empty-state" style={{ padding: 48 }}>
+                <RotateCw size={28} className="spin" color="var(--accent)" />
+                <p style={{ marginTop: 8 }}>Loading fuel records…</p>
               </div>
             ) : filteredFuelLogs.length === 0 ? (
-              <div className="empty-state">
-                <Fuel size={40} color="#94a3b8" />
-                <h3>No fuel logs found</h3>
-                <p>
+              <div className="notif-empty-state" style={{ padding: 48 }}>
+                <Fuel size={36} color="var(--muted)" />
+                <h3 style={{ margin: '8px 0 4px', color: 'var(--text)' }}>No fuel logs found</h3>
+                <p style={{ margin: 0, color: 'var(--muted)', fontSize: 13 }}>
                   {isFuelFiltered
                     ? 'Try adjusting your filters or search terms.'
                     : 'No fuel or DEF fill records recorded yet.'}
@@ -951,7 +913,7 @@ export function MaintenancePage(): ReactElement {
               </div>
             ) : (
               <div className="table-responsive">
-                <table className="data-table">
+                <table className="admin-table">
                   <thead>
                     <tr>
                       <th>Date & Time</th>
@@ -984,23 +946,21 @@ export function MaintenancePage(): ReactElement {
 
                       return (
                         <tr key={item.id}>
-                          <td style={{ whiteSpace: 'nowrap', fontSize: 13 }}>
+                          <td className="created-date-text">
                             {formatDateTime(item.createdAt)}
                           </td>
 
                           <td>
-                            <div style={{ fontWeight: 600, color: 'var(--text)' }}>
-                              {vehiclePlate}
-                            </div>
+                            <span className="vehicle-badge">{vehiclePlate}</span>
                             {vehicleInfo ? (
-                              <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                                 {vehicleInfo}
                               </div>
                             ) : null}
                           </td>
 
                           <td>
-                            <div style={{ fontWeight: 500 }}>{driverName}</div>
+                            <span className="driver-name-text">{driverName}</span>
                             <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                               ID: {empId}
                             </div>
@@ -1009,30 +969,32 @@ export function MaintenancePage(): ReactElement {
                           <td>
                             {item.type === 'FUEL' ? (
                               <span
-                                className="badge"
                                 style={{
-                                  backgroundColor: '#dcfce7',
-                                  color: '#15803d',
-                                  border: '1px solid #86efac',
-                                  fontWeight: 700,
                                   display: 'inline-flex',
                                   alignItems: 'center',
                                   gap: 4,
+                                  padding: '2px 8px',
+                                  borderRadius: 4,
+                                  backgroundColor: 'rgba(34, 197, 94, 0.15)',
+                                  color: '#15803d',
+                                  fontSize: 12,
+                                  fontWeight: 700,
                                 }}
                               >
                                 <Fuel size={13} /> Fuel
                               </span>
                             ) : (
                               <span
-                                className="badge"
                                 style={{
-                                  backgroundColor: '#e0f2fe',
-                                  color: '#0369a1',
-                                  border: '1px solid #bae6fd',
-                                  fontWeight: 700,
                                   display: 'inline-flex',
                                   alignItems: 'center',
                                   gap: 4,
+                                  padding: '2px 8px',
+                                  borderRadius: 4,
+                                  backgroundColor: 'rgba(2, 132, 199, 0.15)',
+                                  color: '#0284c7',
+                                  fontSize: 12,
+                                  fontWeight: 700,
                                 }}
                               >
                                 💧 DEF
@@ -1040,16 +1002,16 @@ export function MaintenancePage(): ReactElement {
                             )}
                           </td>
 
-                          <td style={{ fontWeight: 600 }}>
+                          <td style={{ fontWeight: 700 }}>
                             {item.quantityLtr.toFixed(2)} L
                           </td>
 
-                          <td style={{ fontWeight: 700, color: '#15803d' }}>
+                          <td style={{ fontWeight: 700, color: '#16a34a' }}>
                             ₹{item.totalPrice.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                           </td>
 
                           <td>
-                            <div style={{ fontSize: 12, color: 'var(--text)' }}>
+                            <div style={{ fontSize: 13, fontWeight: 600 }}>
                               ₹{rate.toFixed(2)}
                             </div>
                           </td>
@@ -1058,12 +1020,11 @@ export function MaintenancePage(): ReactElement {
                             {item.receiptUrl ? (
                               <button
                                 type="button"
-                                className="thumbnail-preview-btn"
                                 onClick={() =>
                                   setSelectedPhoto({
                                     url: item.receiptUrl,
                                     title: `${item.type === 'FUEL' ? 'Fuel Receipt' : 'DEF Bill'} (₹${item.totalPrice})`,
-                                    subtitle: `Vehicle: ${vehiclePlate} • Driver: ${driverName}`,
+                                    subtitle: `Vehicle: ${vehiclePlate} · Driver: ${driverName}`,
                                     date: formatDateTime(item.createdAt),
                                   })
                                 }
@@ -1094,7 +1055,7 @@ export function MaintenancePage(): ReactElement {
                                     position: 'absolute',
                                     bottom: 0,
                                     right: 0,
-                                    backgroundColor: 'rgba(0,0,0,0.6)',
+                                    backgroundColor: 'rgba(0,0,0,0.65)',
                                     color: '#fff',
                                     padding: 2,
                                     borderTopLeftRadius: 4,
@@ -1104,29 +1065,27 @@ export function MaintenancePage(): ReactElement {
                                 </div>
                               </button>
                             ) : (
-                              <span style={{ fontSize: 12, color: 'var(--muted)' }}>
-                                No Bill
-                              </span>
+                              <span className="muted">—</span>
                             )}
                           </td>
 
                           <td>
                             {item.odometerKm ? (
-                              <div style={{ fontSize: 12, color: 'var(--text)' }}>
+                              <div style={{ fontSize: 13, fontWeight: 600 }}>
                                 {item.odometerKm.toLocaleString()} KM
                               </div>
                             ) : (
-                              <span style={{ fontSize: 12, color: 'var(--muted)' }}>—</span>
+                              <span className="muted">—</span>
                             )}
                           </td>
 
                           <td>
                             {item.notes ? (
-                              <span style={{ fontSize: 12, color: 'var(--text)' }}>
+                              <span style={{ fontSize: 13, color: 'var(--text)' }}>
                                 {item.notes}
                               </span>
                             ) : (
-                              <span style={{ fontSize: 12, color: 'var(--muted)' }}>—</span>
+                              <span className="muted">—</span>
                             )}
                           </td>
                         </tr>
@@ -1137,8 +1096,8 @@ export function MaintenancePage(): ReactElement {
               </div>
             )}
 
-            {/* Pagination */}
-            <div className="table-footer" style={{ padding: '12px 16px' }}>
+            {/* Pagination Footer */}
+            <div className="table-footer-pagination">
               <Pagination
                 meta={{
                   page: fuelPage,
@@ -1158,46 +1117,41 @@ export function MaintenancePage(): ReactElement {
         </>
       )}
 
-      {/* Lightbox / Proof Photo & Receipt Modal */}
+      {/* Universal Photo / Receipt Lightbox Modal */}
       {selectedPhoto ? (
         <div
-          className="modal-overlay"
-          onClick={() => setSelectedPhoto(null)}
+          className="sidebar-backdrop"
           style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.8)',
-            zIndex: 9999,
             display: 'flex',
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.85)',
+            zIndex: 1000,
             alignItems: 'center',
             justifyContent: 'center',
             padding: 20,
           }}
+          onClick={() => setSelectedPhoto(null)}
         >
           <div
-            className="modal-container"
-            onClick={(e) => e.stopPropagation()}
+            className="filter-card"
             style={{
-              backgroundColor: 'var(--surface)',
-              borderRadius: 12,
               maxWidth: 720,
               width: '100%',
+              padding: 0,
               overflow: 'hidden',
-              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)',
-              border: '1px solid var(--border)',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
             }}
+            onClick={(e) => e.stopPropagation()}
           >
             <div
-              className="modal-header"
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 padding: '16px 20px',
                 borderBottom: '1px solid var(--border)',
+                background: 'var(--surface)',
               }}
             >
               <div>
@@ -1205,20 +1159,18 @@ export function MaintenancePage(): ReactElement {
                   {selectedPhoto.title}
                 </h3>
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
-                  {selectedPhoto.subtitle} • {selectedPhoto.date}
+                  {selectedPhoto.subtitle} · {selectedPhoto.date}
                 </div>
               </div>
               <button
                 type="button"
-                className="btn-icon"
                 onClick={() => setSelectedPhoto(null)}
                 style={{
                   background: 'none',
                   border: 'none',
                   cursor: 'pointer',
-                  padding: 4,
-                  borderRadius: 4,
                   color: 'var(--muted)',
+                  padding: 4,
                 }}
               >
                 <X size={20} />
@@ -1226,12 +1178,11 @@ export function MaintenancePage(): ReactElement {
             </div>
 
             <div
-              className="modal-body"
               style={{
                 padding: 20,
                 textAlign: 'center',
                 backgroundColor: '#090d16',
-                maxHeight: '70vh',
+                maxHeight: '65vh',
                 overflowY: 'auto',
               }}
             >
@@ -1240,7 +1191,7 @@ export function MaintenancePage(): ReactElement {
                 alt="Document Preview"
                 style={{
                   maxWidth: '100%',
-                  maxHeight: '60vh',
+                  maxHeight: '55vh',
                   borderRadius: 8,
                   objectFit: 'contain',
                 }}
@@ -1248,14 +1199,13 @@ export function MaintenancePage(): ReactElement {
             </div>
 
             <div
-              className="modal-footer"
               style={{
                 padding: '12px 20px',
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
                 borderTop: '1px solid var(--border)',
-                backgroundColor: 'var(--surface-muted)',
+                background: 'var(--surface)',
               }}
             >
               <a
@@ -1265,7 +1215,7 @@ export function MaintenancePage(): ReactElement {
                 className="btn-secondary"
                 style={{ fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 6 }}
               >
-                <ExternalLink size={14} /> Open Full Size
+                <ExternalLink size={14} /> Open Full Resolution
               </a>
               <button
                 type="button"
