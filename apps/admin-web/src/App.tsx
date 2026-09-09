@@ -10,6 +10,7 @@ import { ComplaintDetailPage } from './pages/ComplaintDetailPage';
 import { LoadingTrackerPage } from './pages/LoadingTrackerPage';
 import { TripDetailsPage } from './pages/TripDetailsPage';
 import { MaintenancePage } from './pages/MaintenancePage';
+import { ReportsPage } from './pages/ReportsPage';
 import { UsersPage } from './pages/UsersPage';
 
 import { ThemeProvider } from './context/ThemeContext';
@@ -46,6 +47,7 @@ export function App(): ReactElement {
         <Route path="/trips" element={<TripDetailsPage />} />
         <Route path="/fuel-logs" element={<Navigate to="/maintenance?tab=fuel" replace />} />
         <Route path="/maintenance" element={<MaintenancePage />} />
+        <Route path="/reports" element={<ReportsPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
       </Routes>

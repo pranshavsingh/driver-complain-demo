@@ -24,6 +24,10 @@ import {
   type LoadingRecord,
   DriverMonthlyTripSummarySchema,
   type DriverMonthlyTripSummary,
+  VehicleFullReportResponseSchema,
+  type VehicleFullReportResponse,
+  FleetVehicleSummaryItemSchema,
+  type FleetVehicleSummaryItem,
 } from '@driver-complaint/shared-types';
 import { download, request, requestNoContent, type QueryValue } from './client';
 import { clearTokens, getRefreshToken } from './tokens';
@@ -245,6 +249,34 @@ export const maintenance = {
       '/maintenance/export-csv',
       { query: query as Record<string, QueryValue> },
       `vehicle-maintenance-logs-${Date.now()}.csv`,
+    ),
+};
+
+export interface VehicleReportParams {
+  vehicleId?: string;
+  dateFrom?: string;
+  dateTo?: string;
+}
+
+export const reports = {
+  listFleet: (): Promise<FleetVehicleSummaryItem[]> =>
+    request(
+      z.array(FleetVehicleSummaryItemSchema),
+      '/reports/fleet',
+    ),
+
+  getVehicleReport: (query?: VehicleReportParams): Promise<VehicleFullReportResponse> =>
+    request(
+      VehicleFullReportResponseSchema,
+      '/reports/vehicle',
+      { query: query as Record<string, QueryValue> },
+    ),
+
+  exportVehicleReportXlsx: (query?: VehicleReportParams, filename?: string): Promise<void> =>
+    download(
+      '/reports/vehicle/export',
+      { query: query as Record<string, QueryValue> },
+      filename || `vehicle-report-${Date.now()}.xlsx`,
     ),
 };
 

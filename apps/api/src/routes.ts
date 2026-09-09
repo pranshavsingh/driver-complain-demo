@@ -9,6 +9,7 @@ import { loadingRouter } from './modules/loading/loading.router';
 import { uploadsRouter } from './modules/uploads/uploads.router';
 import { fuelRouter } from './modules/fuel/fuel.router';
 import { maintenanceRouter } from './modules/maintenance/maintenance.router';
+import { reportsRouter } from './modules/reports/reports.router';
 
 /** All v1 routes, mounted by app.ts under /api/v1. */
 export const apiRouter = Router();
@@ -23,6 +24,7 @@ apiRouter.use('/loading', loadingRouter);
 apiRouter.use('/uploads', uploadsRouter);
 apiRouter.use('/fuel', fuelRouter);
 apiRouter.use('/maintenance', maintenanceRouter);
+apiRouter.use('/reports', reportsRouter);
 
 
 

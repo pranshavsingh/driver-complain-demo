@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, type ReactElement } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { Truck, LayoutDashboard, Users, ClipboardList, LogOut, Bell, Menu, X, Trash2, CheckCircle2, Wrench } from './Icons';
+import { Truck, LayoutDashboard, Users, ClipboardList, LogOut, Bell, Menu, X, Trash2, CheckCircle2, Wrench, FileSpreadsheet } from './Icons';
 
 
 import { isSuperAdmin, useAuth } from '../auth/AuthContext';
@@ -50,6 +50,7 @@ function getPageTitle(pathname: string): string {
   if (pathname.startsWith('/trips')) return 'Trip Analytics & Logs';
   if (pathname.startsWith('/maintenance') || pathname.startsWith('/fuel-logs'))
     return 'Vehicle Maintenance & Servicing';
+  if (pathname.startsWith('/reports')) return 'Vehicle Reports & Analytics';
   return 'Fleet Administration';
 }
 
@@ -175,6 +176,14 @@ export function Layout(): ReactElement {
           >
             <Wrench size={18} className="nav-icon" />
             <span className="nav-label">Vehicle Maintenance</span>
+          </NavLink>
+
+          <NavLink
+            to="/reports"
+            className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
+          >
+            <FileSpreadsheet size={18} className="nav-icon" />
+            <span className="nav-label">Vehicle Reports</span>
           </NavLink>
         </nav>
 
