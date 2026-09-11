@@ -1,5 +1,13 @@
 import { z } from 'zod';
-import { AttachmentKindSchema, AssignmentStatusSchema, ComplaintCategorySchema, ComplaintStatusSchema, PrioritySchema } from './enums';
+import {
+  AttachmentKindSchema,
+  AssignmentStatusSchema,
+  ComplaintCategorySchema,
+  ComplaintStatusSchema,
+  PrioritySchema,
+  TripPhaseSchema,
+  LoadingStatusSchema,
+} from './enums';
 import { PaginationQuerySchema, PaginationMetaSchema } from './common';
 import { VehiclePublicSchema } from './vehicle';
 
@@ -10,6 +18,7 @@ export const CreateComplaintSchema = z.object({
   vehicleNumber: z.string().optional(),
   priority: PrioritySchema.optional(),
   category: ComplaintCategorySchema.optional(),
+  tripPhase: TripPhaseSchema.optional(),
 });
 export type CreateComplaint = z.infer<typeof CreateComplaintSchema>;
 
@@ -33,14 +42,26 @@ export const ComplaintPublicSchema = z.object({
   id: z.string(),
   complaintNo: z.string(),
   driverId: z.string(),
+  driverName: z.string().nullable().optional(),
+  driverPhone: z.string().nullable().optional(),
+  driverEmployeeId: z.string().nullable().optional(),
   vehicleId: z.string().nullable().optional(),
+  vehiclePlateNumber: z.string().nullable().optional(),
+  vehicleModel: z.string().nullable().optional(),
   title: z.string(),
   description: z.string(),
   transcription: z.string().nullable().optional(),
   category: ComplaintCategorySchema.optional(),
   status: ComplaintStatusSchema,
   priority: PrioritySchema,
+  tripPhase: TripPhaseSchema.nullable().optional(),
+  loadingStatus: LoadingStatusSchema.nullable().optional(),
+  loadingRecordId: z.string().nullable().optional(),
+  tripLocationName: z.string().nullable().optional(),
+  needsAction: z.boolean().optional(),
+  updatesCount: z.number().int().optional(),
   assignedToId: z.string().nullable().optional(),
+  assignedToName: z.string().nullable().optional(),
   pendingAssigneeId: z.string().nullable().optional(),
   assignmentStatus: AssignmentStatusSchema.optional(),
   resolvedAt: z.string().nullable().optional(),
@@ -60,6 +81,8 @@ export const ComplaintFilterSchema = z.object({
   driverId: z.string().optional(),
   vehicleId: z.string().optional(),
   assignedToId: z.string().optional(),
+  tripPhase: TripPhaseSchema.optional(),
+  needsAction: z.boolean().optional(),
   /** Inclusive lower/upper bounds on createdAt; accepts any parseable date string. */
   createdFrom: z.coerce.date().optional(),
   createdTo: z.coerce.date().optional(),

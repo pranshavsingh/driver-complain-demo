@@ -35,6 +35,8 @@ export const NotificationTypeSchema = z.enum([
   'ASSIGNMENT_REQUESTED',
   'ASSIGNMENT_ACCEPTED',
   'ASSIGNMENT_REJECTED',
+  'VEHICLE_ASSIGNED',
+  'VEHICLE_UNASSIGNED',
 ]);
 export type NotificationType = z.infer<typeof NotificationTypeSchema>;
 export const NOTIFICATION_TYPES = NotificationTypeSchema.options;
@@ -90,6 +92,11 @@ export const MaintenanceTypeSchema = z.enum(['TYRE', 'BATTERY']);
 export type MaintenanceType = z.infer<typeof MaintenanceTypeSchema>;
 export const MAINTENANCE_TYPES = MaintenanceTypeSchema.options;
 
-
-
-
+export const TripPhaseSchema = z.enum([
+  'AT_LOADING_PLANT',
+  'IN_TRANSIT',
+  'AT_UNLOADING_POINT',
+  'YARD_IDLE',
+]);
+export type TripPhase = z.infer<typeof TripPhaseSchema>;
+export const TRIP_PHASES = TripPhaseSchema.options;

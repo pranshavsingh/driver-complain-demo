@@ -1,33 +1,40 @@
+import Constants from 'expo-constants';
+import { Platform } from 'react-native';
 import { z } from 'zod';
 
-/**
- * Client configuration.
- *
- * Every EXPO_PUBLIC_ variable is inlined into the JavaScript bundle at build time and is
- * therefore PUBLIC — readable by anyone who unzips the APK. Nothing secret belongs here;
- * see .env.example.
- *
- * Validated at module load so a misconfigured build fails on the first screen with a clear
- * message, instead of firing requests at `undefined/api/v1` and showing a driver a spinner
- * that never ends.
- */
 const EnvSchema = z.object({
-  EXPO_PUBLIC_API_URL: z.string().url().default('http://localhost:4000'),
+  EXPO_PUBLIC_API_URL: z.string().optional(),
 });
 
-// Read as a literal member expression: Metro only substitutes `process.env.EXPO_PUBLIC_X`
-// when it appears exactly like this. Handing the whole `process.env` object to zod would
-// parse an empty object in a release build.
 const parsed = EnvSchema.safeParse({
   EXPO_PUBLIC_API_URL: process.env.EXPO_PUBLIC_API_URL,
 });
 
-if (!parsed.success) {
-  throw new Error(`Invalid mobile environment:\n${JSON.stringify(parsed.error.issues, null, 2)}`);
+function resolveApiUrl(): string {
+  const envUrl = parsed.success ? parsed.data.EXPO_PUBLIC_API_URL?.trim() : undefined;
+  if (envUrl && envUrl.length > 0) {
+    return envUrl.replace(/\/+$/, '');
+  }
+
+  // Fallback for Expo development on device / emulator
+  if (__DEV__) {
+    const hostUri = Constants.expoConfig?.hostUri ?? (Constants as any).manifest2?.extra?.expoGo?.debuggerHost;
+    if (hostUri) {
+      const host = hostUri.split(':')[0];
+      if (host) return `http://${host}:4000`;
+    }
+
+    if (Platform.OS === 'android') {
+      return 'http://10.0.2.2:4000';
+    }
+  }
+
+  return 'http://localhost:4000';
 }
 
 /** API origin, trailing slashes stripped so string concatenation is always well-formed. */
-export const apiUrl = parsed.data.EXPO_PUBLIC_API_URL.replace(/\/+$/, '');
+export const apiUrl = resolveApiUrl();
 
-/** Versioned REST base, e.g. http://192.168.1.20:4000/api/v1 */
+/** Versioned REST base, e.g. http://192.168.1.27:4000/api/v1 */
 export const apiBase = `${apiUrl}/api/v1`;
+

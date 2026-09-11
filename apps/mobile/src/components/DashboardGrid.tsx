@@ -77,17 +77,6 @@ export const DASHBOARD_TILES: GridTile[] = [
     iconBgColor: '#FFFFFF',
   },
   {
-    id: 'VEHICLE_MAINTENANCE',
-    title: 'Vehicle Maintenance',
-    subtitle: 'Fuel, Tyre & Battery',
-    icon: 'construct',
-    bgColor: '#EFF6FF', // Crisp Soft Blue
-    borderColor: '#93C5FD',
-    textColor: '#1E40AF',
-    iconBgColor: '#FFFFFF',
-    badge: 'NEW',
-  },
-  {
     id: 'SUPPORT',
     title: 'Support',
     subtitle: 'Help Helpline',

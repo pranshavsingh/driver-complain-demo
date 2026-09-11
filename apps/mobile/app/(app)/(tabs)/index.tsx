@@ -1,26 +1,45 @@
-import { useMemo, useState, type ReactElement } from 'react';
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { router } from 'expo-router';
+import { useCallback, useMemo, useRef, useState, type ReactElement } from 'react';
+import {
+  Alert,
+  Modal,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { router, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { VehiclePublic } from '@driver-complaint/shared-types';
 import * as api from '../../../src/api/endpoints';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { useApiResource } from '../../../src/hooks/useApiResource';
-import { describeVehicle } from '../../../src/lib/format';
 import { radius, spacing } from '../../../src/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { DashboardGrid, type GridTile } from '../../../src/components/DashboardGrid';
 import { LoadingAssistantCard } from '../../../src/components/LoadingAssistantCard';
-import { VehicleMaintenanceModal, type MaintenanceTab } from '../../../src/components/VehicleMaintenanceModal';
 
 export default function DriverHomeDashboardScreen(): ReactElement {
   const insets = useSafeAreaInsets();
   const { user, logout } = useAuth();
   const [showLoadingAssistant, setShowLoadingAssistant] = useState(false);
-  const [showMaintenanceModal, setShowMaintenanceModal] = useState(false);
-  const [maintenanceInitialTab, setMaintenanceInitialTab] = useState<MaintenanceTab>('FUEL');
 
   const vehicles = useApiResource('vehicles:mine', () => api.vehicles.mine());
+  const reloadVehicles = vehicles.reload;
+
+  // Auto reload on focus so when admin assigns a vehicle, it shows up immediately
+  const firstFocus = useRef(true);
+  useFocusEffect(
+    useCallback(() => {
+      if (firstFocus.current) {
+        firstFocus.current = false;
+        return;
+      }
+      reloadVehicles();
+    }, [reloadVehicles]),
+  );
+
   const vehicleList = useMemo<VehiclePublic[]>(() => vehicles.data ?? [], [vehicles.data]);
   const activeVehicle = vehicleList[0];
 
@@ -54,14 +73,7 @@ export default function DriverHomeDashboardScreen(): ReactElement {
       return;
     }
 
-    // 3. Vehicle Maintenance -> Opens Vehicle Maintenance Modal (Fuel, Tyre, Battery logs)
-    if (tile.id === 'VEHICLE_MAINTENANCE') {
-      setMaintenanceInitialTab('FUEL');
-      setShowMaintenanceModal(true);
-      return;
-    }
-
-    // 4. All Service Issue Boxes (Fuel / DEF, Breakdown, Tyre issue, Accounts, Support) -> Navigate to Complaint Registration Chat UI
+    // 3. All Service Issue Boxes (Fuel / DEF, Breakdown, Tyre issue, Accounts, Support) -> Navigate to Complaint Registration Chat UI
     let initialPriority = 'MEDIUM';
     if (tile.id === 'BREAKDOWN') initialPriority = 'HIGH';
     if (tile.id === 'ACCOUNTS') initialPriority = 'LOW';
@@ -82,12 +94,12 @@ export default function DriverHomeDashboardScreen(): ReactElement {
       <View style={[styles.header, { paddingTop: insets.top + spacing.xs }]}>
         <View style={styles.headerProfile}>
           <View style={styles.avatarCircle}>
-            <Ionicons name="bus-outline" size={22} color="#FFFFFF" />
+            <Ionicons name="person" size={20} color="#FFFFFF" />
           </View>
           <View>
             <Text style={styles.headerTitle}>{driverDisplayName}</Text>
             <Text style={styles.headerSubtitle}>
-              {activeVehicle ? describeVehicle(activeVehicle) : 'Fleet Driver'}
+              {activeVehicle ? `🚛 ${activeVehicle.plateNumber}` : 'Standby / Free Driver'}
             </Text>
           </View>
         </View>
@@ -97,17 +109,71 @@ export default function DriverHomeDashboardScreen(): ReactElement {
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={vehicles.loading && vehicles.data !== null}
+            onRefresh={() => vehicles.reload()}
+            tintColor="#075E54"
+          />
+        }
+      >
+        {/* Prominent Vehicle Assignment Status Card */}
+        {activeVehicle ? (
+          <View style={styles.assignedVehicleCard}>
+            <View style={styles.assignedVehicleHeader}>
+              <View style={styles.plateBadge}>
+                <Ionicons name="bus" size={18} color="#075E54" />
+                <Text style={styles.plateText}>{activeVehicle.plateNumber}</Text>
+              </View>
+              <View style={styles.assignedStatusBadge}>
+                <Text style={styles.assignedStatusBadgeText}>Active Vehicle</Text>
+              </View>
+            </View>
+
+            <View style={styles.assignedDetailsRow}>
+              <Text style={styles.assignedModelText}>
+                {activeVehicle.model || 'Fleet Unit'} {activeVehicle.make ? `(${activeVehicle.make})` : ''}
+              </Text>
+              {activeVehicle.wheels && (
+                <View style={styles.wheelTag}>
+                  <Text style={styles.wheelTagText}>{activeVehicle.wheels}</Text>
+                </View>
+              )}
+            </View>
+          </View>
+        ) : (
+          <View style={styles.unassignedCard}>
+            <View style={styles.unassignedIconWrap}>
+              <Ionicons name="alert-circle" size={24} color="#D97706" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.unassignedTitle}>No Vehicle Assigned</Text>
+              <Text style={styles.unassignedSub}>
+                You are currently free/on standby. Your supervisor will assign a vehicle soon.
+              </Text>
+            </View>
+            <Pressable
+              onPress={() => vehicles.reload()}
+              style={styles.refreshBtn}
+              accessibilityLabel="Refresh assigned vehicle"
+            >
+              <Ionicons name="refresh" size={18} color="#D97706" />
+            </Pressable>
+          </View>
+        )}
+
         {/* Banner Welcome */}
         <View style={styles.welcomeBanner}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.welcomeTitle}>Driver Support Portal 🚛</Text>
-            <Text style={styles.welcomeSub}>Tap any service box below to register an issue for that department.</Text>
+            <Text style={styles.welcomeTitle}>Driver Service Portal 🚛</Text>
+            <Text style={styles.welcomeSub}>Tap any department below to raise an instant complaint or request.</Text>
           </View>
-          <Ionicons name="shield-checkmark" size={32} color="#075E54" />
+          <Ionicons name="shield-checkmark" size={28} color="#075E54" />
         </View>
 
-        {/* 9 Grid Action Boxes (matching wireframe design) */}
+        {/* 7 Grid Action Boxes (matching diagram design) */}
         <DashboardGrid onTilePress={handleTilePress} />
       </ScrollView>
 
@@ -133,20 +199,9 @@ export default function DriverHomeDashboardScreen(): ReactElement {
           </ScrollView>
         </View>
       </Modal>
-
-      {/* Vehicle Maintenance (Fuel/DEF, Tyre, Battery) Modal */}
-      <VehicleMaintenanceModal
-        visible={showMaintenanceModal}
-        onClose={() => setShowMaintenanceModal(false)}
-        vehicles={vehicleList}
-        initialTab={maintenanceInitialTab}
-      />
     </View>
   );
 }
-
-
-
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#F8FAFC' },
@@ -165,9 +220,9 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   avatarCircle: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: '#128C7E',
     alignItems: 'center',
     justifyContent: 'center',
@@ -180,6 +235,7 @@ const styles = StyleSheet.create({
   headerSubtitle: {
     fontSize: 12,
     color: '#E0F2FE',
+    fontWeight: '600',
   },
   logoutBtn: {
     padding: spacing.xs,
@@ -187,8 +243,118 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingBottom: spacing.xl,
   },
+  assignedVehicleCard: {
+    marginHorizontal: spacing.md,
+    marginTop: spacing.md,
+    backgroundColor: '#FFFFFF',
+    borderRadius: radius.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+  },
+  assignedVehicleHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  plateBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#E0F2FE',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+  },
+  plateText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#075E54',
+    letterSpacing: 0.5,
+  },
+  assignedStatusBadge: {
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+  },
+  assignedStatusBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#15803D',
+  },
+  assignedDetailsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: spacing.xs + 2,
+  },
+  assignedModelText: {
+    fontSize: 13,
+    color: '#475569',
+    fontWeight: '600',
+  },
+  wheelTag: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  wheelTagText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0284C7',
+  },
+  unassignedCard: {
+    marginHorizontal: spacing.md,
+    marginTop: spacing.md,
+    backgroundColor: '#FFFBEB',
+    borderRadius: radius.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  unassignedIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FEF3C7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  unassignedTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#92400E',
+  },
+  unassignedSub: {
+    fontSize: 11,
+    color: '#B45309',
+    marginTop: 2,
+  },
+  refreshBtn: {
+    padding: 6,
+    backgroundColor: '#FEF3C7',
+    borderRadius: radius.pill,
+  },
   welcomeBanner: {
-    margin: spacing.md,
+    marginHorizontal: spacing.md,
+    marginTop: spacing.sm,
+    marginBottom: spacing.xs,
     backgroundColor: '#FFFFFF',
     padding: spacing.md,
     borderRadius: radius.md,
@@ -239,3 +405,4 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
 });
+

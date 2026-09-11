@@ -36,7 +36,8 @@ import { useVoiceRecorder, type VoiceNote } from '../../../src/media/recorder';
 import { captureVideo, videoCaptureAvailable } from '../../../src/media/video';
 import { radius, spacing } from '../../../src/theme';
 import { Ionicons } from '@expo/vector-icons';
-
+import { TakeFuelModal } from '../../../src/components/TakeFuelModal';
+import { VehicleMaintenanceModal } from '../../../src/components/VehicleMaintenanceModal';
 
 export default function WhatsAppRegisterComplaintScreen(): ReactElement {
   const insets = useSafeAreaInsets();
@@ -62,6 +63,8 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
   const [submitting, setSubmitting] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<string | null>(null);
   const [showVehicleDropdown, setShowVehicleDropdown] = useState(false);
+  const [showFuelModal, setShowFuelModal] = useState(false);
+  const [showMaintenanceModal, setShowMaintenanceModal] = useState(false);
 
 
 
@@ -315,7 +318,7 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
           ) : null}
         </View>
 
-        {/* Selected Category Badge */}
+        {/* Selected Category Badge and Fuel/Def Action Button */}
         <View style={styles.categoryBadgeRow}>
           <View style={styles.selectedCardBadge}>
             <Ionicons name="pricetag" size={14} color="#075E54" />
@@ -323,6 +326,32 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
               Category: <Text style={styles.cardNameHighlight}>{cardName}</Text>
             </Text>
           </View>
+
+          {category === 'FUEL_DEF' ||
+          cardName.toLowerCase().includes('fuel') ||
+          cardName.toLowerCase().includes('def') ? (
+            <Pressable
+              style={styles.fuelDefQuickBtn}
+              onPress={() => setShowFuelModal(true)}
+              accessibilityLabel="Open Fuel and DEF Log Form"
+            >
+              <Ionicons name="water" size={14} color="#FFFFFF" />
+              <Text style={styles.fuelDefQuickBtnText}>Fuel/Def</Text>
+            </Pressable>
+          ) : null}
+
+          {category === 'TYRE_ISSUE' ||
+          cardName.toLowerCase().includes('tyre') ||
+          cardName.toLowerCase().includes('battery') ? (
+            <Pressable
+              style={styles.tyreBatteryQuickBtn}
+              onPress={() => setShowMaintenanceModal(true)}
+              accessibilityLabel="Open Tyre and Battery Replacement Form"
+            >
+              <Ionicons name="disc" size={14} color="#FFFFFF" />
+              <Text style={styles.tyreBatteryQuickBtnText}>Tyre/Battery</Text>
+            </Pressable>
+          ) : null}
         </View>
       </View>
 
@@ -514,6 +543,20 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
           </View>
         ) : null}
       </KeyboardAvoidingView>
+
+      {/* Fuel & DEF Logging Modal */}
+      <TakeFuelModal
+        visible={showFuelModal}
+        onClose={() => setShowFuelModal(false)}
+        vehicles={vehicleList}
+      />
+
+      {/* Tyre & Battery Replacement Modal */}
+      <VehicleMaintenanceModal
+        visible={showMaintenanceModal}
+        onClose={() => setShowMaintenanceModal(false)}
+        vehicles={vehicleList}
+      />
     </View>
   );
 }
@@ -647,6 +690,44 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: '#0369A1',
+  },
+  fuelDefQuickBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#0284C7',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+  },
+  fuelDefQuickBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  tyreBatteryQuickBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#D97706',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+  },
+  tyreBatteryQuickBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
   },
 
   cardNameHighlight: {

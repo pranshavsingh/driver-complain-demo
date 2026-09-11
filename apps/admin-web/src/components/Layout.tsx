@@ -43,7 +43,7 @@ const INITIAL_NOTIFICATIONS: NotificationItem[] = [
 
 function getPageTitle(pathname: string): string {
   if (pathname.startsWith('/dashboard')) return 'Executive Dashboard';
-  if (pathname.startsWith('/drivers')) return 'Drivers Directory';
+  if (pathname.startsWith('/vehicles')) return 'Vehicle Directory & Entry';
   if (pathname.startsWith('/users')) return 'Users & Approvals';
   if (pathname.startsWith('/complaints')) return 'Complaints Management';
   if (pathname.startsWith('/loading')) return 'Loading & Detention Analytics';
@@ -125,11 +125,11 @@ export function Layout(): ReactElement {
           </NavLink>
 
           <NavLink
-            to="/drivers"
+            to="/vehicles"
             className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
           >
-            <Users size={18} className="nav-icon" />
-            <span className="nav-label">Drivers Directory</span>
+            <Truck size={18} className="nav-icon" />
+            <span className="nav-label">Vehicle Entry</span>
           </NavLink>
 
           {isSuperAdmin(user) ? (

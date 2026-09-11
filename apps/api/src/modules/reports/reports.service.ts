@@ -92,9 +92,13 @@ export async function getVehicleReport(query: VehicleReportQuery): Promise<Vehic
   const hasDateFilter = Boolean(dateFilter.gte || dateFilter.lte);
 
   // 2. Fetch Loading / Trip records for the vehicle's driver
-  const loadingWhere: Record<string, unknown> = {
-    driverId: driver.id,
-  };
+  const loadingWhere: Record<string, unknown> = {};
+  if (driver?.id) {
+    loadingWhere.driverId = driver.id;
+  } else {
+    // No driver assigned - no driver specific loading records
+    loadingWhere.id = '00000000-0000-0000-0000-000000000000';
+  }
   if (hasDateFilter) {
     loadingWhere.reachedAt = dateFilter;
   }
@@ -105,11 +109,12 @@ export async function getVehicleReport(query: VehicleReportQuery): Promise<Vehic
   });
 
   // 3. Fetch Complaints for the vehicle or driver
+  const orConditions: Array<{ vehicleId?: string; driverId?: string }> = [{ vehicleId: vehicle.id }];
+  if (driver?.id) {
+    orConditions.push({ driverId: driver.id });
+  }
   const complaintWhere: Record<string, unknown> = {
-    OR: [
-      { vehicleId: vehicle.id },
-      { driverId: driver.id },
-    ],
+    OR: orConditions,
   };
   if (hasDateFilter) {
     complaintWhere.createdAt = dateFilter;

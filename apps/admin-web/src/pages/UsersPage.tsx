@@ -1,7 +1,18 @@
 import { useState, type ReactElement } from 'react';
 import type { UserPublic, Role, ComplaintCategory } from '@driver-complaint/shared-types';
 import { COMPLAINT_CATEGORIES } from '@driver-complaint/shared-types';
-import { Users, RotateCw, Search, X, Check, ShieldAlert, Plus, Edit2, UserCheck, UserX } from '../components/Icons';
+import {
+  Users,
+  RotateCw,
+  Search,
+  X,
+  ShieldAlert,
+  Plus,
+  Edit2,
+  UserCheck,
+  UserX,
+  CheckCircle2,
+} from '../components/Icons';
 import * as api from '../api/endpoints';
 import { useAuth } from '../auth/AuthContext';
 import { ErrorBanner } from '../components/ErrorBanner';
@@ -73,7 +84,7 @@ export function UsersPage(): ReactElement {
     try {
       setSubmitting(true);
       await api.users.create({
-        employeeId: employeeId.trim(),
+        employeeId: employeeId.trim().toUpperCase(),
         pin: pin.trim(),
         role: selectedRole,
         firstName: firstName.trim(),
@@ -157,13 +168,81 @@ export function UsersPage(): ReactElement {
   const getRoleBadge = (role: Role) => {
     switch (role) {
       case 'SUPER_ADMIN':
-        return <span className="status-badge" style={{ backgroundColor: '#f3e8ff', color: '#6b21a8' }}>Super Admin</span>;
+        return (
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              padding: '3px 10px',
+              borderRadius: 16,
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: '0.04em',
+              background: 'rgba(168, 85, 247, 0.15)',
+              color: '#c084fc',
+              border: '1px solid rgba(168, 85, 247, 0.35)',
+            }}
+          >
+            SUPER ADMIN
+          </span>
+        );
       case 'ADMIN':
-        return <span className="status-badge" style={{ backgroundColor: '#dbeafe', color: '#1e40af' }}>Department Admin</span>;
+        return (
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              padding: '3px 10px',
+              borderRadius: 16,
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: '0.04em',
+              background: 'rgba(59, 130, 246, 0.15)',
+              color: '#60a5fa',
+              border: '1px solid rgba(59, 130, 246, 0.35)',
+            }}
+          >
+            DEPARTMENT ADMIN
+          </span>
+        );
       case 'EXECUTIVE':
-        return <span className="status-badge" style={{ backgroundColor: '#ffedd5', color: '#c2410c' }}>Executive</span>;
+        return (
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              padding: '3px 10px',
+              borderRadius: 16,
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: '0.04em',
+              background: 'rgba(249, 115, 22, 0.15)',
+              color: '#fb923c',
+              border: '1px solid rgba(249, 115, 22, 0.35)',
+            }}
+          >
+            EXECUTIVE
+          </span>
+        );
       case 'DRIVER':
-        return <span className="status-badge" style={{ backgroundColor: '#dcfce7', color: '#166534' }}>Driver</span>;
+        return (
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              padding: '3px 10px',
+              borderRadius: 16,
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: '0.04em',
+              background: 'rgba(16, 185, 129, 0.15)',
+              color: '#34d399',
+              border: '1px solid rgba(16, 185, 129, 0.35)',
+            }}
+          >
+            DRIVER
+          </span>
+        );
     }
   };
 
@@ -173,7 +252,7 @@ export function UsersPage(): ReactElement {
       <div className="page-header">
         <div>
           <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Users size={24} color="#075E54" /> User Accounts & Approvals
+            <Users size={26} color="var(--accent)" /> User Accounts & Approvals
           </h1>
           <p className="page-subtitle">
             Manage system roles, pending approvals, and category-assigned Admins
@@ -191,42 +270,93 @@ export function UsersPage(): ReactElement {
             {usersResource.loading ? 'Refreshing…' : 'Refresh List'}
           </button>
 
-          <button type="button" className="btn-primary" onClick={handleOpenCreate}>
-            <Plus size={16} style={{ marginRight: 6 }} /> Create User ID
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={handleOpenCreate}
+            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+          >
+            <Plus size={16} /> Create User ID
           </button>
         </div>
       </div>
 
       <ErrorBanner error={usersResource.error} />
 
-      {/* Navigation Tabs */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+      {/* Modern Navigation Tabs */}
+      <div
+        style={{
+          display: 'inline-flex',
+          padding: 4,
+          background: 'var(--surface)',
+          border: '1px solid var(--border)',
+          borderRadius: 10,
+          marginBottom: 16,
+          gap: 6,
+        }}
+      >
         <button
           type="button"
-          className={`btn-${activeTab === 'directory' ? 'primary' : 'secondary'}`}
           onClick={() => setActiveTab('directory')}
+          style={{
+            padding: '8px 16px',
+            borderRadius: 8,
+            border: 'none',
+            fontSize: 13,
+            fontWeight: activeTab === 'directory' ? 700 : 500,
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
+            background: activeTab === 'directory' ? 'var(--accent)' : 'transparent',
+            color: activeTab === 'directory' ? '#ffffff' : 'var(--muted)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+          }}
         >
-          All Users Directory ({usersList.length})
+          <span>All Users Directory</span>
+          <span
+            style={{
+              padding: '1px 7px',
+              borderRadius: 10,
+              fontSize: 11,
+              fontWeight: 800,
+              background: activeTab === 'directory' ? 'rgba(255, 255, 255, 0.25)' : 'var(--bg)',
+              color: activeTab === 'directory' ? '#ffffff' : 'var(--muted)',
+            }}
+          >
+            {usersList.length}
+          </span>
         </button>
 
         {isSuperAdmin && (
           <button
             type="button"
-            className={`btn-${activeTab === 'pending' ? 'primary' : 'secondary'}`}
             onClick={() => setActiveTab('pending')}
-            style={{ position: 'relative' }}
+            style={{
+              padding: '8px 16px',
+              borderRadius: 8,
+              border: 'none',
+              fontSize: 13,
+              fontWeight: activeTab === 'pending' ? 700 : 500,
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+              background: activeTab === 'pending' ? 'var(--accent)' : 'transparent',
+              color: activeTab === 'pending' ? '#ffffff' : 'var(--muted)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+            }}
           >
-            Pending SuperAdmin Approvals
+            <span>Pending Approvals</span>
             {pendingUsers.length > 0 && (
               <span
                 style={{
-                  marginLeft: 8,
-                  backgroundColor: '#ef4444',
-                  color: '#fff',
-                  padding: '2px 8px',
-                  borderRadius: 12,
-                  fontSize: 12,
-                  fontWeight: 'bold',
+                  padding: '1px 7px',
+                  borderRadius: 10,
+                  fontSize: 11,
+                  fontWeight: 800,
+                  background: 'var(--danger-border)',
+                  color: '#ffffff',
                 }}
               >
                 {pendingUsers.length}
@@ -238,19 +368,83 @@ export function UsersPage(): ReactElement {
 
       {/* Users Table Card */}
       <div className="table-card">
-        <div className="table-card-header" style={{ flexWrap: 'wrap', gap: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <h2 className="table-card-title">
-              {activeTab === 'directory' ? 'User Directory' : 'Pending SuperAdmin Approvals'}{' '}
+        {/* Responsive Filter & Action Toolbar */}
+        <div
+          style={{
+            padding: '16px 20px',
+            borderBottom: '1px solid var(--border)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 12,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <h2 className="table-card-title" style={{ margin: 0 }}>
+              {activeTab === 'directory' ? 'User Directory' : 'Pending Approvals'}{' '}
               <span className="badge-pill">{filteredUsers.length}</span>
             </h2>
+          </div>
 
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              flexWrap: 'wrap',
+              flex: '1 1 auto',
+              justifyContent: 'flex-end',
+            }}
+          >
+            {/* Search Input */}
+            <div style={{ position: 'relative', minWidth: 240, flex: '1 1 240px', maxWidth: 360 }}>
+              <Search
+                size={15}
+                style={{
+                  position: 'absolute',
+                  left: 10,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  color: 'var(--muted)',
+                }}
+              />
+              <input
+                type="text"
+                className="filter-select"
+                placeholder="Search by name, Emp ID, email..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{ width: '100%', paddingLeft: 32, paddingRight: searchQuery ? 28 : 10 }}
+              />
+              {searchQuery ? (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  style={{
+                    position: 'absolute',
+                    right: 8,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'none',
+                    border: 'none',
+                    color: 'var(--muted)',
+                    cursor: 'pointer',
+                    padding: 2,
+                  }}
+                >
+                  <X size={14} />
+                </button>
+              ) : null}
+            </div>
+
+            {/* Role Filter */}
             {activeTab === 'directory' && (
               <select
                 className="filter-select"
                 value={roleFilter}
                 onChange={(e) => setRoleFilter(e.target.value)}
-                style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #cbd5e1' }}
+                style={{ width: 'auto', minWidth: 150 }}
               >
                 <option value="ALL">All Roles</option>
                 <option value="SUPER_ADMIN">Super Admin</option>
@@ -259,22 +453,20 @@ export function UsersPage(): ReactElement {
                 <option value="DRIVER">Driver</option>
               </select>
             )}
-          </div>
 
-          <div className="table-search-box">
-            <Search size={15} className="search-icon" />
-            <input
-              type="text"
-              className="search-input"
-              placeholder="Search user by name, Emp ID, email..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-            {searchQuery ? (
-              <button type="button" className="clear-search" onClick={() => setSearchQuery('')}>
-                <X size={14} />
+            {(searchQuery !== '' || roleFilter !== 'ALL') && (
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => {
+                  setSearchQuery('');
+                  setRoleFilter('ALL');
+                }}
+                style={{ padding: '6px 12px', fontSize: 12 }}
+              >
+                Reset
               </button>
-            ) : null}
+            )}
           </div>
         </div>
 
@@ -295,21 +487,35 @@ export function UsersPage(): ReactElement {
                   <th>Assigned Category</th>
                   <th>Approval State</th>
                   <th>Account Status</th>
-                  <th>Actions</th>
+                  <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredUsers.map((u) => (
                   <tr key={u.id}>
                     <td>
-                      <strong style={{ fontFamily: 'monospace', color: '#0f172a' }}>{u.employeeId}</strong>
+                      <span
+                        style={{
+                          fontFamily: 'monospace',
+                          fontWeight: 800,
+                          fontSize: 13,
+                          letterSpacing: '0.04em',
+                          padding: '4px 8px',
+                          background: 'var(--bg)',
+                          color: 'var(--text)',
+                          border: '1px solid var(--border)',
+                          borderRadius: 6,
+                        }}
+                      >
+                        {u.employeeId}
+                      </span>
                     </td>
                     <td>
                       <div>
-                        <div style={{ fontWeight: 600, color: '#1e293b' }}>
+                        <div style={{ fontWeight: 700, color: 'var(--text)', fontSize: 13 }}>
                           {u.firstName} {u.lastName}
                         </div>
-                        {u.email && <div style={{ fontSize: 12, color: '#64748b' }}>{u.email}</div>}
+                        {u.email && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{u.email}</div>}
                       </div>
                     </td>
                     <td>{getRoleBadge(u.role)}</td>
@@ -317,52 +523,103 @@ export function UsersPage(): ReactElement {
                       {u.category ? (
                         <span
                           style={{
-                            display: 'inline-block',
-                            padding: '2px 8px',
-                            borderRadius: 4,
-                            backgroundColor: '#075E54',
-                            color: '#FFFFFF',
-                            fontSize: 12,
-                            fontWeight: 600,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            padding: '3px 10px',
+                            borderRadius: 6,
+                            backgroundColor: 'rgba(6, 182, 212, 0.15)',
+                            color: '#22d3ee',
+                            border: '1px solid rgba(6, 182, 212, 0.35)',
+                            fontSize: 11,
+                            fontWeight: 700,
                           }}
                         >
                           {u.category}
                         </span>
                       ) : (
-                        <span style={{ color: '#94a3b8', fontSize: 13 }}>Unassigned</span>
+                        <span style={{ color: 'var(--muted)', fontSize: 12 }}>Unassigned</span>
                       )}
                     </td>
                     <td>
                       {u.approvalStatus === 'APPROVED' && (
-                        <span style={{ color: '#16a34a', fontWeight: 600, fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <Check size={14} /> Approved
+                        <span
+                          style={{
+                            color: 'var(--success-text)',
+                            fontWeight: 700,
+                            fontSize: 12,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 5,
+                          }}
+                        >
+                          <CheckCircle2 size={14} /> Approved
                         </span>
                       )}
                       {u.approvalStatus === 'PENDING_APPROVAL' && (
-                        <span style={{ color: '#d97706', fontWeight: 600, fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <span
+                          style={{
+                            color: 'var(--warning-text)',
+                            fontWeight: 700,
+                            fontSize: 12,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 5,
+                          }}
+                        >
                           <ShieldAlert size={14} /> Pending Approval
                         </span>
                       )}
                       {u.approvalStatus === 'REJECTED' && (
-                        <span style={{ color: '#dc2626', fontWeight: 600, fontSize: 13 }}>Rejected</span>
+                        <span style={{ color: 'var(--danger-text)', fontWeight: 700, fontSize: 12 }}>
+                          Rejected
+                        </span>
                       )}
                     </td>
                     <td>
                       {u.isActive ? (
-                        <span style={{ color: '#16a34a', fontWeight: 600, fontSize: 13 }}>Active</span>
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            fontSize: 12,
+                            fontWeight: 700,
+                            color: 'var(--success-text)',
+                          }}
+                        >
+                          <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--success-text)' }} />
+                          Active
+                        </span>
                       ) : (
-                        <span style={{ color: '#94a3b8', fontWeight: 600, fontSize: 13 }}>Inactive</span>
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            fontSize: 12,
+                            fontWeight: 700,
+                            color: 'var(--muted)',
+                          }}
+                        >
+                          <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--muted)' }} />
+                          Inactive
+                        </span>
                       )}
                     </td>
-                    <td>
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <td style={{ textAlign: 'right' }}>
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'flex-end' }}>
                         {/* Approval actions for SuperAdmin on pending users */}
                         {isSuperAdmin && u.approvalStatus === 'PENDING_APPROVAL' && (
                           <>
                             <button
                               type="button"
                               className="btn-primary"
-                              style={{ padding: '4px 8px', fontSize: 12, backgroundColor: '#16a34a', borderColor: '#16a34a' }}
+                              style={{
+                                padding: '5px 10px',
+                                fontSize: 12,
+                                backgroundColor: 'var(--success-text)',
+                                borderColor: 'var(--success-border)',
+                              }}
                               onClick={() => handleApprove(u.id)}
                             >
                               Approve
@@ -370,7 +627,12 @@ export function UsersPage(): ReactElement {
                             <button
                               type="button"
                               className="btn-secondary"
-                              style={{ padding: '4px 8px', fontSize: 12, color: '#dc2626', borderColor: '#fca5a5' }}
+                              style={{
+                                padding: '5px 10px',
+                                fontSize: 12,
+                                color: 'var(--danger-text)',
+                                borderColor: 'var(--danger-border)',
+                              }}
                               onClick={() => handleReject(u.id)}
                             >
                               Reject
@@ -382,17 +644,23 @@ export function UsersPage(): ReactElement {
                         {isSuperAdmin && u.approvalStatus === 'APPROVED' && (
                           <button
                             type="button"
-                            className="btn-secondary"
-                            style={{
-                              padding: '4px 8px',
-                              fontSize: 12,
-                              color: u.isActive ? '#dc2626' : '#16a34a',
-                              borderColor: u.isActive ? '#fca5a5' : '#86efac',
-                            }}
                             onClick={() => handleToggleActive(u)}
                             title={u.isActive ? 'Deactivate account' : 'Activate account'}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 5,
+                              padding: '5px 10px',
+                              fontSize: 12,
+                              fontWeight: 600,
+                              borderRadius: 6,
+                              cursor: 'pointer',
+                              background: u.isActive ? 'var(--danger-bg)' : 'var(--success-bg)',
+                              color: u.isActive ? 'var(--danger-text)' : 'var(--success-text)',
+                              border: u.isActive ? '1px solid var(--danger-border)' : '1px solid var(--success-border)',
+                            }}
                           >
-                            {u.isActive ? <UserX size={14} /> : <UserCheck size={14} />}
+                            {u.isActive ? <UserX size={13} /> : <UserCheck size={13} />}
                             {u.isActive ? 'Deactivate' : 'Activate'}
                           </button>
                         )}
@@ -402,11 +670,17 @@ export function UsersPage(): ReactElement {
                           <button
                             type="button"
                             className="btn-secondary"
-                            style={{ padding: '4px 8px', fontSize: 12 }}
+                            style={{
+                              padding: '6px 10px',
+                              borderRadius: 6,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            }}
                             onClick={() => setEditingUser(u)}
-                            title="Edit user"
+                            title="Edit user details"
                           >
-                            <Edit2 size={14} />
+                            <Edit2 size={13} />
                           </button>
                         )}
                       </div>
@@ -421,46 +695,65 @@ export function UsersPage(): ReactElement {
 
       {/* Create User Modal */}
       {showCreateModal && (
-        <div className="modal-backdrop" style={{ backdropFilter: 'blur(4px)', backgroundColor: 'rgba(15, 23, 42, 0.65)' }}>
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.75)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: 16,
+          }}
+          onClick={() => setShowCreateModal(false)}
+        >
           <div
-            className="modal-card"
             style={{
-              maxWidth: 580,
+              backgroundColor: 'var(--surface)',
               borderRadius: 16,
-              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-              padding: 0,
+              width: '100%',
+              maxWidth: 580,
+              maxHeight: '90vh',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: 'var(--shadow-md)',
+              border: '1px solid var(--border)',
               overflow: 'hidden',
-              border: '1px solid #e2e8f0',
+              color: 'var(--text)',
             }}
+            onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
             <div
               style={{
-                backgroundColor: '#075E54',
-                padding: '20px 24px',
-                color: '#FFFFFF',
+                padding: '18px 24px',
+                borderBottom: '1px solid var(--border)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
+                background: 'var(--bg)',
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <div
                   style={{
-                    width: 40,
-                    height: 40,
+                    width: 38,
+                    height: 38,
                     borderRadius: 10,
-                    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+                    backgroundColor: 'rgba(59, 130, 246, 0.15)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
+                    color: 'var(--accent)',
                   }}
                 >
-                  <Plus size={22} color="#FFFFFF" />
+                  <Plus size={20} />
                 </div>
                 <div>
-                  <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: '#FFFFFF' }}>Create User ID</h2>
-                  <p style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.8)', margin: 0, marginTop: 2 }}>
+                  <h2 style={{ fontSize: 17, fontWeight: 700, margin: 0, color: 'var(--text)' }}>Create User ID</h2>
+                  <p style={{ fontSize: 12, color: 'var(--muted)', margin: 0, marginTop: 2 }}>
                     Provision new credentials for Fleet Staff or Drivers
                   </p>
                 </div>
@@ -471,28 +764,33 @@ export function UsersPage(): ReactElement {
                 style={{
                   background: 'none',
                   border: 'none',
-                  color: '#FFFFFF',
+                  color: 'var(--muted)',
                   cursor: 'pointer',
-                  opacity: 0.8,
                   padding: 4,
                   display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: 6,
                 }}
               >
-                <X size={20} />
+                <X size={18} />
               </button>
             </div>
 
             {/* Modal Form Body */}
-            <form onSubmit={handleCreateUser} style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <form
+              onSubmit={handleCreateUser}
+              style={{ padding: 24, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 20 }}
+            >
               {!isSuperAdmin && (
                 <div
                   style={{
-                    backgroundColor: '#fffbe5',
+                    backgroundColor: 'var(--warning-bg)',
                     padding: '12px 16px',
                     borderRadius: 10,
-                    border: '1px solid #fde047',
+                    border: '1px solid var(--warning-border)',
                     fontSize: 13,
-                    color: '#854d0e',
+                    color: 'var(--warning-text)',
                     display: 'flex',
                     alignItems: 'flex-start',
                     gap: 10,
@@ -500,7 +798,8 @@ export function UsersPage(): ReactElement {
                 >
                   <ShieldAlert size={18} style={{ flexShrink: 0, marginTop: 1 }} />
                   <div>
-                    <strong>SuperAdmin Approval Required:</strong> Accounts requested by Department Admins remain pending until approved by Super Admin.
+                    <strong>SuperAdmin Approval Required:</strong> Accounts requested by Department Admins remain
+                    pending until approved by Super Admin.
                   </div>
                 </div>
               )}
@@ -508,11 +807,11 @@ export function UsersPage(): ReactElement {
               {modalError && (
                 <div
                   style={{
-                    backgroundColor: '#fef2f2',
-                    color: '#991b1b',
+                    backgroundColor: 'var(--danger-bg)',
+                    color: 'var(--danger-text)',
                     padding: '12px 16px',
                     borderRadius: 10,
-                    border: '1px solid #fecaca',
+                    border: '1px solid var(--danger-border)',
                     fontSize: 13,
                   }}
                 >
@@ -522,35 +821,44 @@ export function UsersPage(): ReactElement {
 
               {/* Section 1: Authentication */}
               <div>
-                <h4 style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b', marginBottom: 12 }}>
+                <h4
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 800,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em',
+                    color: 'var(--accent)',
+                    marginBottom: 12,
+                  }}
+                >
                   1. Login Credentials
                 </h4>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                   <div>
-                    <label style={{ fontSize: 13, fontWeight: 600, color: '#334155', display: 'block', marginBottom: 6 }}>
-                      Employee ID <span style={{ color: '#ef4444' }}>*</span>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
+                      Employee ID <span style={{ color: 'var(--danger-text)' }}>*</span>
                     </label>
                     <input
                       type="text"
-                      className="form-input"
+                      className="filter-select"
                       placeholder="e.g. EMP-104 or DRV-501"
                       value={employeeId}
                       onChange={(e) => setEmployeeId(e.target.value)}
-                      style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14 }}
+                      style={{ width: '100%', padding: '9px 12px' }}
                       required
                     />
                   </div>
                   <div>
-                    <label style={{ fontSize: 13, fontWeight: 600, color: '#334155', display: 'block', marginBottom: 6 }}>
-                      Initial PIN <span style={{ color: '#ef4444' }}>*</span>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
+                      Initial PIN <span style={{ color: 'var(--danger-text)' }}>*</span>
                     </label>
                     <input
                       type="password"
-                      className="form-input"
+                      className="filter-select"
                       placeholder="4 to 6 digit PIN"
                       value={pin}
                       onChange={(e) => setPin(e.target.value)}
-                      style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14 }}
+                      style={{ width: '100%', padding: '9px 12px' }}
                       required
                     />
                   </div>
@@ -559,19 +867,28 @@ export function UsersPage(): ReactElement {
 
               {/* Section 2: Role & Routing */}
               <div>
-                <h4 style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b', marginBottom: 12 }}>
+                <h4
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 800,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em',
+                    color: 'var(--accent)',
+                    marginBottom: 12,
+                  }}
+                >
                   2. Role & Department Auto-Routing
                 </h4>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                   <div>
-                    <label style={{ fontSize: 13, fontWeight: 600, color: '#334155', display: 'block', marginBottom: 6 }}>
-                      Account Role <span style={{ color: '#ef4444' }}>*</span>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
+                      Account Role <span style={{ color: 'var(--danger-text)' }}>*</span>
                     </label>
                     <select
-                      className="form-input"
+                      className="filter-select"
                       value={selectedRole}
                       onChange={(e) => setSelectedRole(e.target.value as Role)}
-                      style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14, backgroundColor: '#ffffff' }}
+                      style={{ width: '100%', padding: '9px 12px' }}
                     >
                       {isSuperAdmin && <option value="SUPER_ADMIN">Super Admin (Full Fleet Control)</option>}
                       {isSuperAdmin && <option value="ADMIN">Department Admin (Category Head)</option>}
@@ -581,18 +898,25 @@ export function UsersPage(): ReactElement {
                   </div>
 
                   {(selectedRole === 'ADMIN' || selectedRole === 'EXECUTIVE') && (
-                    <div style={{ backgroundColor: '#f8fafc', padding: 14, borderRadius: 10, border: '1px solid #e2e8f0' }}>
-                      <label style={{ fontSize: 13, fontWeight: 600, color: '#0f172a', display: 'block', marginBottom: 4 }}>
+                    <div
+                      style={{
+                        backgroundColor: 'var(--bg)',
+                        padding: 14,
+                        borderRadius: 10,
+                        border: '1px solid var(--border)',
+                      }}
+                    >
+                      <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 4 }}>
                         Assigned Complaint Category (Auto-Routing)
                       </label>
-                      <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 8px 0' }}>
+                      <p style={{ fontSize: 12, color: 'var(--muted)', margin: '0 0 10px 0' }}>
                         Driver complaints raised under this category will auto-assign directly to this user.
                       </p>
                       <select
-                        className="form-input"
+                        className="filter-select"
                         value={category}
                         onChange={(e) => setCategory(e.target.value as ComplaintCategory)}
-                        style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14, backgroundColor: '#ffffff' }}
+                        style={{ width: '100%', padding: '9px 12px' }}
                       >
                         <option value="">-- Select Category --</option>
                         {COMPLAINT_CATEGORIES.map((cat) => (
@@ -608,35 +932,44 @@ export function UsersPage(): ReactElement {
 
               {/* Section 3: Personal Details */}
               <div>
-                <h4 style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b', marginBottom: 12 }}>
+                <h4
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 800,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em',
+                    color: 'var(--accent)',
+                    marginBottom: 12,
+                  }}
+                >
                   3. User Information
                 </h4>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
                   <div>
-                    <label style={{ fontSize: 13, fontWeight: 600, color: '#334155', display: 'block', marginBottom: 6 }}>
-                      First Name <span style={{ color: '#ef4444' }}>*</span>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
+                      First Name <span style={{ color: 'var(--danger-text)' }}>*</span>
                     </label>
                     <input
                       type="text"
-                      className="form-input"
+                      className="filter-select"
                       placeholder="e.g. Rahul"
                       value={firstName}
                       onChange={(e) => setFirstName(e.target.value)}
-                      style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14 }}
+                      style={{ width: '100%', padding: '9px 12px' }}
                       required
                     />
                   </div>
                   <div>
-                    <label style={{ fontSize: 13, fontWeight: 600, color: '#334155', display: 'block', marginBottom: 6 }}>
-                      Last Name <span style={{ color: '#ef4444' }}>*</span>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
+                      Last Name <span style={{ color: 'var(--danger-text)' }}>*</span>
                     </label>
                     <input
                       type="text"
-                      className="form-input"
+                      className="filter-select"
                       placeholder="e.g. Sharma"
                       value={lastName}
                       onChange={(e) => setLastName(e.target.value)}
-                      style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14 }}
+                      style={{ width: '100%', padding: '9px 12px' }}
                       required
                     />
                   </div>
@@ -644,53 +977,65 @@ export function UsersPage(): ReactElement {
 
                 {selectedRole === 'DRIVER' && (
                   <div style={{ marginBottom: 14 }}>
-                    <label style={{ fontSize: 13, fontWeight: 600, color: '#334155', display: 'block', marginBottom: 6 }}>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
                       Driving License (DL) Number
                     </label>
                     <input
                       type="text"
-                      className="form-input"
+                      className="filter-select"
                       placeholder="e.g. DL-1420110012345"
                       value={licenseNumber}
                       onChange={(e) => setLicenseNumber(e.target.value)}
-                      style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14 }}
+                      style={{ width: '100%', padding: '9px 12px' }}
                     />
                   </div>
                 )}
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                   <div>
-                    <label style={{ fontSize: 13, fontWeight: 600, color: '#334155', display: 'block', marginBottom: 6 }}>Email (Optional)</label>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
+                      Email (Optional)
+                    </label>
                     <input
                       type="email"
-                      className="form-input"
+                      className="filter-select"
                       placeholder="user@company.com"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14 }}
+                      style={{ width: '100%', padding: '9px 12px' }}
                     />
                   </div>
                   <div>
-                    <label style={{ fontSize: 13, fontWeight: 600, color: '#334155', display: 'block', marginBottom: 6 }}>Phone (Optional)</label>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
+                      Phone (Optional)
+                    </label>
                     <input
                       type="tel"
-                      className="form-input"
+                      className="filter-select"
                       placeholder="+91 9876543210"
                       value={phone}
                       onChange={(e) => setPhone(e.target.value)}
-                      style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14 }}
+                      style={{ width: '100%', padding: '9px 12px' }}
                     />
                   </div>
                 </div>
               </div>
 
               {/* Action Buttons */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, paddingTop: 16, borderTop: '1px solid #f1f5f9' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  gap: 12,
+                  paddingTop: 16,
+                  borderTop: '1px solid var(--border)',
+                }}
+              >
                 <button
                   type="button"
                   className="btn-secondary"
                   onClick={() => setShowCreateModal(false)}
-                  style={{ padding: '10px 20px', borderRadius: 8, fontWeight: 600, cursor: 'pointer' }}
+                  style={{ padding: '9px 18px', borderRadius: 8, fontWeight: 600 }}
                 >
                   Cancel
                 </button>
@@ -699,16 +1044,15 @@ export function UsersPage(): ReactElement {
                   className="btn-primary"
                   disabled={submitting}
                   style={{
-                    padding: '10px 24px',
+                    padding: '9px 22px',
                     borderRadius: 8,
-                    fontWeight: 600,
-                    backgroundColor: '#075E54',
-                    borderColor: '#075E54',
-                    color: '#FFFFFF',
-                    cursor: 'pointer',
+                    fontWeight: 700,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
                   }}
                 >
-                  {submitting ? 'Creating User...' : 'Create User ID'}
+                  {submitting ? 'Creating User…' : 'Create User ID'}
                 </button>
               </div>
             </form>
@@ -718,47 +1062,70 @@ export function UsersPage(): ReactElement {
 
       {/* Edit User Modal */}
       {editingUser && (
-        <div className="modal-backdrop" style={{ backdropFilter: 'blur(4px)', backgroundColor: 'rgba(15, 23, 42, 0.65)' }}>
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.75)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: 16,
+          }}
+          onClick={() => setEditingUser(null)}
+        >
           <div
-            className="modal-card"
             style={{
-              maxWidth: 540,
+              backgroundColor: 'var(--surface)',
               borderRadius: 16,
-              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-              padding: 0,
+              width: '100%',
+              maxWidth: 540,
+              maxHeight: '90vh',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: 'var(--shadow-md)',
+              border: '1px solid var(--border)',
               overflow: 'hidden',
-              border: '1px solid #e2e8f0',
+              color: 'var(--text)',
             }}
+            onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
             <div
               style={{
-                backgroundColor: '#1e293b',
-                padding: '20px 24px',
-                color: '#FFFFFF',
+                padding: '18px 24px',
+                borderBottom: '1px solid var(--border)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
+                background: 'var(--bg)',
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <div
                   style={{
-                    width: 40,
-                    height: 40,
+                    width: 38,
+                    height: 38,
                     borderRadius: 10,
-                    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+                    backgroundColor: 'rgba(59, 130, 246, 0.15)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
+                    color: 'var(--accent)',
                   }}
                 >
-                  <Edit2 size={20} color="#FFFFFF" />
+                  <Edit2 size={18} />
                 </div>
                 <div>
-                  <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: '#FFFFFF' }}>Edit User Details</h2>
-                  <p style={{ fontSize: 12, color: 'rgba(255, 255, 255, 0.8)', margin: 0, marginTop: 2 }}>
-                    Employee ID: <strong style={{ color: '#38bdf8' }}>{editingUser.employeeId}</strong> • Role: {editingUser.role}
+                  <h2 style={{ fontSize: 17, fontWeight: 700, margin: 0, color: 'var(--text)' }}>Edit User Details</h2>
+                  <p style={{ fontSize: 12, color: 'var(--muted)', margin: 0, marginTop: 2 }}>
+                    Employee ID:{' '}
+                    <span style={{ fontFamily: 'monospace', fontWeight: 800, color: 'var(--accent)' }}>
+                      {editingUser.employeeId}
+                    </span>{' '}
+                    • Role: {editingUser.role}
                   </p>
                 </div>
               </div>
@@ -768,61 +1135,74 @@ export function UsersPage(): ReactElement {
                 style={{
                   background: 'none',
                   border: 'none',
-                  color: '#FFFFFF',
+                  color: 'var(--muted)',
                   cursor: 'pointer',
-                  opacity: 0.8,
                   padding: 4,
                   display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
                 }}
               >
-                <X size={20} />
+                <X size={18} />
               </button>
             </div>
 
             {/* Form Body */}
-            <form onSubmit={handleSaveEdit} style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 18 }}>
+            <form
+              onSubmit={handleSaveEdit}
+              style={{ padding: 24, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 18 }}
+            >
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                 <div>
-                  <label style={{ fontSize: 13, fontWeight: 600, color: '#334155', display: 'block', marginBottom: 6 }}>
-                    First Name <span style={{ color: '#ef4444' }}>*</span>
+                  <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
+                    First Name <span style={{ color: 'var(--danger-text)' }}>*</span>
                   </label>
                   <input
                     type="text"
-                    className="form-input"
+                    className="filter-select"
                     value={editingUser.firstName}
                     onChange={(e) => setEditingUser({ ...editingUser, firstName: e.target.value })}
-                    style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14 }}
+                    style={{ width: '100%', padding: '9px 12px' }}
                     required
                   />
                 </div>
                 <div>
-                  <label style={{ fontSize: 13, fontWeight: 600, color: '#334155', display: 'block', marginBottom: 6 }}>
-                    Last Name <span style={{ color: '#ef4444' }}>*</span>
+                  <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
+                    Last Name <span style={{ color: 'var(--danger-text)' }}>*</span>
                   </label>
                   <input
                     type="text"
-                    className="form-input"
+                    className="filter-select"
                     value={editingUser.lastName}
                     onChange={(e) => setEditingUser({ ...editingUser, lastName: e.target.value })}
-                    style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14 }}
+                    style={{ width: '100%', padding: '9px 12px' }}
                     required
                   />
                 </div>
               </div>
 
               {(editingUser.role === 'ADMIN' || editingUser.role === 'EXECUTIVE') && (
-                <div style={{ backgroundColor: '#f8fafc', padding: 14, borderRadius: 10, border: '1px solid #e2e8f0' }}>
-                  <label style={{ fontSize: 13, fontWeight: 600, color: '#0f172a', display: 'block', marginBottom: 4 }}>
+                <div
+                  style={{
+                    backgroundColor: 'var(--bg)',
+                    padding: 14,
+                    borderRadius: 10,
+                    border: '1px solid var(--border)',
+                  }}
+                >
+                  <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 4 }}>
                     Assigned Complaint Category (Auto-Routing)
                   </label>
-                  <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 8px 0' }}>
+                  <p style={{ fontSize: 12, color: 'var(--muted)', margin: '0 0 10px 0' }}>
                     Complaints filed in this category will automatically be routed to this user.
                   </p>
                   <select
-                    className="form-input"
+                    className="filter-select"
                     value={editingUser.category ?? ''}
-                    onChange={(e) => setEditingUser({ ...editingUser, category: (e.target.value as ComplaintCategory) || null })}
-                    style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14, backgroundColor: '#ffffff' }}
+                    onChange={(e) =>
+                      setEditingUser({ ...editingUser, category: (e.target.value as ComplaintCategory) || null })
+                    }
+                    style={{ width: '100%', padding: '9px 12px' }}
                   >
                     <option value="">-- None --</option>
                     {COMPLAINT_CATEGORIES.map((cat) => (
@@ -836,34 +1216,46 @@ export function UsersPage(): ReactElement {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                 <div>
-                  <label style={{ fontSize: 13, fontWeight: 600, color: '#334155', display: 'block', marginBottom: 6 }}>Email</label>
+                  <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
+                    Email
+                  </label>
                   <input
                     type="email"
-                    className="form-input"
+                    className="filter-select"
                     value={editingUser.email ?? ''}
                     onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value })}
-                    style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14 }}
+                    style={{ width: '100%', padding: '9px 12px' }}
                   />
                 </div>
                 <div>
-                  <label style={{ fontSize: 13, fontWeight: 600, color: '#334155', display: 'block', marginBottom: 6 }}>Phone</label>
+                  <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
+                    Phone
+                  </label>
                   <input
                     type="tel"
-                    className="form-input"
+                    className="filter-select"
                     value={editingUser.phone ?? ''}
                     onChange={(e) => setEditingUser({ ...editingUser, phone: e.target.value })}
-                    style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 14 }}
+                    style={{ width: '100%', padding: '9px 12px' }}
                   />
                 </div>
               </div>
 
               {/* Action Buttons */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, paddingTop: 16, borderTop: '1px solid #f1f5f9' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  gap: 12,
+                  paddingTop: 16,
+                  borderTop: '1px solid var(--border)',
+                }}
+              >
                 <button
                   type="button"
                   className="btn-secondary"
                   onClick={() => setEditingUser(null)}
-                  style={{ padding: '10px 20px', borderRadius: 8, fontWeight: 600, cursor: 'pointer' }}
+                  style={{ padding: '9px 18px', borderRadius: 8, fontWeight: 600 }}
                 >
                   Cancel
                 </button>
@@ -871,9 +1263,9 @@ export function UsersPage(): ReactElement {
                   type="submit"
                   className="btn-primary"
                   disabled={submitting}
-                  style={{ padding: '10px 24px', borderRadius: 8, fontWeight: 600, cursor: 'pointer' }}
+                  style={{ padding: '9px 22px', borderRadius: 8, fontWeight: 700 }}
                 >
-                  {submitting ? 'Saving Changes...' : 'Save Changes'}
+                  {submitting ? 'Saving Changes…' : 'Save Changes'}
                 </button>
               </div>
             </form>
@@ -883,3 +1275,4 @@ export function UsersPage(): ReactElement {
     </div>
   );
 }
+

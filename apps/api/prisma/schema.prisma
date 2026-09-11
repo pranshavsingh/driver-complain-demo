@@ -65,6 +65,8 @@ enum NotificationType {
   ASSIGNMENT_REQUESTED
   ASSIGNMENT_ACCEPTED
   ASSIGNMENT_REJECTED
+  VEHICLE_ASSIGNED
+  VEHICLE_UNASSIGNED
 }
 
 // What kind of evidence an attachment is. Drives playback in the dashboard (an <img> and an
@@ -139,21 +141,25 @@ model Driver {
 }
 
 model Vehicle {
-  id          String   @id @default(uuid(7)) @db.Uuid
-  driverId    String   @db.Uuid
-  driver      Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
-  plateNumber String   @unique
-  make        String?
-  model       String?
-  year        Int?
-  vin         String?  @unique
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id               String    @id @default(uuid(7)) @db.Uuid
+  driverId         String?   @db.Uuid
+  driver           Driver?   @relation(fields: [driverId], references: [id], onDelete: SetNull)
+  plateNumber      String    @unique
+  make             String?
+  model            String?
+  modelNumber      String?
+  registrationDate DateTime?
+  chassisNumber    String?
+  wheels           String?
+  agreementStatus  String?   @default("ACTIVE")
+  year             Int?
+  vin              String?   @unique
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   complaints         Complaint[]
   fuelRecords        FuelRecord[]
   maintenanceRecords MaintenanceRecord[]
-
 
   @@index([driverId])
 }

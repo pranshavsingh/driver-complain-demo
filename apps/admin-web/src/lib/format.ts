@@ -44,3 +44,72 @@ export function describeVehicle(vehicle: { plateNumber: string; make?: string | 
   return name ? `${vehicle.plateNumber} (${name})` : vehicle.plateNumber;
 }
 
+export interface SlaInfo {
+  elapsedText: string;
+  slaText: string;
+  isOverdue: boolean;
+  status: 'RESOLVED' | 'ON_TRACK' | 'WARNING' | 'OVERDUE';
+}
+
+/**
+ * Computes elapsed aging and operational SLA target for complaints based on priority:
+ * - URGENT: 2 hours SLA
+ * - HIGH: 4 hours SLA
+ * - MEDIUM: 12 hours SLA
+ * - LOW: 24 hours SLA
+ */
+export function computeSlaInfo(
+  createdAt: string,
+  priority: string = 'MEDIUM',
+  resolvedAt?: string | null,
+): SlaInfo {
+  const created = new Date(createdAt).getTime();
+  const now = resolvedAt ? new Date(resolvedAt).getTime() : Date.now();
+  const elapsedMs = Math.max(0, now - created);
+
+  let slaHours = 12;
+  if (priority === 'URGENT') slaHours = 2;
+  else if (priority === 'HIGH') slaHours = 4;
+  else if (priority === 'LOW') slaHours = 24;
+
+  const slaMs = slaHours * 60 * 60 * 1000;
+  const remainingMs = slaMs - elapsedMs;
+
+  const formatHrsMins = (ms: number) => {
+    const totalMins = Math.floor(Math.abs(ms) / 60000);
+    const hrs = Math.floor(totalMins / 60);
+    const mins = totalMins % 60;
+    if (hrs > 0) return `${hrs}h ${mins}m`;
+    return `${mins}m`;
+  };
+
+  const elapsedText = `${formatHrsMins(elapsedMs)} ago`;
+
+  if (resolvedAt) {
+    const withinSla = elapsedMs <= slaMs;
+    return {
+      elapsedText: `Resolved in ${formatHrsMins(elapsedMs)}`,
+      slaText: withinSla ? `SLA Met (${formatHrsMins(elapsedMs)})` : `SLA Breached (${formatHrsMins(elapsedMs)})`,
+      isOverdue: !withinSla,
+      status: 'RESOLVED',
+    };
+  }
+
+  if (remainingMs <= 0) {
+    return {
+      elapsedText,
+      slaText: `Overdue by ${formatHrsMins(remainingMs)}`,
+      isOverdue: true,
+      status: 'OVERDUE',
+    };
+  }
+
+  const isWarning = remainingMs < slaMs * 0.35;
+  return {
+    elapsedText,
+    slaText: `SLA: ${formatHrsMins(remainingMs)} left`,
+    isOverdue: false,
+    status: isWarning ? 'WARNING' : 'ON_TRACK',
+  };
+}
+

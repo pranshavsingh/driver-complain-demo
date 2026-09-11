@@ -1,10 +1,11 @@
-import { useEffect, useState, type FormEvent, type ReactElement } from 'react';
+import { useEffect, useState, useRef, type FormEvent, type ReactElement } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   COMPLAINT_STATUSES,
   type AdminSummary,
   type ComplaintDetail,
   type ComplaintStatus,
+  type TripPhase,
 } from '@driver-complaint/shared-types';
 import {
   ArrowLeft,
@@ -19,16 +20,61 @@ import {
   Check,
   X,
   Clock,
+  Truck,
+  MapPin,
+  Phone,
+  AlertTriangle,
+  ExternalLink,
+  HelpCircle,
 } from '../components/Icons';
 import * as api from '../api/endpoints';
 import { useAuth } from '../auth/AuthContext';
 import { useApiResource } from '../hooks/useApiResource';
 import { useRealtime } from '../realtime/RealtimeProvider';
 import { ErrorBanner } from '../components/ErrorBanner';
-import { PriorityBadge, StatusBadge } from '../components/Badges';
-import { formatBytes, formatDateTime, formatDuration, formatEnum, fullName } from '../lib/format';
+import { PriorityBadge, StatusBadge, SlaBadge } from '../components/Badges';
+import { formatBytes, formatDateTime, formatDuration, formatEnum, fullName, computeSlaInfo } from '../lib/format';
 
 const TERMINAL_STATUSES: ComplaintStatus[] = ['RESOLVED', 'CLOSED'];
+
+/** Trip Phase visual config */
+const TRIP_PHASE_CONFIG: Record<
+  TripPhase,
+  { label: string; bg: string; color: string; border: string; icon: string; desc: string }
+> = {
+  AT_LOADING_PLANT: {
+    label: 'At Loading Plant',
+    bg: 'rgba(6, 182, 212, 0.12)',
+    color: '#06b6d4',
+    border: 'rgba(6, 182, 212, 0.35)',
+    icon: '🏭',
+    desc: 'The complaint was raised while the vehicle is currently at the loading factory or warehouse.',
+  },
+  IN_TRANSIT: {
+    label: 'In Transit / Highway',
+    bg: 'rgba(249, 115, 22, 0.12)',
+    color: '#f97316',
+    border: 'rgba(249, 115, 22, 0.35)',
+    icon: '🚚',
+    desc: 'The vehicle is actively in motion on highway/transit route with loaded cargo.',
+  },
+  AT_UNLOADING_POINT: {
+    label: 'At Unloading Point',
+    bg: 'rgba(168, 85, 247, 0.12)',
+    color: '#a855f7',
+    border: 'rgba(168, 85, 247, 0.35)',
+    icon: '📦',
+    desc: 'The vehicle has arrived at destination and is undergoing cargo unloading.',
+  },
+  YARD_IDLE: {
+    label: 'Parking',
+    bg: 'rgba(148, 163, 184, 0.1)',
+    color: 'var(--muted)',
+    border: 'var(--border)',
+    icon: '🅿️',
+    desc: 'Vehicle is currently in parking and not on an active trip.',
+  },
+};
 
 export function ComplaintDetailPage(): ReactElement {
   const { user } = useAuth();
@@ -54,6 +100,7 @@ export function ComplaintDetailPage(): ReactElement {
   const [note, setNote] = useState('');
   const [statusError, setStatusError] = useState<unknown>(null);
   const [savingStatus, setSavingStatus] = useState(false);
+  const noteTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   const [assignee, setAssignee] = useState('');
   const [assignError, setAssignError] = useState<unknown>(null);
@@ -179,6 +226,13 @@ export function ComplaintDetailPage(): ReactElement {
     );
   };
 
+  const handleRequestClarificationPreset = () => {
+    setNote('Clarification requested from driver: Please provide more details regarding the current vehicle issue, exact breakdown location, or attached photos.');
+    if (noteTextareaRef.current) {
+      noteTextareaRef.current.focus();
+    }
+  };
+
   const submitStatus = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
     if (!complaint || !status) return;
@@ -239,22 +293,56 @@ export function ComplaintDetailPage(): ReactElement {
     );
   }
 
+  const phaseKey: TripPhase = complaint.tripPhase || 'YARD_IDLE';
+  const phaseCfg = TRIP_PHASE_CONFIG[phaseKey] || TRIP_PHASE_CONFIG.YARD_IDLE;
+  const isNeedsAction =
+    complaint.status === 'NEW' &&
+    (!complaint.assignedToId || (complaint.updates?.length ?? 0) <= 1);
+  const sla = computeSlaInfo(complaint.createdAt, complaint.priority, complaint.resolvedAt);
+
   return (
     <div className="page-container">
       {/* Top Header & Navigation */}
-      <div>
-        <Link to="/complaints" className="back-link">
+      <div style={{ marginBottom: 20 }}>
+        <Link to="/complaints" className="back-link" style={{ marginBottom: 12 }}>
           <ArrowLeft size={16} style={{ marginRight: 6 }} /> Back to Complaints Queue
         </Link>
 
-        <div className="detail-header-card">
+        <div className="detail-header-card" style={{ padding: '20px 24px' }}>
           <div className="detail-header-info">
-            <h1 className="detail-title">
-              <span className="complaint-no-tag">{complaint.complaintNo}</span> {complaint.title}
-            </h1>
-            <div className="badge-row">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
+              <span className="complaint-no-tag" style={{ fontSize: 16, fontWeight: 800 }}>
+                {complaint.complaintNo}
+              </span>
               <StatusBadge status={complaint.status} />
               <PriorityBadge priority={complaint.priority} />
+              <SlaBadge sla={sla} />
+              {isNeedsAction && (
+                <span
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    padding: '3px 8px',
+                    borderRadius: 6,
+                    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                    color: '#ef4444',
+                    border: '1px solid rgba(239, 68, 68, 0.4)',
+                    fontSize: 11,
+                    fontWeight: 800,
+                  }}
+                  title="Untouched: Newly filed complaint awaiting team assignment and first response."
+                >
+                  <AlertTriangle size={12} /> Needs Action
+                </span>
+              )}
+            </div>
+
+            <h1 className="detail-title" style={{ fontSize: 20, margin: '6px 0 2px' }}>
+              {complaint.title}
+            </h1>
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
+              Logged {sla.elapsedText} ({formatDateTime(complaint.createdAt)})
             </div>
           </div>
         </div>
@@ -262,9 +350,87 @@ export function ComplaintDetailPage(): ReactElement {
 
       <ErrorBanner error={detailRes.error} />
 
+      {/* Live Trip & Loading Process Context Banner */}
+      <div
+        className="table-card"
+        style={{
+          padding: '16px 20px',
+          marginBottom: 20,
+          border: `1px solid ${phaseCfg.border}`,
+          backgroundColor: phaseCfg.bg,
+          borderRadius: 12,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+            <div
+              style={{
+                fontSize: 24,
+                padding: '10px 12px',
+                borderRadius: 10,
+                backgroundColor: 'var(--surface)',
+                border: '1px solid var(--border)',
+                flexShrink: 0,
+              }}
+            >
+              {phaseCfg.icon}
+            </div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 12, fontWeight: 800, color: phaseCfg.color, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Trip Phase at Complaint Time
+                </span>
+                <span
+                  style={{
+                    padding: '2px 8px',
+                    borderRadius: 6,
+                    backgroundColor: 'var(--surface)',
+                    border: `1px solid ${phaseCfg.border}`,
+                    color: phaseCfg.color,
+                    fontSize: 12,
+                    fontWeight: 800,
+                  }}
+                >
+                  {phaseCfg.label}
+                </span>
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--text)', marginTop: 4, fontWeight: 500 }}>
+                {phaseCfg.desc}
+              </div>
+              {complaint.tripLocationName && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, fontSize: 12, color: 'var(--muted)' }}>
+                  <MapPin size={13} color="var(--muted)" /> Location / Point: <strong>{complaint.tripLocationName}</strong>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {complaint.loadingRecordId && (
+              <Link
+                to="/loading-tracker"
+                className="btn-secondary btn-sm"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '7px 12px',
+                  borderRadius: 8,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  textDecoration: 'none',
+                }}
+              >
+                <Truck size={14} color="var(--accent)" /> View Live Loading Tracker <ExternalLink size={12} />
+              </Link>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* Pending SuperAdmin Acceptance Banner */}
       {complaint.assignmentStatus === 'PENDING' && complaint.pendingAssignee ? (
-        <div className="pending-assignment-banner">
+        <div className="pending-assignment-banner" style={{ marginBottom: 20 }}>
           <div className="banner-content">
             <div className="banner-icon">
               <Clock size={24} color="#d97706" />
@@ -343,33 +509,61 @@ export function ComplaintDetailPage(): ReactElement {
       <div className="detail-layout-grid">
         {/* Left Main Content Column */}
         <div className="detail-main-column">
-          {/* Card 1: Key Metadata Overview */}
+          {/* Card 1: Key Metadata & Direct Driver Contact */}
           <div className="table-card detail-card">
-            <h2 className="card-section-title">
-              <FileText size={18} color="#1d4ed8" /> Report Metadata
-            </h2>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <h2 className="card-section-title" style={{ margin: 0 }}>
+                <FileText size={18} color="var(--accent)" /> Driver & Vehicle Details
+              </h2>
+              {complaint.driverPhone ? (
+                <a
+                  href={`tel:${complaint.driverPhone}`}
+                  className="btn-primary"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '6px 12px',
+                    fontSize: 12,
+                    fontWeight: 700,
+                    borderRadius: 8,
+                    textDecoration: 'none',
+                  }}
+                  title={`Call driver on ${complaint.driverPhone}`}
+                >
+                  <Phone size={13} /> Call Driver ({complaint.driverPhone})
+                </a>
+              ) : null}
+            </div>
+
             <div className="meta-grid">
               <div className="meta-item">
-                <span className="meta-label">Driver</span>
+                <span className="meta-label">Driver Name</span>
                 <span className="meta-value">
                   {fullName(complaint.driver)} · <strong>{complaint.driver.employeeId}</strong>
-                  <span className="meta-sub"> (DL: {complaint.driver.licenseNumber})</span>
                 </span>
+                <span className="meta-sub">DL: {complaint.driver.licenseNumber}</span>
               </div>
 
               <div className="meta-item">
-                <span className="meta-label">Vehicle</span>
+                <span className="meta-label">Vehicle Assigned</span>
                 <span className="meta-value">
                   {complaint.vehicle
                     ? `${complaint.vehicle.plateNumber}${
                         complaint.vehicle.make ? ` · ${complaint.vehicle.make}` : ''
                       }${complaint.vehicle.model ? ` ${complaint.vehicle.model}` : ''}`
-                    : '— Not linked'}
+                    : complaint.vehiclePlateNumber || '— Not linked'}
                 </span>
+                {complaint.vehicle?.agreementStatus && (
+                  <span className="meta-sub">
+                    Agreement: <strong>{complaint.vehicle.agreementStatus}</strong>
+                    {complaint.vehicle.wheels ? ` · ${complaint.vehicle.wheels} Wheeler` : ''}
+                  </span>
+                )}
               </div>
 
               <div className="meta-item">
-                <span className="meta-label">Assigned Maintenance Staff</span>
+                <span className="meta-label">Assigned Staff / Team</span>
                 <span className="meta-value">
                   {complaint.assignmentStatus === 'PENDING' && complaint.pendingAssignee ? (
                     <span className="pending-assignee-badge">
@@ -377,33 +571,35 @@ export function ComplaintDetailPage(): ReactElement {
                     </span>
                   ) : complaint.assignedTo ? (
                     <span className="assignee-tag">
-                      {fullName(complaint.assignedTo)} ({complaint.assignedTo.employeeId})
+                      👤 {fullName(complaint.assignedTo)} ({complaint.assignedTo.employeeId})
                     </span>
                   ) : (
-                    <span className="unassigned-tag">Unassigned</span>
+                    <span style={{ color: 'var(--danger-text)', fontWeight: 700 }}>
+                      ⚠️ Unassigned (Needs Action)
+                    </span>
                   )}
                 </span>
               </div>
 
               <div className="meta-item">
-                <span className="meta-label">Reported Date</span>
+                <span className="meta-label">Reported Timestamp</span>
                 <span className="meta-value">{formatDateTime(complaint.createdAt)}</span>
               </div>
 
               {complaint.resolvedAt ? (
                 <div className="meta-item">
-                  <span className="meta-label">Resolved Date</span>
+                  <span className="meta-label">Resolved Timestamp</span>
                   <span className="meta-value">{formatDateTime(complaint.resolvedAt)}</span>
                 </div>
               ) : null}
             </div>
           </div>
 
-          {/* Card 2: Driver Report Description */}
+          {/* Card 2: Driver Report Description & Audio Note */}
           <div className="table-card detail-card">
             <h2 className="card-section-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <MessageSquare size={18} color="#1d4ed8" /> What the Driver Reported
+                <MessageSquare size={18} color="var(--accent)" /> What the Driver Reported
               </span>
               {complaint.transcription || complaint.attachments.some((a) => a.kind === 'VOICE' && a.transcription) ? (
                 <span className="transcription-badge">
@@ -417,7 +613,7 @@ export function ComplaintDetailPage(): ReactElement {
                   disabled={transcribing}
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '4px 10px' }}
                 >
-                  <Mic size={14} color="#1d4ed8" />
+                  <Mic size={14} color="var(--accent)" />
                   {transcribing ? 'Transcribing…' : 'Convert Voice Note to Text'}
                 </button>
               ) : null}
@@ -426,7 +622,7 @@ export function ComplaintDetailPage(): ReactElement {
             <ErrorBanner error={transcribeError} />
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, marginBottom: 12 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: '#64748b' }}>Language:</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>Language:</span>
               {(['ENGLISH', 'BENGALI', 'HINDI'] as const).map((lang) => (
                 <button
                   key={lang}
@@ -437,12 +633,11 @@ export function ComplaintDetailPage(): ReactElement {
                     padding: '4px 14px',
                     borderRadius: 16,
                     fontSize: 12,
-                    fontWeight: 600,
-                    border: selectedLang === lang ? '1px solid #1d4ed8' : '1px solid #cbd5e1',
-                    background: selectedLang === lang ? '#1d4ed8' : '#ffffff',
-                    color: selectedLang === lang ? '#ffffff' : '#475569',
+                    fontWeight: 700,
+                    border: selectedLang === lang ? '1px solid var(--accent)' : '1px solid var(--border)',
+                    background: selectedLang === lang ? 'var(--accent)' : 'var(--surface)',
+                    color: selectedLang === lang ? '#ffffff' : 'var(--text)',
                     cursor: 'pointer',
-                    boxShadow: selectedLang === lang ? '0 1px 2px rgba(29, 78, 216, 0.2)' : 'none',
                     transition: 'all 0.15s ease-in-out',
                   }}
                 >
@@ -451,14 +646,16 @@ export function ComplaintDetailPage(): ReactElement {
               ))}
             </div>
 
-            <div className="driver-statement-box">
+            <div className="driver-statement-box" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)' }}>
               {(() => {
-                const isPlaceholder = !complaint.description || complaint.description === 'Photo attached' || complaint.description === 'Voice note attached';
+                const isPlaceholder =
+                  !complaint.description ||
+                  complaint.description === 'Photo attached' ||
+                  complaint.description === 'Voice note attached';
                 const hasUserText = !isPlaceholder;
                 const hasTranscription = Boolean(complaint.transcription);
                 const isPhotoOnly = complaint.description === 'Photo attached' && !hasTranscription;
 
-                // Determine what text to show for the current language
                 const getDisplayText = (
                   text: string,
                   type: 'description' | 'transcription' = 'description',
@@ -469,24 +666,22 @@ export function ComplaintDetailPage(): ReactElement {
                 };
 
                 if (isPhotoOnly) {
-                  // Case 1: Photo only — no voice, no text
                   return (
-                    <p className="statement-text" style={{ color: '#64748b', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <p className="statement-text" style={{ color: 'var(--muted)', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: 8 }}>
                       📷 Photo attached
                     </p>
                   );
                 }
 
                 if (hasUserText && hasTranscription) {
-                  // Case 3: User typed text + voice note transcription
                   return (
                     <>
                       <p className="statement-text">{getDisplayText(complaint.description, 'description')}</p>
-                      <div style={{ borderTop: '1px dashed #cbd5e1', marginTop: 10, paddingTop: 10 }}>
-                        <span style={{ fontSize: 11, fontWeight: 600, color: '#64748b', display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
-                          <Mic size={12} color="#1d4ed8" /> Voice Note Transcription:
+                      <div style={{ borderTop: '1px dashed var(--border)', marginTop: 10, paddingTop: 10 }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+                          <Mic size={12} color="var(--accent)" /> Voice Note Transcription:
                         </span>
-                        <p className="statement-text" style={{ fontSize: 13, color: '#475569' }}>
+                        <p className="statement-text" style={{ fontSize: 13, color: 'var(--text)' }}>
                           {getDisplayText(complaint.transcription!, 'transcription')}
                         </p>
                       </div>
@@ -495,13 +690,11 @@ export function ComplaintDetailPage(): ReactElement {
                 }
 
                 if (hasTranscription) {
-                  // Case 2: Voice (with or without photo) — show transcription as main text
                   return (
                     <p className="statement-text">{getDisplayText(complaint.transcription!, 'transcription')}</p>
                   );
                 }
 
-                // Fallback: show description or placeholder
                 return (
                   <p className="statement-text">
                     {getDisplayText(complaint.description || 'No description provided', 'description')}
@@ -514,7 +707,7 @@ export function ComplaintDetailPage(): ReactElement {
           {/* Card 3: Evidence & Media Attachments */}
           <div className="table-card detail-card">
             <h2 className="card-section-title">
-              <Paperclip size={18} color="#1d4ed8" /> Evidence Attachments{' '}
+              <Paperclip size={18} color="var(--accent)" /> Evidence Attachments{' '}
               <span className="badge-pill">{complaint.attachments.length}</span>
             </h2>
 
@@ -531,7 +724,7 @@ export function ComplaintDetailPage(): ReactElement {
                     ) : a.kind === 'VOICE' ? (
                       <div className="audio-wrapper">
                         <span className="media-kind-tag" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <Mic size={14} color="#1d4ed8" /> Voice Note
+                          <Mic size={14} color="var(--accent)" /> Voice Note
                         </span>
                         <audio controls preload="none" src={a.url} className="audio-player">
                           <a href={a.url} target="_blank" rel="noreferrer">
@@ -542,7 +735,7 @@ export function ComplaintDetailPage(): ReactElement {
                     ) : (
                       <div className="video-wrapper">
                         <span className="media-kind-tag" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <Video size={14} color="#1d4ed8" /> Video Clip
+                          <Video size={14} color="var(--accent)" /> Video Clip
                         </span>
                         <video controls preload="none" playsInline src={a.url} className="video-player">
                           <a href={a.url} target="_blank" rel="noreferrer">
@@ -565,7 +758,7 @@ export function ComplaintDetailPage(): ReactElement {
           {/* Card 4: Audit Timeline */}
           <div className="table-card detail-card">
             <h2 className="card-section-title">
-              <History size={18} color="#1d4ed8" /> Audit Timeline
+              <History size={18} color="var(--accent)" /> Audit & Action Timeline
             </h2>
             <div className="timeline-container">
               {complaint.updates.map((u) => (
@@ -597,13 +790,26 @@ export function ComplaintDetailPage(): ReactElement {
         <div className="detail-sidebar-column">
           {/* Status Update Card */}
           <form className="table-card form-card" onSubmit={submitStatus}>
-            <h2 className="card-section-title">
-              <CheckSquare size={18} color="#1d4ed8" /> Update Status
-            </h2>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <h2 className="card-section-title" style={{ margin: 0 }}>
+                <CheckSquare size={18} color="var(--accent)" /> Take Action & Update
+              </h2>
+              <button
+                type="button"
+                onClick={handleRequestClarificationPreset}
+                className="btn-secondary btn-sm"
+                style={{ fontSize: 11, padding: '4px 8px', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                title="Fill note with a driver clarification request"
+              >
+                <HelpCircle size={12} color="var(--accent)" /> Request Driver Info
+              </button>
+            </div>
             <ErrorBanner error={statusError} />
 
             <div className="form-group">
-              <label htmlFor="newStatus" className="form-label">Select Status</label>
+              <label htmlFor="newStatus" className="form-label">
+                Select Complaint Status
+              </label>
               <select
                 id="newStatus"
                 className="form-select"
@@ -619,13 +825,16 @@ export function ComplaintDetailPage(): ReactElement {
             </div>
 
             <div className="form-group">
-              <label htmlFor="note" className="form-label">Action Taken / Progress Note</label>
+              <label htmlFor="note" className="form-label">
+                Action Taken / Progress / Clarification Note
+              </label>
               <textarea
                 id="note"
+                ref={noteTextareaRef}
                 className="form-textarea"
                 rows={4}
                 maxLength={2000}
-                placeholder="Type progress update or resolution details. The driver receives this update."
+                placeholder="Type progress update, clarification request, or resolution details. The driver receives this update directly."
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
               />
@@ -643,20 +852,22 @@ export function ComplaintDetailPage(): ReactElement {
                   : 'Save Status'}
             </button>
             {status === complaint.status && !note.trim() ? (
-              <p className="form-hint">Type a progress note above to record an update while keeping current status.</p>
+              <p className="form-hint">Type a note above to record an action while keeping the current status.</p>
             ) : null}
           </form>
 
           {/* Assign Card */}
           <form className="table-card form-card" onSubmit={submitAssignee}>
             <h2 className="card-section-title">
-              <UserCheck size={18} color="#1d4ed8" /> Assign Staff
+              <UserCheck size={18} color="var(--accent)" /> Assign Staff / Team
             </h2>
             <ErrorBanner error={assignError} />
             <ErrorBanner error={adminsRes.error} />
 
             <div className="form-group">
-              <label htmlFor="assignee" className="form-label">Assignee Admin / Executive</label>
+              <label htmlFor="assignee" className="form-label">
+                Assignee Member / Team Leader
+              </label>
               <select
                 id="assignee"
                 className="form-select"
@@ -664,10 +875,10 @@ export function ComplaintDetailPage(): ReactElement {
                 onChange={(e) => setAssignee(e.target.value)}
                 disabled={complaint.assignmentStatus === 'PENDING'}
               >
-                <option value="">Select an admin or executive…</option>
+                <option value="">Select a team member or leader…</option>
                 {(adminsRes.data ?? []).map((a) => (
                   <option key={a.id} value={a.id}>
-                    {fullName(a)} ({formatEnum(a.role)})
+                    {fullName(a)} ({formatEnum(a.role)}) {a.category ? `· ${formatEnum(a.category)}` : ''}
                   </option>
                 ))}
               </select>
@@ -689,10 +900,10 @@ export function ComplaintDetailPage(): ReactElement {
                       ? 'Submitting…'
                       : isAssigningToSuperAdmin
                         ? 'Request SuperAdmin Assignment'
-                        : 'Assign Complaint'}
+                        : 'Assign Staff / Team'}
                   </button>
                   {isPending ? (
-                    <p className="form-hint" style={{ color: '#d97706', fontWeight: 600 }}>
+                    <p className="form-hint" style={{ color: 'var(--warning-text)', fontWeight: 600 }}>
                       Please Accept or Reject the pending assignment request above before re-assigning this complaint.
                     </p>
                   ) : isAssigningToSuperAdmin ? (

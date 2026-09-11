@@ -285,7 +285,8 @@ async function fetchRaw(path: string, opts: RequestOptions): Promise<Response> {
         typeof (opts.body as FormData).append === 'function'),
   );
   const timeoutMs = opts.timeoutMs ?? (isMultipart ? UPLOAD_TIMEOUT_MS : REQUEST_TIMEOUT_MS);
-  const maxRetries = isMultipart ? MAX_RETRIES : MAX_RETRIES;
+  const isAuth = path.startsWith('/auth/');
+  const maxRetries = isAuth ? 0 : (opts.anonymous ? 0 : MAX_RETRIES);
 
   // Retry loop for transient network errors (Render.com cold-start, flaky 3G, etc.).
   // HTTP errors (4xx, 5xx) are NOT retried — those are definitive server responses.
@@ -293,7 +294,7 @@ async function fetchRaw(path: string, opts: RequestOptions): Promise<Response> {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     if (attempt > 0) {
       const delay = retryDelay(attempt - 1);
-      console.warn(`[api] Network error, retrying in ${String(delay / 1000)} s (attempt ${String(attempt)}/${String(maxRetries)})...`);
+      console.log(`[api] Network reconnecting in ${String(delay / 1000)} s (attempt ${String(attempt)}/${String(maxRetries)})...`);
       await sleep(delay);
     }
     try {

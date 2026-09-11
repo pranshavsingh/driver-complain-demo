@@ -97,7 +97,11 @@ function AppShell(): ReactElement {
             onPress={() => {
               const { complaintId } = banner;
               setBanner(null);
-              if (complaintId) router.push(`/complaint/${complaintId}`);
+              if (complaintId) {
+                router.push(`/complaint/${complaintId}`);
+              } else {
+                router.push('/(app)/(tabs)');
+              }
             }}
             onDismiss={() => {
               setBanner(null);

@@ -87,13 +87,35 @@ export function toDriverListItem(driver: Driver & { user: User }): DriverListIte
   };
 }
 
-export function toVehiclePublic(vehicle: Vehicle): VehiclePublic {
+export function toVehiclePublic(
+  vehicle: Vehicle & {
+    driver?: (Driver & { user?: User }) | null;
+  },
+): VehiclePublic {
+  const v = vehicle as Vehicle & {
+    modelNumber?: string | null;
+    registrationDate?: Date | null;
+    chassisNumber?: string | null;
+    wheels?: string | null;
+    agreementStatus?: string | null;
+    driver?: (Driver & { user?: { firstName: string; lastName: string } }) | null;
+  };
+  const driverName = v.driver?.user
+    ? `${v.driver.user.firstName} ${v.driver.user.lastName}`.trim()
+    : null;
+
   return {
     id: vehicle.id,
-    driverId: vehicle.driverId,
+    driverId: vehicle.driverId ?? null,
+    driverName,
     plateNumber: vehicle.plateNumber,
     make: vehicle.make ?? null,
     model: vehicle.model ?? null,
+    modelNumber: v.modelNumber ?? null,
+    registrationDate: iso(v.registrationDate),
+    chassisNumber: v.chassisNumber ?? null,
+    wheels: v.wheels ?? null,
+    agreementStatus: v.agreementStatus ?? 'ACTIVE',
     year: vehicle.year ?? null,
     vin: vehicle.vin ?? null,
     createdAt: vehicle.createdAt.toISOString(),
@@ -101,25 +123,90 @@ export function toVehiclePublic(vehicle: Vehicle): VehiclePublic {
   };
 }
 
-export function toComplaintPublic(complaint: Complaint): ComplaintPublic {
+export function toComplaintPublic(complaint: Complaint & {
+  driver?: (Driver & { user?: User }) | null;
+  vehicle?: Vehicle | null;
+  assignedTo?: User | null;
+  loadingRecords?: any[];
+  _count?: { updates?: number };
+}): ComplaintPublic {
   const c = complaint as Complaint & {
     transcription?: string | null;
     category?: ComplaintPublic['category'];
     pendingAssigneeId?: string | null;
     assignmentStatus?: ComplaintPublic['assignmentStatus'];
+    driver?: (Driver & { user?: User }) | null;
+    vehicle?: Vehicle | null;
+    assignedTo?: User | null;
+    loadingRecords?: any[];
+    _count?: { updates?: number };
   };
+
+  const driverUser = c.driver?.user;
+  const driverName = driverUser ? `${driverUser.firstName} ${driverUser.lastName}`.trim() : null;
+  const driverPhone = driverUser?.phone ?? null;
+  const driverEmployeeId = driverUser?.employeeId ?? null;
+
+  // Determine trip phase and loading context from associated loading records
+  const latestLoading = c.loadingRecords && c.loadingRecords.length > 0 ? c.loadingRecords[0] : null;
+
+  const driverVehicles = (c.driver as any)?.vehicles;
+  const fallbackVehicle = driverVehicles && driverVehicles.length > 0 ? driverVehicles[0] : null;
+
+  const vehiclePlateNumber = c.vehicle?.plateNumber ?? fallbackVehicle?.plateNumber ?? latestLoading?.vehicleNumber ?? null;
+  const vehicleModel = c.vehicle?.model ?? fallbackVehicle?.model ?? null;
+
+  const assignedToName = c.assignedTo ? `${c.assignedTo.firstName} ${c.assignedTo.lastName}`.trim() : null;
+  const updatesCount = c._count?.updates ?? 0;
+
+  let tripPhase: ComplaintPublic['tripPhase'] = null;
+  let loadingStatus: ComplaintPublic['loadingStatus'] = null;
+  let loadingRecordId: string | null = null;
+  let tripLocationName: string | null = null;
+
+  if (latestLoading) {
+    loadingRecordId = latestLoading.id;
+    loadingStatus = latestLoading.status;
+    tripLocationName = latestLoading.locationName || latestLoading.reachedAddress || latestLoading.completedAddress || latestLoading.tripStartAddress || null;
+
+    if (latestLoading.status === 'REACHED' || latestLoading.status === 'COMPLETED') {
+      tripPhase = 'AT_LOADING_PLANT';
+    } else if (latestLoading.status === 'TRIP_STARTED') {
+      tripPhase = 'IN_TRANSIT';
+    } else if (latestLoading.status === 'UNLOADING') {
+      tripPhase = 'AT_UNLOADING_POINT';
+    } else {
+      tripPhase = 'YARD_IDLE';
+    }
+  }
+
+  // Needs action = NEW complaint with no assignee OR no admin updates yet
+  const needsAction = complaint.status === 'NEW' && (!complaint.assignedToId || updatesCount <= 1);
+
   return {
     id: complaint.id,
     complaintNo: complaint.complaintNo,
     driverId: complaint.driverId,
+    driverName,
+    driverPhone,
+    driverEmployeeId,
     vehicleId: complaint.vehicleId ?? null,
+    vehiclePlateNumber,
+    vehicleModel,
     title: complaint.title,
     description: complaint.description,
     transcription: c.transcription ?? null,
     category: c.category ?? 'SUPPORT',
     status: complaint.status,
     priority: complaint.priority,
+    tripPhase,
+    loadingStatus,
+    loadingRecordId,
+    tripLocationName,
+    needsAction,
+    updatesCount,
     assignedToId: complaint.assignedToId ?? null,
+    assignedToName,
     pendingAssigneeId: c.pendingAssigneeId ?? null,
     assignmentStatus: c.assignmentStatus ?? 'NONE',
     resolvedAt: iso(complaint.resolvedAt),
@@ -200,6 +287,9 @@ type ComplaintDetailRow = Complaint & {
 };
 
 export function toComplaintDetail(c: ComplaintDetailRow): ComplaintDetail {
+  const driverVehicles = (c.driver as any)?.vehicles;
+  const fallbackVehicle = driverVehicles && driverVehicles.length > 0 ? driverVehicles[0] : null;
+
   return {
     ...toComplaintPublic(c),
     attachments: c.attachments.map(toComplaintAttachmentPublic),
@@ -209,7 +299,7 @@ export function toComplaintDetail(c: ComplaintDetailRow): ComplaintDetail {
       driverId: c.driver.id,
       licenseNumber: c.driver.licenseNumber,
     },
-    vehicle: c.vehicle ? toVehiclePublic(c.vehicle) : null,
+    vehicle: c.vehicle ? toVehiclePublic(c.vehicle) : fallbackVehicle ? toVehiclePublic(fallbackVehicle) : null,
     assignedTo: c.assignedTo ? toPartySummary(c.assignedTo) : null,
     pendingAssignee: c.pendingAssignee ? toPartySummary(c.pendingAssignee) : null,
   };

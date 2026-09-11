@@ -20,6 +20,8 @@ import {
   type VehiclePublic,
   type CreateUser,
   type UpdateUser,
+  type CreateVehicle,
+  type UpdateVehicle,
   LoadingRecordSchema,
   type LoadingRecord,
   DriverMonthlyTripSummarySchema,
@@ -43,6 +45,9 @@ export interface ComplaintFilterInput {
   search: string;
   status: string;
   priority: string;
+  category: string;
+  tripPhase: string;
+  needsAction: string;
   driverId: string;
   vehicleId: string;
   assignedToId: string;
@@ -54,6 +59,9 @@ export const EMPTY_FILTER: ComplaintFilterInput = {
   search: '',
   status: '',
   priority: '',
+  category: '',
+  tripPhase: '',
+  needsAction: '',
   driverId: '',
   vehicleId: '',
   assignedToId: '',
@@ -78,6 +86,9 @@ function toQuery(filter: ComplaintFilterInput): Record<string, QueryValue> {
     search: filter.search,
     status: filter.status,
     priority: filter.priority,
+    category: filter.category,
+    tripPhase: filter.tripPhase,
+    needsAction: filter.needsAction,
     driverId: filter.driverId,
     vehicleId: filter.vehicleId,
     assignedToId: filter.assignedToId,
@@ -132,8 +143,24 @@ export const drivers = {
   list: (): Promise<DriverListItem[]> => request(z.array(DriverListItemSchema), '/drivers'),
 };
 
+export interface VehicleFilterQuery {
+  search?: string;
+  agreementStatus?: string;
+  wheels?: string;
+  driverId?: string;
+}
+
 export const vehicles = {
-  list: (): Promise<VehiclePublic[]> => request(z.array(VehiclePublicSchema), '/vehicles'),
+  list: (query?: VehicleFilterQuery): Promise<VehiclePublic[]> =>
+    request(z.array(VehiclePublicSchema), '/vehicles', { query: query as Record<string, QueryValue> }),
+  get: (id: string): Promise<VehiclePublic> =>
+    request(VehiclePublicSchema, `/vehicles/${id}`),
+  create: (input: CreateVehicle): Promise<VehiclePublic> =>
+    request(VehiclePublicSchema, '/vehicles', { method: 'POST', body: input }),
+  update: (id: string, input: UpdateVehicle): Promise<VehiclePublic> =>
+    request(VehiclePublicSchema, `/vehicles/${id}`, { method: 'PATCH', body: input }),
+  remove: (id: string): Promise<void> =>
+    requestNoContent(`/vehicles/${id}`, { method: 'DELETE' }),
 };
 
 export const complaints = {

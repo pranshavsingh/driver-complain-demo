@@ -92,10 +92,19 @@ const detailInclude = {
   attachments: true,
   // author is eager-loaded so the timeline can name who made each change.
   updates: { orderBy: { createdAt: 'asc' }, include: { author: true } },
-  driver: { include: { user: true } },
+  driver: { include: { user: true, vehicles: { orderBy: { updatedAt: 'desc' }, take: 1 } } },
   vehicle: true,
   assignedTo: true,
   pendingAssignee: true,
+  loadingRecords: { orderBy: { createdAt: 'desc' }, take: 1 },
+} satisfies Prisma.ComplaintInclude;
+
+export const listInclude = {
+  driver: { include: { user: true, vehicles: { orderBy: { updatedAt: 'desc' }, take: 1 } } },
+  vehicle: true,
+  assignedTo: true,
+  loadingRecords: { orderBy: { createdAt: 'desc' }, take: 1 },
+  _count: { select: { updates: true } },
 } satisfies Prisma.ComplaintInclude;
 
 /**
@@ -141,6 +150,17 @@ export async function create(
     vehicleIdToUse = vehicle.id;
   }
 
+  // Automatic Fallback: If not specified, link driver's assigned vehicle
+  if (!vehicleIdToUse) {
+    const driverVehicle = await prisma.vehicle.findFirst({
+      where: { driverId: driver.id },
+      orderBy: { updatedAt: 'desc' },
+    });
+    if (driverVehicle) {
+      vehicleIdToUse = driverVehicle.id;
+    }
+  }
+
   const categoryToUse = input.category ?? 'SUPPORT';
   // Load-balanced admin assignment — picks the admin with fewest active complaints.
   const autoAssignedToId = await findLeastLoadedAdmin(categoryToUse);
@@ -184,6 +204,14 @@ export async function create(
       ? voiceTranscription
       : input.description;
 
+  const activeLoading = await prisma.loadingRecord.findFirst({
+    where: {
+      driverId: driver.id,
+      status: { not: 'TRIP_COMPLETED' },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
   const created = await prisma.$transaction(async (tx) => {
     const counter = await tx.counter.upsert({
       where: { name: `complaint-${year}` },
@@ -205,6 +233,13 @@ export async function create(
         assignedToId: autoAssignedToId,
       },
     });
+
+    if (activeLoading) {
+      await tx.loadingRecord.update({
+        where: { id: activeLoading.id },
+        data: { complaintId: complaint.id },
+      });
+    }
 
     if (uploads.length > 0) {
       await tx.complaintAttachment.createMany({
@@ -248,7 +283,10 @@ export async function create(
       });
     }
 
-    return complaint;
+    return tx.complaint.findUniqueOrThrow({
+      where: { id: complaint.id },
+      include: listInclude,
+    });
   });
 
   // Live + push delivery, post-commit and best-effort — the admins' Notification rows
@@ -297,6 +335,23 @@ function buildWhere(
     where.assignedToId = query.assignedToId;
   }
 
+  if (query.needsAction) {
+    where.status = 'NEW';
+    where.assignedToId = null;
+  }
+
+  if (query.tripPhase) {
+    if (query.tripPhase === 'AT_LOADING_PLANT') {
+      where.loadingRecords = { some: { status: { in: ['REACHED', 'COMPLETED'] } } };
+    } else if (query.tripPhase === 'IN_TRANSIT') {
+      where.loadingRecords = { some: { status: 'TRIP_STARTED' } };
+    } else if (query.tripPhase === 'AT_UNLOADING_POINT') {
+      where.loadingRecords = { some: { status: 'UNLOADING' } };
+    } else if (query.tripPhase === 'YARD_IDLE') {
+      where.loadingRecords = { none: { status: { in: ['REACHED', 'COMPLETED', 'TRIP_STARTED', 'UNLOADING'] } } };
+    }
+  }
+
   if (query.createdFrom || query.createdTo) {
     where.createdAt = {
       ...(query.createdFrom ? { gte: query.createdFrom } : {}),
@@ -309,6 +364,12 @@ function buildWhere(
       { complaintNo: { contains: query.search, mode: 'insensitive' } },
       { title: { contains: query.search, mode: 'insensitive' } },
       { description: { contains: query.search, mode: 'insensitive' } },
+      { driver: { user: { OR: [
+        { firstName: { contains: query.search, mode: 'insensitive' } },
+        { lastName: { contains: query.search, mode: 'insensitive' } },
+        { employeeId: { contains: query.search, mode: 'insensitive' } },
+      ] } } },
+      { vehicle: { plateNumber: { contains: query.search, mode: 'insensitive' } } },
     ];
   }
 
@@ -341,6 +402,7 @@ export async function list(
   const [rows, total] = await prisma.$transaction([
     prisma.complaint.findMany({
       where,
+      include: listInclude,
       orderBy: { createdAt: 'desc' },
       skip,
       take: query.pageSize,
