@@ -56,15 +56,11 @@ export function VehicleMaintenanceModal({
   );
   const [showVehicleDropdown, setShowVehicleDropdown] = useState(false);
 
-  // --- Tyre & Battery Form State ---
-  const [itemNumber, setItemNumber] = useState('');
-  const [quantity, setQuantity] = useState('1');
-  const [brand, setBrand] = useState('');
-  const [position, setPosition] = useState('');
-  const [odometer, setOdometer] = useState('');
-  const [cost, setCost] = useState('');
-  const [notes, setNotes] = useState('');
-  const [maintenancePhoto, setMaintenancePhoto] = useState<api.FileToUpload | null>(null);
+  // --- Mandatory Form Fields Only ---
+  const [itemNumber, setItemNumber] = useState(''); // New tyre / battery number
+  const [oldItemNumber, setOldItemNumber] = useState(''); // Old tyre / battery number (replaced with this)
+  const [quantity, setQuantity] = useState('1'); // Qty
+  const [maintenancePhoto, setMaintenancePhoto] = useState<api.FileToUpload | null>(null); // Photo proof
 
   const [submitting, setSubmitting] = useState(false);
 
@@ -128,20 +124,29 @@ export function VehicleMaintenanceModal({
 
   const resetAllForms = () => {
     setItemNumber('');
+    setOldItemNumber('');
     setQuantity('1');
-    setBrand('');
-    setPosition('');
-    setOdometer('');
-    setCost('');
-    setNotes('');
     setMaintenancePhoto(null);
   };
 
   const handleMaintenanceSubmit = async () => {
+    if (!activeVehicleName) {
+      Alert.alert('Vehicle Required', 'Please select or enter a vehicle number.');
+      return;
+    }
+
     if (!itemNumber.trim()) {
       Alert.alert(
-        'Missing Information',
-        `Please enter the ${activeTab === 'TYRE' ? 'Tyre Number / Serial' : 'Battery Number / Serial'}.`,
+        'Missing New ' + (activeTab === 'TYRE' ? 'Tyre' : 'Battery') + ' Number',
+        `Please enter the ${activeTab === 'TYRE' ? 'New Tyre Number' : 'New Battery Number / Serial'}.`,
+      );
+      return;
+    }
+
+    if (!oldItemNumber.trim()) {
+      Alert.alert(
+        'Missing Old ' + (activeTab === 'TYRE' ? 'Tyre' : 'Battery') + ' Number',
+        `Please enter the ${activeTab === 'TYRE' ? 'Old Tyre Number (replaced with this)' : 'Old Battery Number (replaced with this)'}.`,
       );
       return;
     }
@@ -154,14 +159,9 @@ export function VehicleMaintenanceModal({
 
     if (!maintenancePhoto) {
       Alert.alert(
-        'Photo Required',
-        `Please attach a photo of the new ${activeTab === 'TYRE' ? 'tyre' : 'battery'} as proof.`,
+        'Photo Mandatory',
+        `Please attach a clear photo of the new ${activeTab === 'TYRE' ? 'tyre' : 'battery'} as proof.`,
       );
-      return;
-    }
-
-    if (!activeVehicleName) {
-      Alert.alert('Vehicle Required', 'Please select or enter a vehicle number.');
       return;
     }
 
@@ -173,19 +173,16 @@ export function VehicleMaintenanceModal({
           vehicleNumber: activeVehicleName,
           type: activeTab === 'TYRE' ? 'TYRE' : 'BATTERY',
           itemNumber: itemNumber.trim(),
+          oldItemNumber: oldItemNumber.trim(),
           quantity: parsedQty,
-          odometerKm: odometer.trim() ? parseInt(odometer.trim(), 10) : undefined,
-          brand: brand.trim() || undefined,
-          position: activeTab === 'TYRE' && position.trim() ? position.trim() : undefined,
-          cost: cost.trim() ? parseFloat(cost.trim()) : undefined,
-          notes: notes.trim() || undefined,
+          notes: `Old ${activeTab === 'TYRE' ? 'Tyre' : 'Battery'}: ${oldItemNumber.trim()}`,
         },
-        maintenancePhoto ?? undefined,
+        maintenancePhoto,
       );
 
       Alert.alert(
-        'Maintenance Logged 🎉',
-        `New ${activeTab === 'TYRE' ? 'Tyre' : 'Battery'} entry recorded successfully!`,
+        'Replacement Recorded 🎉',
+        `${activeTab === 'TYRE' ? 'Tyre' : 'Battery'} replacement successfully submitted!`,
         [
           {
             text: 'OK',
@@ -207,14 +204,18 @@ export function VehicleMaintenanceModal({
     }
   };
 
+  const isTyre = activeTab === 'TYRE';
+
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <View style={styles.container}>
         {/* Modal Header */}
         <View style={[styles.header, { paddingTop: insets.top + spacing.xs }]}>
           <View style={styles.headerTitleRow}>
-            <Ionicons name="construct" size={22} color="#FFFFFF" />
-            <Text style={styles.headerTitle}>Vehicle Maintenance & Service</Text>
+            <Ionicons name={isTyre ? 'disc' : 'battery-charging'} size={22} color="#FFFFFF" />
+            <Text style={styles.headerTitle}>
+              {isTyre ? 'Tyre Replacement' : 'Battery Replacement'}
+            </Text>
           </View>
           <Pressable onPress={onClose} style={styles.closeBtn} accessibilityLabel="Close modal">
             <Ionicons name="close" size={24} color="#FFFFFF" />
@@ -258,9 +259,11 @@ export function VehicleMaintenanceModal({
             </Pressable>
           </View>
 
-          {/* Vehicle Input Field (Common across all tabs) */}
+          {/* 1. Vehicle Input Field */}
           <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Vehicle Number (Auto-selected)</Text>
+            <Text style={styles.fieldLabel}>
+              Vehicle Number <Text style={styles.requiredStar}>*</Text>
+            </Text>
             <View style={styles.inputBox}>
               <Ionicons name="bus-outline" size={20} color="#075E54" />
               <TextInput
@@ -306,25 +309,24 @@ export function VehicleMaintenanceModal({
             ) : null}
           </View>
 
-          {/* Identification Number (Tyre No. or Battery Serial No.) */}
+          {/* 2. New Tyre / Battery Number */}
           <View style={styles.fieldGroup}>
             <Text style={styles.fieldLabel}>
-              {activeTab === 'TYRE'
-                ? 'Tyre Number / Identification *'
-                : 'Battery Number / Serial *'}
+              {isTyre ? 'New Tyre Number' : 'New Battery Number / Serial'}{' '}
+              <Text style={styles.requiredStar}>*</Text>
             </Text>
             <View style={styles.inputBox}>
               <Ionicons
-                name={activeTab === 'TYRE' ? 'barcode-outline' : 'keypad-outline'}
+                name={isTyre ? 'barcode-outline' : 'keypad-outline'}
                 size={18}
-                color="#075E54"
+                color={isTyre ? '#0284C7' : '#D97706'}
               />
               <TextInput
                 style={styles.textInput}
                 placeholder={
-                  activeTab === 'TYRE'
+                  isTyre
                     ? 'Enter new tyre number (e.g. TYR-9842)'
-                    : 'Enter battery serial number (e.g. BAT-2026-EX)'
+                    : 'Enter new battery serial number'
                 }
                 placeholderTextColor="#94A3B8"
                 autoCapitalize="characters"
@@ -334,110 +336,57 @@ export function VehicleMaintenanceModal({
             </View>
           </View>
 
-          {/* Tyre Position (Only for Tyre Replacement) */}
-          {activeTab === 'TYRE' ? (
-            <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>Tyre Position — Optional</Text>
-              <View style={styles.positionGrid}>
-                {[
-                  'Front Left',
-                  'Front Right',
-                  'Rear Left (Outer)',
-                  'Rear Left (Inner)',
-                  'Rear Right (Outer)',
-                  'Rear Right (Inner)',
-                  'Stepney / Spare',
-                ].map((pos) => (
-                  <Pressable
-                    key={pos}
-                    style={[
-                      styles.positionChip,
-                      position === pos && styles.positionChipSelected,
-                    ]}
-                    onPress={() => setPosition(position === pos ? '' : pos)}
-                  >
-                    <Text
-                      style={[
-                        styles.positionChipText,
-                        position === pos && styles.positionChipTextSelected,
-                      ]}
-                    >
-                      {pos}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-            </View>
-          ) : null}
-
-          {/* Brand & Quantity Row */}
-          <View style={styles.rowGroup}>
-            <View style={[styles.fieldGroup, { flex: 1 }]}>
-              <Text style={styles.fieldLabel}>Brand / Make — Optional</Text>
-              <View style={styles.inputBox}>
-                <Ionicons name="pricetag-outline" size={18} color="#64748B" />
-                <TextInput
-                  style={styles.textInput}
-                  placeholder={activeTab === 'TYRE' ? 'MRF, Apollo...' : 'Exide, Amaron...'}
-                  placeholderTextColor="#94A3B8"
-                  value={brand}
-                  onChangeText={setBrand}
-                />
-              </View>
-            </View>
-
-            <View style={[styles.fieldGroup, { width: 100 }]}>
-              <Text style={styles.fieldLabel}>Qty *</Text>
-              <View style={styles.inputBox}>
-                <TextInput
-                  style={[styles.textInput, { textAlign: 'center' }]}
-                  placeholder="1"
-                  placeholderTextColor="#94A3B8"
-                  keyboardType="number-pad"
-                  value={quantity}
-                  onChangeText={setQuantity}
-                />
-              </View>
-            </View>
-          </View>
-
-          {/* Odometer & Cost Row */}
-          <View style={styles.rowGroup}>
-            <View style={[styles.fieldGroup, { flex: 1 }]}>
-              <Text style={styles.fieldLabel}>Odometer (KM) — Optional</Text>
-              <View style={styles.inputBox}>
-                <Ionicons name="speedometer-outline" size={18} color="#64748B" />
-                <TextInput
-                  style={styles.textInput}
-                  placeholder="e.g. 124500"
-                  placeholderTextColor="#94A3B8"
-                  keyboardType="number-pad"
-                  value={odometer}
-                  onChangeText={setOdometer}
-                />
-              </View>
-            </View>
-
-            <View style={[styles.fieldGroup, { flex: 1 }]}>
-              <Text style={styles.fieldLabel}>Total Cost (₹) — Optional</Text>
-              <View style={styles.inputBox}>
-                <Ionicons name="cash-outline" size={18} color="#64748B" />
-                <TextInput
-                  style={styles.textInput}
-                  placeholder="e.g. 18500"
-                  placeholderTextColor="#94A3B8"
-                  keyboardType="decimal-pad"
-                  value={cost}
-                  onChangeText={setCost}
-                />
-              </View>
-            </View>
-          </View>
-
-          {/* Photo Proof of Installed Item (MANDATORY) */}
+          {/* 3. Old Tyre / Battery Number (Replaced with this) */}
           <View style={styles.fieldGroup}>
             <Text style={styles.fieldLabel}>
-              Photo of New {activeTab === 'TYRE' ? 'Tyre' : 'Battery'} * (Mandatory)
+              {isTyre
+                ? 'Old Tyre Number (replaced with this)'
+                : 'Old Battery Number (replaced with this)'}{' '}
+              <Text style={styles.requiredStar}>*</Text>
+            </Text>
+            <View style={styles.inputBox}>
+              <Ionicons
+                name="repeat-outline"
+                size={18}
+                color="#64748B"
+              />
+              <TextInput
+                style={styles.textInput}
+                placeholder={
+                  isTyre
+                    ? 'Enter old tyre number being replaced'
+                    : 'Enter old battery number being replaced'
+                }
+                placeholderTextColor="#94A3B8"
+                autoCapitalize="characters"
+                value={oldItemNumber}
+                onChangeText={setOldItemNumber}
+              />
+            </View>
+          </View>
+
+          {/* 4. Quantity Field */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>
+              Quantity (Qty) <Text style={styles.requiredStar}>*</Text>
+            </Text>
+            <View style={[styles.inputBox, { width: 140 }]}>
+              <Ionicons name="calculator-outline" size={18} color="#64748B" />
+              <TextInput
+                style={[styles.textInput, { textAlign: 'center', fontWeight: '700' }]}
+                placeholder="1"
+                placeholderTextColor="#94A3B8"
+                keyboardType="number-pad"
+                value={quantity}
+                onChangeText={setQuantity}
+              />
+            </View>
+          </View>
+
+          {/* 5. Photo Proof of New Item (MANDATORY) */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>
+              Photo of New {isTyre ? 'Tyre' : 'Battery'} <Text style={styles.requiredStar}>*</Text>
             </Text>
             {maintenancePhoto ? (
               <View style={styles.photoPreviewWrapper}>
@@ -459,39 +408,28 @@ export function VehicleMaintenanceModal({
                 style={styles.attachBtn}
                 onPress={showMaintenanceAttachmentMenu}
               >
-                <Ionicons name="camera-outline" size={22} color="#1D4ED8" />
-                <Text style={styles.attachBtnText}>
-                  Attach Photo of Installed {activeTab === 'TYRE' ? 'Tyre' : 'Battery'}
+                <Ionicons
+                  name="camera"
+                  size={22}
+                  color={isTyre ? '#0284C7' : '#D97706'}
+                />
+                <Text
+                  style={[
+                    styles.attachBtnText,
+                    { color: isTyre ? '#0284C7' : '#D97706' },
+                  ]}
+                >
+                  📷 Attach Photo of Installed New {isTyre ? 'Tyre' : 'Battery'}
                 </Text>
               </Pressable>
             )}
           </View>
 
-          {/* Notes Input */}
-          <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Workshop / Notes — Optional</Text>
-            <View
-              style={[
-                styles.inputBox,
-                { height: 60, alignItems: 'flex-start', paddingTop: 8 },
-              ]}
-            >
-              <TextInput
-                style={[styles.textInput, { textAlignVertical: 'top' }]}
-                placeholder="Workshop location, warranty serial, notes..."
-                placeholderTextColor="#94A3B8"
-                multiline
-                value={notes}
-                onChangeText={setNotes}
-              />
-            </View>
-          </View>
-
-          {/* Maintenance Submit Action Button */}
+          {/* Submit Action Button */}
           <Pressable
             style={[
               styles.submitBtn,
-              { backgroundColor: activeTab === 'TYRE' ? '#0284C7' : '#D97706' },
+              { backgroundColor: isTyre ? '#0284C7' : '#D97706' },
               submitting && styles.submitBtnDisabled,
             ]}
             onPress={handleMaintenanceSubmit}
@@ -503,7 +441,7 @@ export function VehicleMaintenanceModal({
               <>
                 <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
                 <Text style={styles.submitBtnText}>
-                  Submit {activeTab === 'TYRE' ? 'Tyre' : 'Battery'} Replacement
+                  Submit {isTyre ? 'Tyre' : 'Battery'} Replacement
                 </Text>
               </>
             )}
@@ -525,7 +463,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.md,
-    backgroundColor: '#0F172A', // Slate header
+    backgroundColor: '#0F172A',
     elevation: 4,
   },
   headerTitleRow: {
@@ -543,7 +481,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: spacing.lg,
-    gap: spacing.md,
+    gap: spacing.lg,
   },
   mainTabsContainer: {
     flexDirection: 'row',
@@ -578,14 +516,14 @@ const styles = StyleSheet.create({
   fieldGroup: {
     gap: 6,
   },
-  rowGroup: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
   fieldLabel: {
     fontSize: 13,
     fontWeight: '700',
     color: '#1E293B',
+  },
+  requiredStar: {
+    color: '#DC2626',
+    fontWeight: '800',
   },
   inputBox: {
     flexDirection: 'row',
@@ -628,48 +566,21 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#0F172A',
   },
-  positionGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  positionChip: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-  },
-  positionChipSelected: {
-    backgroundColor: '#0284C7',
-    borderColor: '#0284C7',
-  },
-  positionChipText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#475569',
-  },
-  positionChipTextSelected: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
   attachBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#EFF6FF',
+    backgroundColor: '#FFFFFF',
     borderWidth: 1.5,
-    borderColor: '#3B82F6',
+    borderColor: '#94A3B8',
     borderStyle: 'dashed',
     borderRadius: radius.md,
-    padding: spacing.md,
+    padding: spacing.md + 2,
     gap: 8,
   },
   attachBtnText: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#1D4ED8',
   },
   photoPreviewWrapper: {
     position: 'relative',
@@ -678,7 +589,7 @@ const styles = StyleSheet.create({
   },
   photoPreview: {
     width: '100%',
-    height: 180,
+    height: 190,
     borderRadius: radius.md,
   },
   removePhotoBtn: {
@@ -686,9 +597,9 @@ const styles = StyleSheet.create({
     top: 8,
     right: 8,
     backgroundColor: 'rgba(220, 38, 38, 0.9)',
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -696,11 +607,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#0F172A',
     paddingVertical: 14,
     borderRadius: radius.md,
     gap: 8,
-    marginTop: spacing.sm,
+    marginTop: spacing.xs,
     elevation: 2,
   },
   submitBtnDisabled: {

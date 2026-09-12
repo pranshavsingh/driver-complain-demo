@@ -25,6 +25,7 @@ export async function handleCreateMaintenanceRecord(
       vehicleNumber: body.vehicleNumber,
       type: (body.type as MaintenanceType) || 'TYRE',
       itemNumber: body.itemNumber || '',
+      oldItemNumber: body.oldItemNumber || undefined,
       quantity,
       odometerKm,
       brand: body.brand,
@@ -102,7 +103,7 @@ export async function handleExportMaintenanceCsv(
     });
 
     let csv =
-      'ID,Date,Driver,EmployeeID,Vehicle,Type,ItemNumber,Quantity,Brand,Position,Cost,Odometer(KM),Notes,PhotoUrl\n';
+      'ID,Date,Driver,EmployeeID,Vehicle,Type,NewItemNumber,OldItemNumber,Quantity,Brand,Position,Cost,Odometer(KM),Notes,PhotoUrl\n';
 
     for (const row of result.data) {
       const driverName = row.driver?.user
@@ -112,7 +113,7 @@ export async function handleExportMaintenanceCsv(
       const vehicle = row.vehicle?.plateNumber ?? 'N/A';
       const date = new Date(row.createdAt).toISOString();
 
-      csv += `"${row.id}","${date}","${driverName}","${empId}","${vehicle}","${row.type}","${row.itemNumber}",${row.quantity},"${row.brand ?? ''}","${row.position ?? ''}",${row.cost ?? ''},${row.odometerKm ?? ''},"${(row.notes ?? '').replace(/"/g, '""')}","${row.photoUrl ?? ''}"\n`;
+      csv += `"${row.id}","${date}","${driverName}","${empId}","${vehicle}","${row.type}","${row.itemNumber}","${row.oldItemNumber ?? ''}",${row.quantity},"${row.brand ?? ''}","${row.position ?? ''}",${row.cost ?? ''},${row.odometerKm ?? ''},"${(row.notes ?? '').replace(/"/g, '""')}","${row.photoUrl ?? ''}"\n`;
     }
 
     res.setHeader('Content-Type', 'text/csv');

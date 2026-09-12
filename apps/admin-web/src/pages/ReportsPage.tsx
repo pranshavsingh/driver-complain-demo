@@ -218,9 +218,25 @@ export function ReportsPage(): ReactElement {
   const [activeTab, setActiveTab] = useState<TabKey>('TIMELINE');
   const [timelineMode, setTimelineMode] = useState<TimelineMode>('TRIPS');
   const [exporting, setExporting] = useState(false);
+  const [exportingFleet, setExportingFleet] = useState(false);
   const [previewPhoto, setPreviewPhoto] = useState<{ url: string; title: string } | null>(null);
   // Default to collapsed at primary state
   const [expandedTripIds, setExpandedTripIds] = useState<Set<string>>(new Set());
+
+  const handleExportFleetXlsx = async (): Promise<void> => {
+    try {
+      setExportingFleet(true);
+      await api.reports.exportFleetReportXlsx(
+        {},
+        `fleet-full-report-${new Date().toISOString().slice(0, 10)}.xlsx`,
+      );
+    } catch (err) {
+      console.error('Failed to export fleet report:', err);
+    } finally {
+      setExportingFleet(false);
+    }
+  };
+
 
   const toggleTripCollapse = (tripId: string) => {
     setExpandedTripIds((prev) => {
@@ -571,12 +587,26 @@ export function ReportsPage(): ReactElement {
             </p>
           </div>
 
-          <div className="header-actions">
+          <div className="header-actions" style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <button
+              type="button"
+              className="btn btn-primary export-btn"
+              onClick={() => void handleExportFleetXlsx()}
+              disabled={exportingFleet || fleetResource.loading || fleetList.length === 0}
+            >
+              {exportingFleet ? (
+                <RotateCw size={16} className="spin-icon" />
+              ) : (
+                <FileSpreadsheet size={16} />
+              )}
+              <span>{exportingFleet ? 'Generating Excel...' : 'Export All Vehicles Report (.xlsx)'}</span>
+            </button>
+
             <button
               type="button"
               className="btn btn-secondary"
               onClick={() => void fleetResource.reload()}
-              disabled={fleetResource.loading}
+              disabled={fleetResource.loading || exportingFleet}
             >
               <RotateCw size={15} className={fleetResource.loading ? 'spin-icon' : ''} />
               <span>Refresh Fleet</span>

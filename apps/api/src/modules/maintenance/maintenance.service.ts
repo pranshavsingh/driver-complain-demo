@@ -11,6 +11,7 @@ export interface CreateMaintenanceInput {
   vehicleNumber?: string;
   type?: MaintenanceType;
   itemNumber: string;
+  oldItemNumber?: string;
   quantity?: number;
   odometerKm?: number;
   brand?: string;
@@ -103,6 +104,7 @@ export async function createMaintenanceRecord(
       vehicleId: targetVehicleId,
       type: parsed.type ?? 'TYRE',
       itemNumber: parsed.itemNumber.trim(),
+      oldItemNumber: parsed.oldItemNumber ? parsed.oldItemNumber.trim() : null,
       quantity: parsed.quantity ?? 1,
       photoUrl: photoUrl || '',
       photoPublicId,
@@ -180,6 +182,7 @@ export async function listMaintenanceRecords(opts: MaintenanceFilterOpts) {
     const term = opts.search.trim();
     where.OR = [
       { itemNumber: { contains: term, mode: 'insensitive' } },
+      { oldItemNumber: { contains: term, mode: 'insensitive' } },
       { brand: { contains: term, mode: 'insensitive' } },
       { notes: { contains: term, mode: 'insensitive' } },
       {

@@ -518,10 +518,10 @@ export function MaintenancePage(): ReactElement {
                       <th>Vehicle</th>
                       <th>Driver</th>
                       <th>Type</th>
-                      <th>Serial / Number</th>
-                      <th>Quantity & Specs</th>
+                      <th>New Number / Serial</th>
+                      <th>Old Number (Replaced)</th>
+                      <th>Quantity</th>
                       <th>Proof Photo</th>
-                      <th>Odometer / Cost</th>
                       <th>Notes</th>
                     </tr>
                   </thead>
@@ -535,6 +535,7 @@ export function MaintenancePage(): ReactElement {
                       const vehicleInfo = item.vehicle?.make
                         ? `${item.vehicle.make} ${item.vehicle.model ?? ''}`
                         : '';
+                      const oldNum = item.oldItemNumber || (item.notes?.startsWith('Old ') ? item.notes.replace(/^Old [^:]+:\s*/, '') : null);
 
                       return (
                         <tr key={item.id}>
@@ -595,21 +596,25 @@ export function MaintenancePage(): ReactElement {
                           </td>
 
                           <td>
-                            <span className="complaint-no">
+                            <span className="complaint-no" style={{ fontWeight: 800 }}>
                               {item.itemNumber}
                             </span>
                           </td>
 
                           <td>
-                            <div style={{ fontSize: 13, fontWeight: 600 }}>
+                            {oldNum ? (
+                              <span style={{ fontWeight: 600, color: '#dc2626' }}>
+                                🔁 {oldNum}
+                              </span>
+                            ) : (
+                              <span className="muted">—</span>
+                            )}
+                          </td>
+
+                          <td>
+                            <span style={{ fontSize: 13, fontWeight: 700 }}>
                               Qty: {item.quantity}
-                              {item.brand ? ` · ${item.brand}` : ''}
-                            </div>
-                            {item.position ? (
-                              <div style={{ fontSize: 11, color: 'var(--muted)' }}>
-                                Pos: {item.position}
-                              </div>
-                            ) : null}
+                            </span>
                           </td>
 
                           <td>
@@ -663,28 +668,6 @@ export function MaintenancePage(): ReactElement {
                             ) : (
                               <span className="muted">—</span>
                             )}
-                          </td>
-
-                          <td>
-                            {item.odometerKm ? (
-                              <div style={{ fontSize: 12, fontWeight: 600 }}>
-                                {item.odometerKm.toLocaleString()} KM
-                              </div>
-                            ) : null}
-                            {item.cost ? (
-                              <div
-                                style={{
-                                  fontSize: 12,
-                                  fontWeight: 700,
-                                  color: '#16a34a',
-                                }}
-                              >
-                                ₹{item.cost.toLocaleString('en-IN')}
-                              </div>
-                            ) : null}
-                            {!item.odometerKm && !item.cost ? (
-                              <span className="muted">—</span>
-                            ) : null}
                           </td>
 
                           <td>

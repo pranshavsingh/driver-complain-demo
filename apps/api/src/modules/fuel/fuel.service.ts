@@ -8,7 +8,7 @@ export interface CreateFuelInput {
   vehicleNumber?: string;
   type?: FuelType;
   quantityLtr: number;
-  totalPrice: number;
+  totalPrice?: number;
   odometerKm?: number;
   notes?: string;
 }

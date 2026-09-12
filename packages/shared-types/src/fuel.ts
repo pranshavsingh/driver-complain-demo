@@ -7,9 +7,9 @@ export const CreateFuelRecordSchema = z.object({
   vehicleId: z.string().uuid().optional(),
   vehicleNumber: z.string().trim().min(1, 'Vehicle number is required').optional(),
   type: FuelTypeSchema.default('FUEL'),
-  quantityLtr: z.number().positive('Quantity must be greater than 0'),
-  totalPrice: z.number().nonnegative('Total price cannot be negative'),
-  odometerKm: z.number().int().nonnegative().optional(),
+  quantityLtr: z.coerce.number().positive('Quantity must be greater than 0'),
+  totalPrice: z.coerce.number().nonnegative('Total price cannot be negative').optional().default(0),
+  odometerKm: z.coerce.number().int().nonnegative().optional(),
   notes: z.string().trim().max(1000).optional(),
 });
 

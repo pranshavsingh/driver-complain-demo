@@ -37,11 +37,8 @@ export function TakeFuelModal({ visible, onClose, vehicles, onSuccess }: TakeFue
   );
   const [showVehicleDropdown, setShowVehicleDropdown] = useState(false);
 
+  // Form Fields: Mandatory Quantity & Optional Photo
   const [quantity, setQuantity] = useState('');
-  const [price, setPrice] = useState('');
-  const [odometer, setOdometer] = useState('');
-  const [notes, setNotes] = useState('');
-
   const [receiptPhoto, setReceiptPhoto] = useState<api.FileToUpload | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -65,7 +62,7 @@ export function TakeFuelModal({ visible, onClose, vehicles, onSuccess }: TakeFue
       const asset = res.assets[0];
       setReceiptPhoto({
         uri: asset.uri,
-        name: asset.fileName ?? 'receipt.jpg',
+        name: asset.fileName ?? `${type.toLowerCase()}_receipt.jpg`,
         type: asset.mimeType ?? 'image/jpeg',
       });
     }
@@ -80,14 +77,14 @@ export function TakeFuelModal({ visible, onClose, vehicles, onSuccess }: TakeFue
       const asset = res.assets[0];
       setReceiptPhoto({
         uri: asset.uri,
-        name: asset.fileName ?? 'receipt.jpg',
+        name: asset.fileName ?? `${type.toLowerCase()}_receipt.jpg`,
         type: asset.mimeType ?? 'image/jpeg',
       });
     }
   };
 
   const showAttachmentMenu = () => {
-    Alert.alert('Attach Bill / Receipt', 'Choose option', [
+    Alert.alert(`Attach ${type === 'FUEL' ? 'Fuel' : 'DEF'} Receipt / Meter Photo`, 'Choose option', [
       { text: '📷 Take Photo', onPress: takePhoto },
       { text: '🖼️ Choose from Gallery', onPress: pickPhoto },
       { text: 'Cancel', style: 'cancel' },
@@ -96,28 +93,18 @@ export function TakeFuelModal({ visible, onClose, vehicles, onSuccess }: TakeFue
 
   const resetForm = () => {
     setQuantity('');
-    setPrice('');
-    setOdometer('');
-    setNotes('');
     setReceiptPhoto(null);
   };
 
   const handleSubmit = async () => {
-    const parsedQty = parseFloat(quantity);
-    const parsedPrice = parseFloat(price);
-
-    if (isNaN(parsedQty) || parsedQty <= 0) {
-      Alert.alert('Invalid Quantity', 'Please enter a valid fuel/DEF quantity in Litres.');
-      return;
-    }
-
-    if (isNaN(parsedPrice) || parsedPrice < 0) {
-      Alert.alert('Invalid Price', 'Please enter a valid total price amount.');
-      return;
-    }
-
     if (!activeVehicleName) {
       Alert.alert('Vehicle Required', 'Please enter or select a vehicle number.');
+      return;
+    }
+
+    const parsedQty = parseFloat(quantity.trim());
+    if (isNaN(parsedQty) || parsedQty <= 0) {
+      Alert.alert('Invalid Quantity', `Please enter a valid ${type === 'FUEL' ? 'Fuel' : 'DEF'} quantity in Litres.`);
       return;
     }
 
@@ -129,14 +116,12 @@ export function TakeFuelModal({ visible, onClose, vehicles, onSuccess }: TakeFue
           vehicleNumber: activeVehicleName,
           type,
           quantityLtr: parsedQty,
-          totalPrice: parsedPrice,
-          odometerKm: odometer.trim() ? parseInt(odometer.trim(), 10) : undefined,
-          notes: notes.trim() || undefined,
+          totalPrice: 0,
         },
         receiptPhoto ?? undefined,
       );
 
-      Alert.alert('Success 🎉', `${type === 'FUEL' ? 'Fuel' : 'DEF'} entry logged successfully!`, [
+      Alert.alert('Success 🎉', `${type === 'FUEL' ? 'Fuel' : 'DEF'} entry (${parsedQty} L) logged successfully!`, [
         {
           text: 'OK',
           onPress: () => {
@@ -153,16 +138,18 @@ export function TakeFuelModal({ visible, onClose, vehicles, onSuccess }: TakeFue
     }
   };
 
+  const isFuel = type === 'FUEL';
+
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <View style={styles.container}>
         {/* Modal Header */}
         <View style={[styles.header, { paddingTop: insets.top + spacing.xs }]}>
           <View style={styles.headerTitleRow}>
-            <Ionicons name="water" size={22} color="#FFFFFF" />
-            <Text style={styles.headerTitle}>Take Fuel / DEF Log</Text>
+            <Ionicons name={isFuel ? 'flame' : 'water'} size={22} color="#FFFFFF" />
+            <Text style={styles.headerTitle}>Take {isFuel ? 'Fuel' : 'DEF'} Log</Text>
           </View>
-          <Pressable onPress={onClose} style={styles.closeBtn}>
+          <Pressable onPress={onClose} style={styles.closeBtn} accessibilityLabel="Close modal">
             <Ionicons name="close" size={24} color="#FFFFFF" />
           </Pressable>
         </View>
@@ -171,12 +158,12 @@ export function TakeFuelModal({ visible, onClose, vehicles, onSuccess }: TakeFue
           {/* Segment Selector: FUEL vs DEF */}
           <View style={styles.segmentContainer}>
             <Pressable
-              style={[styles.segmentBtn, type === 'FUEL' && styles.segmentBtnActive]}
+              style={[styles.segmentBtn, type === 'FUEL' && styles.segmentBtnActiveFuel]}
               onPress={() => setType('FUEL')}
             >
               <Ionicons name="flame" size={18} color={type === 'FUEL' ? '#FFFFFF' : '#64748B'} />
               <Text style={[styles.segmentText, type === 'FUEL' && styles.segmentTextActive]}>
-                Fuel ⛽
+                ⛽ Fuel Fill
               </Text>
             </Pressable>
 
@@ -186,14 +173,16 @@ export function TakeFuelModal({ visible, onClose, vehicles, onSuccess }: TakeFue
             >
               <Ionicons name="water" size={18} color={type === 'DEF' ? '#FFFFFF' : '#64748B'} />
               <Text style={[styles.segmentText, type === 'DEF' && styles.segmentTextActive]}>
-                DEF 💧
+                💧 DEF Fill
               </Text>
             </Pressable>
           </View>
 
-          {/* Vehicle Input Field */}
+          {/* 1. Vehicle Input Field */}
           <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Vehicle Number (Auto-selected)</Text>
+            <Text style={styles.fieldLabel}>
+              Vehicle Number <Text style={styles.requiredStar}>*</Text>
+            </Text>
             <View style={styles.inputBox}>
               <Ionicons name="bus-outline" size={20} color="#075E54" />
               <TextInput
@@ -236,101 +225,72 @@ export function TakeFuelModal({ visible, onClose, vehicles, onSuccess }: TakeFue
             ) : null}
           </View>
 
-          {/* Quantity & Price Row */}
-          <View style={styles.rowGroup}>
-            <View style={[styles.fieldGroup, { flex: 1 }]}>
-              <Text style={styles.fieldLabel}>Quantity (Litres) *</Text>
-              <View style={styles.inputBox}>
-                <Ionicons name="funnel-outline" size={18} color="#075E54" />
-                <TextInput
-                  style={styles.textInput}
-                  placeholder="e.g. 4.7"
-                  placeholderTextColor="#94A3B8"
-                  keyboardType="decimal-pad"
-                  value={quantity}
-                  onChangeText={setQuantity}
-                />
-              </View>
-            </View>
-
-            <View style={[styles.fieldGroup, { flex: 1 }]}>
-              <Text style={styles.fieldLabel}>Total Price (₹) *</Text>
-              <View style={styles.inputBox}>
-                <Ionicons name="cash-outline" size={18} color="#075E54" />
-                <TextInput
-                  style={styles.textInput}
-                  placeholder="e.g. 450"
-                  placeholderTextColor="#94A3B8"
-                  keyboardType="decimal-pad"
-                  value={price}
-                  onChangeText={setPrice}
-                />
-              </View>
-            </View>
-          </View>
-
-          {/* Calculated Rate per Ltr Indicator */}
-          {parseFloat(quantity) > 0 && parseFloat(price) >= 0 ? (
-            <View style={styles.rateBadge}>
-              <Ionicons name="calculator-outline" size={16} color="#0369A1" />
-              <Text style={styles.rateBadgeText}>
-                Rate: <Text style={{ fontWeight: '800' }}>₹{(parseFloat(price) / parseFloat(quantity)).toFixed(2)}</Text> / Litre
-              </Text>
-            </View>
-          ) : null}
-
-          {/* Odometer Reading (Optional) */}
+          {/* 2. Quantity (Litres) - MANDATORY */}
           <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Odometer Reading (KM) — Optional</Text>
+            <Text style={styles.fieldLabel}>
+              Quantity in Litres (L) <Text style={styles.requiredStar}>*</Text>
+            </Text>
             <View style={styles.inputBox}>
-              <Ionicons name="speedometer-outline" size={18} color="#64748B" />
-              <TextInput
-                style={styles.textInput}
-                placeholder="e.g. 124500"
-                placeholderTextColor="#94A3B8"
-                keyboardType="number-pad"
-                value={odometer}
-                onChangeText={setOdometer}
+              <Ionicons
+                name="funnel-outline"
+                size={18}
+                color={isFuel ? '#15803D' : '#0284C7'}
               />
+              <TextInput
+                style={[styles.textInput, { fontSize: 16, fontWeight: '700' }]}
+                placeholder={isFuel ? 'e.g. 45.5 Litres' : 'e.g. 20 Litres'}
+                placeholderTextColor="#94A3B8"
+                keyboardType="decimal-pad"
+                value={quantity}
+                onChangeText={setQuantity}
+                autoFocus
+              />
+              <Text style={styles.unitBadge}>LTR</Text>
             </View>
           </View>
 
-          {/* Bill / Receipt Attachment */}
+          {/* 3. Bill / Receipt / Meter Photo - OPTIONAL */}
           <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Bill / Receipt Photo — Optional</Text>
+            <Text style={styles.fieldLabel}>
+              Bill / Receipt / Meter Photo <Text style={styles.optionalText}>(Optional)</Text>
+            </Text>
             {receiptPhoto ? (
               <View style={styles.photoPreviewWrapper}>
                 <Image source={{ uri: receiptPhoto.uri }} style={styles.photoPreview} resizeMode="cover" />
-                <Pressable style={styles.removePhotoBtn} onPress={() => setReceiptPhoto(null)}>
+                <Pressable
+                  style={styles.removePhotoBtn}
+                  onPress={() => setReceiptPhoto(null)}
+                  accessibilityLabel="Remove photo"
+                >
                   <Ionicons name="trash" size={18} color="#FFFFFF" />
                 </Pressable>
               </View>
             ) : (
               <Pressable style={styles.attachBtn} onPress={showAttachmentMenu}>
-                <Ionicons name="camera-outline" size={22} color="#075E54" />
-                <Text style={styles.attachBtnText}>Attach Fuel Receipt / Bill Photo</Text>
+                <Ionicons
+                  name="camera-outline"
+                  size={22}
+                  color={isFuel ? '#15803D' : '#0284C7'}
+                />
+                <Text
+                  style={[
+                    styles.attachBtnText,
+                    { color: isFuel ? '#15803D' : '#0284C7' },
+                  ]}
+                >
+                  📷 Attach {isFuel ? 'Fuel' : 'DEF'} Receipt / Meter Photo (Optional)
+                </Text>
               </Pressable>
             )}
           </View>
 
-          {/* Notes Input */}
-          <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Notes / Station Name — Optional</Text>
-            <View style={[styles.inputBox, { height: 60, alignItems: 'flex-start', paddingTop: 8 }]}>
-              <TextInput
-                style={[styles.textInput, { textAlignVertical: 'top' }]}
-                placeholder="Fuel station, card ref, remarks..."
-                placeholderTextColor="#94A3B8"
-                multiline
-                value={notes}
-                onChangeText={setNotes}
-              />
-            </View>
-          </View>
-
           {/* Submit Action Button */}
           <Pressable
-            style={[styles.submitBtn, submitting && styles.submitBtnDisabled]}
+            style={[
+              styles.submitBtn,
+              { backgroundColor: isFuel ? '#15803D' : '#0284C7' },
+              submitting && styles.submitBtnDisabled,
+            ]}
             onPress={handleSubmit}
             disabled={submitting}
           >
@@ -339,7 +299,9 @@ export function TakeFuelModal({ visible, onClose, vehicles, onSuccess }: TakeFue
             ) : (
               <>
                 <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
-                <Text style={styles.submitBtnText}>Submit {type} Fill Entry</Text>
+                <Text style={styles.submitBtnText}>
+                  Submit {isFuel ? 'Fuel' : 'DEF'} Fill Entry
+                </Text>
               </>
             )}
           </Pressable>
@@ -360,7 +322,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.md,
-    backgroundColor: '#075E54',
+    backgroundColor: '#0F172A',
     elevation: 4,
   },
   headerTitleRow: {
@@ -378,7 +340,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: spacing.lg,
-    gap: spacing.md,
+    gap: spacing.lg,
   },
   segmentContainer: {
     flexDirection: 'row',
@@ -396,7 +358,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md - 2,
     gap: 6,
   },
-  segmentBtnActive: {
+  segmentBtnActiveFuel: {
     backgroundColor: '#15803D', // Green for Fuel
   },
   segmentBtnActiveDef: {
@@ -413,14 +375,19 @@ const styles = StyleSheet.create({
   fieldGroup: {
     gap: 6,
   },
-  rowGroup: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
   fieldLabel: {
     fontSize: 13,
     fontWeight: '700',
     color: '#1E293B',
+  },
+  requiredStar: {
+    color: '#DC2626',
+    fontWeight: '800',
+  },
+  optionalText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#64748B',
   },
   inputBox: {
     flexDirection: 'row',
@@ -428,7 +395,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: radius.md,
     paddingHorizontal: spacing.md,
-    height: 48,
+    height: 50,
     borderWidth: 1,
     borderColor: '#CBD5E1',
     gap: spacing.xs,
@@ -438,6 +405,15 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#0F172A',
     fontWeight: '500',
+  },
+  unitBadge: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#64748B',
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
   },
   dropdownMenu: {
     backgroundColor: '#FFFFFF',
@@ -463,37 +439,21 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#0F172A',
   },
-  rateBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#E0F2FE',
-    paddingHorizontal: spacing.md,
-    paddingVertical: 8,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: '#BAE6FD',
-    gap: 6,
-  },
-  rateBadgeText: {
-    fontSize: 13,
-    color: '#0369A1',
-  },
   attachBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#FFFFFF',
     borderWidth: 1.5,
-    borderColor: '#075E54',
+    borderColor: '#94A3B8',
     borderStyle: 'dashed',
     borderRadius: radius.md,
-    padding: spacing.md,
+    padding: spacing.md + 4,
     gap: 8,
   },
   attachBtnText: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#075E54',
   },
   photoPreviewWrapper: {
     position: 'relative',
@@ -502,7 +462,7 @@ const styles = StyleSheet.create({
   },
   photoPreview: {
     width: '100%',
-    height: 160,
+    height: 180,
     borderRadius: radius.md,
   },
   removePhotoBtn: {
@@ -510,9 +470,9 @@ const styles = StyleSheet.create({
     top: 8,
     right: 8,
     backgroundColor: 'rgba(220, 38, 38, 0.9)',
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -520,11 +480,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#075E54',
     paddingVertical: 14,
     borderRadius: radius.md,
     gap: 8,
-    marginTop: spacing.sm,
+    marginTop: spacing.xs,
     elevation: 2,
   },
   submitBtnDisabled: {

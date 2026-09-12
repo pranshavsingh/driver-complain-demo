@@ -305,7 +305,15 @@ export const reports = {
       { query: query as Record<string, QueryValue> },
       filename || `vehicle-report-${Date.now()}.xlsx`,
     ),
+
+  exportFleetReportXlsx: (query?: { dateFrom?: string; dateTo?: string }, filename?: string): Promise<void> =>
+    download(
+      '/reports/fleet/export',
+      { query: query as Record<string, QueryValue> },
+      filename || `fleet-full-report-${Date.now()}.xlsx`,
+    ),
 };
+
 
 
 

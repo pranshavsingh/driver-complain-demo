@@ -9,7 +9,12 @@ export async function handleCreateFuelRecord(req: Request, res: Response, next: 
     const body = req.body;
 
     const quantityLtr = Number(body.quantityLtr ?? body.quantity);
-    const totalPrice = Number(body.totalPrice ?? body.price);
+    const totalPrice =
+      body.totalPrice !== undefined && body.totalPrice !== ''
+        ? Number(body.totalPrice)
+        : body.price !== undefined && body.price !== ''
+          ? Number(body.price)
+          : 0;
     const odometerKm = body.odometerKm ? Number(body.odometerKm) : undefined;
 
     const input = {

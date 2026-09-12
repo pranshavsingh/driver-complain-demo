@@ -423,12 +423,28 @@ export async function list(
 
 /** Relations needed to render human-readable names in an exported spreadsheet. */
 const exportInclude = {
-  driver: { include: { user: true } },
+  driver: {
+    include: {
+      user: true,
+      loadingRecords: {
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+        select: { status: true },
+      },
+    },
+  },
   vehicle: true,
   assignedTo: true,
   // Only the kinds are needed — the Evidence column counts them, it does not link to files.
   attachments: { select: { kind: true } },
+  loadingRecords: {
+    orderBy: { createdAt: 'desc' },
+    take: 1,
+    select: { status: true },
+  },
 } satisfies Prisma.ComplaintInclude;
+
+
 
 /** One complaint row with the relations the export writer expects. */
 export type ComplaintExportRow = Prisma.ComplaintGetPayload<{ include: typeof exportInclude }>;

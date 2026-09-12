@@ -480,3 +480,236 @@ export async function listFleetVehiclesSummary(): Promise<FleetVehicleSummaryIte
     };
   });
 }
+
+export interface FleetFullReportItem {
+  vehicle: {
+    id: string;
+    plateNumber: string;
+    make: string | null;
+    model: string | null;
+    year: number | null;
+    vin: string | null;
+    agreementStatus: string | null;
+    wheels: string | null;
+    registrationDate: string | null;
+  };
+  driver: {
+    id: string;
+    licenseNumber: string | null;
+  } | null;
+  driverUser: {
+    id: string;
+    employeeId: string;
+    firstName: string;
+    lastName: string;
+    email: string | null;
+    phone: string | null;
+  } | null;
+  trips: Array<{
+    id: string;
+    status: string;
+    reachedAt: Date;
+    reachedAddress: string | null;
+    reachedPhotoUrl: string;
+    completedAt: Date | null;
+    completedAddress: string | null;
+    completedPhotoUrl: string | null;
+    waitingTimeMinutes: number | null;
+    tripStartedAt: Date | null;
+    tripStartAddress: string | null;
+    tripCompletedAt: Date | null;
+    tripCompletedAddress: string | null;
+    tripCompletedPhotoUrl: string | null;
+    tripDurationMinutes: number | null;
+    unloadingCompletedAt: Date | null;
+    unloadingAddress: string | null;
+    unloadingPhotoUrl: string | null;
+    unloadingDurationMinutes: number | null;
+  }>;
+  complaints: Array<{
+    id: string;
+    complaintNo: string;
+    title: string;
+    description: string;
+    category: string;
+    status: string;
+    priority: string;
+    createdAt: Date;
+    resolvedAt: Date | null;
+    attachments: Array<{ kind: string; url: string }>;
+  }>;
+  fuelRecords: Array<{
+    id: string;
+    type: string;
+    quantityLtr: number;
+    totalPrice: number;
+    ratePerLtr: number | null;
+    odometerKm: number | null;
+    receiptUrl: string | null;
+    notes: string | null;
+    createdAt: Date;
+  }>;
+  maintenanceRecords: Array<{
+    id: string;
+    type: string;
+    itemNumber: string;
+    quantity: number;
+    brand: string | null;
+    position: string | null;
+    cost: number | null;
+    odometerKm: number | null;
+    photoUrl: string;
+    notes: string | null;
+    createdAt: Date;
+  }>;
+}
+
+/** Fetches full operational data for every vehicle in the fleet for comprehensive export. */
+export async function getFleetFullReport(query?: { dateFrom?: string; dateTo?: string }): Promise<FleetFullReportItem[]> {
+  const dateFrom = query?.dateFrom;
+  const dateTo = query?.dateTo;
+
+  const dateFilter: { gte?: Date; lte?: Date } = {};
+  if (dateFrom) {
+    const from = new Date(dateFrom);
+    if (!isNaN(from.getTime())) dateFilter.gte = from;
+  }
+  if (dateTo) {
+    const to = new Date(dateTo);
+    if (!isNaN(to.getTime())) {
+      to.setHours(23, 59, 59, 999);
+      dateFilter.lte = to;
+    }
+  }
+
+  const hasDateFilter = Boolean(dateFilter.gte || dateFilter.lte);
+
+  const vehicles = await prisma.vehicle.findMany({
+    orderBy: { plateNumber: 'asc' },
+    include: {
+      driver: {
+        include: {
+          user: true,
+          loadingRecords: {
+            where: hasDateFilter ? { reachedAt: dateFilter } : undefined,
+            orderBy: { reachedAt: 'desc' },
+          },
+          complaints: {
+            where: hasDateFilter ? { createdAt: dateFilter } : undefined,
+            include: {
+              attachments: true,
+            },
+            orderBy: { createdAt: 'desc' },
+          },
+          fuelRecords: {
+            where: hasDateFilter ? { createdAt: dateFilter } : undefined,
+            orderBy: { createdAt: 'desc' },
+          },
+          maintenanceRecords: {
+            where: hasDateFilter ? { createdAt: dateFilter } : undefined,
+            orderBy: { createdAt: 'desc' },
+          },
+        },
+      },
+      complaints: {
+        where: hasDateFilter ? { createdAt: dateFilter } : undefined,
+        include: {
+          attachments: true,
+        },
+        orderBy: { createdAt: 'desc' },
+      },
+      fuelRecords: {
+        where: hasDateFilter ? { createdAt: dateFilter } : undefined,
+        orderBy: { createdAt: 'desc' },
+      },
+      maintenanceRecords: {
+        where: hasDateFilter ? { createdAt: dateFilter } : undefined,
+        orderBy: { createdAt: 'desc' },
+      },
+    },
+  });
+
+  return vehicles.map((v) => {
+    const driver = v.driver;
+    const driverUser = driver?.user;
+
+    // Deduplicate complaints (by vehicle + driver)
+    const complaintMap = new Map<string, typeof v.complaints[0]>();
+    for (const c of v.complaints) {
+      complaintMap.set(c.id, c);
+    }
+    if (driver?.complaints) {
+      for (const c of driver.complaints) {
+        complaintMap.set(c.id, c);
+      }
+    }
+    const complaints = Array.from(complaintMap.values()).sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+
+    // Deduplicate fuel
+    const fuelMap = new Map<string, typeof v.fuelRecords[0]>();
+    for (const f of v.fuelRecords) {
+      fuelMap.set(f.id, f);
+    }
+    if (driver?.fuelRecords) {
+      for (const f of driver.fuelRecords) {
+        fuelMap.set(f.id, f);
+      }
+    }
+    const fuelRecords = Array.from(fuelMap.values()).sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+
+    // Deduplicate maintenance
+    const maintMap = new Map<string, typeof v.maintenanceRecords[0]>();
+    for (const m of v.maintenanceRecords) {
+      maintMap.set(m.id, m);
+    }
+    if (driver?.maintenanceRecords) {
+      for (const m of driver.maintenanceRecords) {
+        maintMap.set(m.id, m);
+      }
+    }
+    const maintenanceRecords = Array.from(maintMap.values()).sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+
+    const rawTrips = driver?.loadingRecords ?? [];
+
+    return {
+      vehicle: {
+        id: v.id,
+        plateNumber: v.plateNumber,
+        make: v.make ?? null,
+        model: v.model ?? null,
+        year: v.year ?? null,
+        vin: v.vin ?? null,
+        agreementStatus: v.agreementStatus ?? null,
+        wheels: v.wheels ?? null,
+        registrationDate: v.registrationDate ? v.registrationDate.toISOString() : null,
+      },
+      driver: driver
+        ? {
+            id: driver.id,
+            licenseNumber: driver.licenseNumber ?? null,
+          }
+        : null,
+      driverUser: driverUser
+        ? {
+            id: driverUser.id,
+            employeeId: driverUser.employeeId,
+            firstName: driverUser.firstName,
+            lastName: driverUser.lastName,
+            email: driverUser.email,
+            phone: driverUser.phone ?? null,
+          }
+        : null,
+      trips: rawTrips,
+      complaints,
+      fuelRecords,
+      maintenanceRecords,
+    };
+  });
+}
+

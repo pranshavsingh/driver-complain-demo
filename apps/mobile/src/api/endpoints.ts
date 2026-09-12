@@ -251,7 +251,7 @@ export const fuel = {
       vehicleNumber?: string;
       type: 'FUEL' | 'DEF';
       quantityLtr: number;
-      totalPrice: number;
+      totalPrice?: number;
       odometerKm?: number;
       notes?: string;
     },
@@ -263,7 +263,7 @@ export const fuel = {
     if (input.vehicleNumber) form.append('vehicleNumber', input.vehicleNumber);
     form.append('type', input.type);
     form.append('quantityLtr', String(input.quantityLtr));
-    form.append('totalPrice', String(input.totalPrice));
+    if (input.totalPrice !== undefined) form.append('totalPrice', String(input.totalPrice));
     if (input.odometerKm !== undefined) form.append('odometerKm', String(input.odometerKm));
     if (input.notes) form.append('notes', input.notes);
     if (receiptPhoto) appendFile(form, 'receipt', receiptPhoto);
@@ -282,6 +282,7 @@ export const maintenance = {
       vehicleNumber?: string;
       type: 'TYRE' | 'BATTERY';
       itemNumber: string;
+      oldItemNumber?: string;
       quantity?: number;
       odometerKm?: number;
       brand?: string;
@@ -297,6 +298,7 @@ export const maintenance = {
     if (input.vehicleNumber) form.append('vehicleNumber', input.vehicleNumber);
     form.append('type', input.type);
     form.append('itemNumber', input.itemNumber);
+    if (input.oldItemNumber) form.append('oldItemNumber', input.oldItemNumber);
     if (input.quantity !== undefined) form.append('quantity', String(input.quantity));
     if (input.odometerKm !== undefined) form.append('odometerKm', String(input.odometerKm));
     if (input.brand) form.append('brand', input.brand);

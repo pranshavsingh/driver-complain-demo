@@ -557,7 +557,6 @@ a:hover {
 .workspace-body {
   flex: 1;
   padding: 28px 36px;
-  overflow-y: auto;
 }
 
 @media (max-width: 768px) {
@@ -1112,17 +1111,39 @@ a:hover {
 
 .detail-layout-grid {
   display: grid;
-  grid-template-columns: 2fr 1fr;
+  grid-template-columns: minmax(0, 1fr) 380px;
   gap: 24px;
-
   align-items: start;
 }
 
-.detail-main-column,
-.detail-sidebar-column {
+.detail-main-column {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  min-width: 0;
+}
+
+.detail-sidebar-column {
+  width: 380px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  position: -webkit-sticky;
+  position: sticky;
+  top: 84px;
+  align-self: start;
+  z-index: 20;
+}
+
+@media (max-width: 1024px) {
+  .detail-layout-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-sidebar-column {
+    width: 100%;
+    position: static;
+  }
 }
 
 .detail-card {
@@ -4042,7 +4063,7 @@ body {
   position: relative;
 }
 
-.timeline-node {
+.unified-timeline .timeline-node {
   position: absolute;
   left: -35px;
   top: 14px;
@@ -4056,7 +4077,7 @@ body {
   box-shadow: 0 0 0 3px var(--surface);
 }
 
-.timeline-item-alert .timeline-node {
+.unified-timeline .timeline-item-alert .timeline-node {
   background: #DC2626;
 }
 
@@ -5329,3 +5350,500 @@ body {
   height: 1px;
   background: var(--border);
 }
+
+/* ==========================================================================
+   Complaint Detail Page - Modern Redesign (v2)
+   ========================================================================== */
+
+.detail-header-hero {
+  background: linear-gradient(135deg, var(--surface) 0%, rgba(30, 41, 59, 0.4) 100%);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 24px 28px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.2);
+  margin-bottom: 24px;
+  position: relative;
+  overflow: hidden;
+}
+
+.detail-header-hero::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #3b82f6 0%, #8b5cf6 50%, #ec4899 100%);
+}
+
+.detail-hero-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.detail-badge-cluster {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.detail-complaint-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 15px;
+  font-weight: 800;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  letter-spacing: 0.05em;
+}
+
+.detail-hero-title {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--text);
+  margin: 4px 0 8px;
+  line-height: 1.3;
+  letter-spacing: -0.02em;
+}
+
+.detail-hero-meta {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 13px;
+  color: var(--muted);
+  flex-wrap: wrap;
+}
+
+.detail-hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.btn-call-driver {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: #ffffff;
+  padding: 8px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+  transition: all 0.2s ease;
+  border: none;
+  cursor: pointer;
+}
+
+.btn-call-driver:hover {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(16, 185, 129, 0.4);
+  text-decoration: none;
+}
+
+/* Trip Progression Journey Card */
+.journey-context-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px 22px;
+  margin-bottom: 24px;
+  box-shadow: var(--shadow-sm);
+}
+
+.journey-step-bar {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 14px;
+}
+
+@media (max-width: 768px) {
+  .journey-step-bar {
+    grid-template-columns: 1fr;
+  }
+}
+
+.journey-step-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  transition: all 0.2s ease;
+}
+
+.journey-step-item.active {
+  background: rgba(59, 130, 246, 0.12);
+  border-color: #3b82f6;
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.2);
+}
+
+.journey-step-item.active .step-name {
+  color: #3b82f6;
+  font-weight: 800;
+}
+
+.step-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.step-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.step-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.step-status {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+/* Driver & Vehicle Profile Card */
+.profile-overview-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+@media (max-width: 768px) {
+  .profile-overview-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.profile-sub-box {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.profile-avatar-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.profile-avatar-circle {
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 800;
+  flex-shrink: 0;
+  box-shadow: 0 4px 10px rgba(59, 130, 246, 0.3);
+}
+
+.vehicle-plate-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #0f172a;
+  border: 1.5px solid #334155;
+  color: #f8fafc;
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+.vehicle-plate-pill .ind-tag {
+  background: #f59e0b;
+  color: #0f172a;
+  font-size: 9px;
+  font-weight: 900;
+  padding: 1px 3px;
+  border-radius: 2px;
+}
+
+.profile-data-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border);
+}
+
+.profile-data-label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.profile-data-val {
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* Audio Player Card & Speech Bubble */
+.audio-card-container {
+  background: linear-gradient(180deg, rgba(30, 41, 59, 0.5) 0%, var(--bg) 100%);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px 20px;
+  margin-top: 12px;
+}
+
+.audio-header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.audio-native-custom {
+  width: 100%;
+  border-radius: 30px;
+  height: 40px;
+}
+
+/* Interactive Status Selector Chips */
+.status-chips-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.status-chip-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.status-chip-btn:hover {
+  border-color: var(--muted);
+  color: var(--text);
+}
+
+.status-chip-btn.active.status-new {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: #3b82f6;
+  color: #38bdf8;
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.25);
+}
+
+.status-chip-btn.active.status-in_progress {
+  background: rgba(245, 158, 11, 0.15);
+  border-color: #f59e0b;
+  color: #fbbf24;
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.25);
+}
+
+.status-chip-btn.active.status-resolved {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: #10b981;
+  color: #34d399;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.25);
+}
+
+.status-chip-btn.active.status-closed {
+  background: rgba(100, 116, 139, 0.2);
+  border-color: #94a3b8;
+  color: #cbd5e1;
+  box-shadow: 0 0 10px rgba(100, 116, 139, 0.25);
+}
+
+/* Quick Response Preset Buttons */
+.presets-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.preset-pill-btn {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.preset-pill-btn:hover {
+  border-color: var(--accent);
+  color: var(--text);
+  background: rgba(59, 130, 246, 0.08);
+}
+
+/* Action & Audit Timeline in Complaint Detail */
+.detail-audit-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 10px;
+  max-height: 380px;
+  overflow-y: auto;
+  padding-right: 6px;
+  scrollbar-width: thin;
+}
+
+.detail-audit-timeline::-webkit-scrollbar {
+  width: 5px;
+}
+
+.detail-audit-timeline::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.detail-audit-timeline::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+.detail-audit-timeline::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
+.detail-audit-item {
+  display: flex;
+  align-items: stretch;
+  gap: 14px;
+}
+
+.detail-audit-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 18px;
+  flex-shrink: 0;
+  padding-top: 12px;
+}
+
+.detail-audit-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 3px solid var(--surface);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.4);
+  flex-shrink: 0;
+}
+
+.detail-audit-line {
+  flex: 1;
+  width: 2px;
+  background: var(--border);
+  margin-top: 6px;
+  border-radius: 1px;
+}
+
+.detail-audit-bubble {
+  flex: 1;
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 18px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.detail-audit-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.detail-audit-author {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.detail-audit-role-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(59, 130, 246, 0.12);
+  color: #3b82f6;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.detail-audit-time {
+  font-size: 11.5px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.detail-audit-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.detail-audit-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.detail-audit-status-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.detail-audit-note {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: var(--text);
+}
+

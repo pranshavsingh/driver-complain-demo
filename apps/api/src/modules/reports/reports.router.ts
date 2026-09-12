@@ -12,6 +12,10 @@ reportsRouter.get('/fleet', (req, res, next) => {
   controller.listFleetSummary(req, res).catch(next);
 });
 
+reportsRouter.get('/fleet/export', (req, res, next) => {
+  controller.exportFleetReport(req, res).catch(next);
+});
+
 reportsRouter.get('/vehicle', (req, res, next) => {
   controller.getVehicleReport(req, res).catch(next);
 });
@@ -19,3 +23,4 @@ reportsRouter.get('/vehicle', (req, res, next) => {
 reportsRouter.get('/vehicle/export', (req, res, next) => {
   controller.exportVehicleReport(req, res).catch(next);
 });
+

@@ -173,8 +173,12 @@ describe('complaints export — workbook', () => {
 
     const header = sheet?.getRow(1);
     expect(header?.getCell(1).value).toBe('Complaint No');
-    expect(header?.getCell(10).value).toBe('Evidence');
-    expect(header?.getCell(13).value).toBe('Description');
+    expect(header?.getCell(3).value).toBe('Category');
+    expect(header?.getCell(4).value).toBe('Trip Phase');
+    expect(header?.getCell(7).value).toBe('SLA Status');
+    expect(header?.getCell(8).value).toBe('Resolution Time');
+    expect(header?.getCell(14).value).toBe('Evidence');
+    expect(header?.getCell(17).value).toBe('Description');
     expect(header?.font?.bold).toBe(true);
   });
 
@@ -190,18 +194,20 @@ describe('complaints export — workbook', () => {
 
     expect(row?.getCell(1).value).toBe(created.complaintNo);
     expect(row?.getCell(2).value).toBe('Brake noise');
-    expect(row?.getCell(3).value).toBe('NEW');
-    expect(row?.getCell(5).value).toBe('Dana Driver');
-    expect(row?.getCell(6).value).toBe(D1);
-    expect(row?.getCell(7).value).toBe('XTEST-DL-1');
-    expect(row?.getCell(8).value).toBe('XTEST-PLATE-1');
+    expect(row?.getCell(3).value).toBe('Support');
+    expect(row?.getCell(4).value).toBe('Parking / Yard');
+    expect(row?.getCell(5).value).toBe('NEW');
+    expect(row?.getCell(9).value).toBe('Dana Driver');
+    expect(row?.getCell(10).value).toBe(D1);
+    expect(row?.getCell(11).value).toBe('XTEST-DL-1');
+    expect(row?.getCell(12).value).toBe('XTEST-PLATE-1');
     // Unassigned, no evidence, and unresolved all render blank, never the string "null".
-    expect(row?.getCell(9).value ?? '').toBe('');
-    expect(row?.getCell(10).value ?? '').toBe('');
-    expect(row?.getCell(12).value ?? '').toBe('');
+    expect(row?.getCell(13).value ?? '').toBe('');
+    expect(row?.getCell(14).value ?? '').toBe('');
+    expect(row?.getCell(16).value ?? '').toBe('');
     // A real Date, so Excel can sort and filter chronologically.
-    expect(row?.getCell(11).value).toBeInstanceOf(Date);
-    expect(row?.getCell(13).value).toBe('Grinding at low speed');
+    expect(row?.getCell(15).value).toBeInstanceOf(Date);
+    expect(row?.getCell(17).value).toBe('Grinding at low speed');
   });
 
   it('summarises attached evidence by kind', async () => {
@@ -228,7 +234,7 @@ describe('complaints export — workbook', () => {
     const workbook = await render(adminActor(), f({ driverId: driver1Id }));
     const row = workbook.getWorksheet('Complaints')?.getRow(2);
     // Fixed kind order, not insertion order, so the column sorts consistently.
-    expect(row?.getCell(10).value).toBe('2 photos, 1 voice note');
+    expect(row?.getCell(14).value).toBe('2 photos, 1 voice note');
   });
 
   it('writes a header-only sheet when nothing matches', async () => {

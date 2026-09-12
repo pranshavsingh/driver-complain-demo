@@ -7,7 +7,8 @@ export const CreateMaintenanceRecordSchema = z.object({
   vehicleId: z.string().uuid().optional(),
   vehicleNumber: z.string().trim().min(1, 'Vehicle number is required').optional(),
   type: MaintenanceTypeSchema.default('TYRE'),
-  itemNumber: z.string().trim().min(1, 'Identification / Serial number is required'),
+  itemNumber: z.string().trim().min(1, 'New identification / serial number is required'),
+  oldItemNumber: z.string().trim().optional(),
   quantity: z.coerce.number().int().min(1).default(1),
   odometerKm: z.coerce.number().int().nonnegative().optional(),
   brand: z.string().trim().max(100).optional(),
@@ -24,6 +25,7 @@ export interface MaintenanceRecordPublic {
   vehicleId: string;
   type: z.infer<typeof MaintenanceTypeSchema>;
   itemNumber: string;
+  oldItemNumber?: string | null;
   quantity: number;
   photoUrl: string;
   photoPublicId: string | null;

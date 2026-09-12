@@ -180,3 +180,109 @@ export function SlaBadge({ sla }: { sla: SlaInfo }): ReactElement {
     </span>
   );
 }
+
+/** Rich Category Badge */
+export function CategoryBadge({ category }: { category?: string | null }): ReactElement {
+  const cat = category || 'SUPPORT';
+
+  const config: Record<string, { label: string; icon: string; bg: string; color: string; border: string }> = {
+    TYRE_ISSUE: {
+      label: 'Tyre Issue',
+      icon: '🛞',
+      bg: 'rgba(249, 115, 22, 0.12)',
+      color: '#f97316',
+      border: 'rgba(249, 115, 22, 0.35)',
+    },
+    BREAKDOWN: {
+      label: 'Breakdown',
+      icon: '🛑',
+      bg: 'rgba(239, 68, 68, 0.14)',
+      color: '#ef4444',
+      border: 'rgba(239, 68, 68, 0.4)',
+    },
+    FUEL_DEF: {
+      label: 'Fuel / DEF',
+      icon: '⛽',
+      bg: 'rgba(2, 132, 199, 0.14)',
+      color: '#0284c7',
+      border: 'rgba(2, 132, 199, 0.35)',
+    },
+    LOADING: {
+      label: 'Loading',
+      icon: '🏭',
+      bg: 'rgba(6, 182, 212, 0.14)',
+      color: '#06b6d4',
+      border: 'rgba(6, 182, 212, 0.35)',
+    },
+    UNLOADING: {
+      label: 'Unloading',
+      icon: '📦',
+      bg: 'rgba(168, 85, 247, 0.14)',
+      color: '#a855f7',
+      border: 'rgba(168, 85, 247, 0.35)',
+    },
+    ACCOUNTS: {
+      label: 'Accounts',
+      icon: '💰',
+      bg: 'rgba(16, 185, 129, 0.14)',
+      color: '#10b981',
+      border: 'rgba(16, 185, 129, 0.35)',
+    },
+    VEHICLE_MAINTENANCE: {
+      label: 'Maintenance',
+      icon: '🔧',
+      bg: 'rgba(234, 179, 8, 0.14)',
+      color: '#eab308',
+      border: 'rgba(234, 179, 8, 0.35)',
+    },
+    MEDICAL_EMERGENCY: {
+      label: 'Medical Emergency',
+      icon: '🚑',
+      bg: 'rgba(225, 29, 72, 0.16)',
+      color: '#e11d48',
+      border: 'rgba(225, 29, 72, 0.4)',
+    },
+    COMPLAINT_STATUS: {
+      label: 'Complaint Status',
+      icon: '📋',
+      bg: 'rgba(59, 130, 246, 0.12)',
+      color: '#3b82f6',
+      border: 'rgba(59, 130, 246, 0.3)',
+    },
+    SUPPORT: {
+      label: 'Support',
+      icon: '💬',
+      bg: 'rgba(148, 163, 184, 0.12)',
+      color: 'var(--muted)',
+      border: 'var(--border)',
+    },
+  };
+
+  const item = config[cat] || {
+    label: formatEnum(cat),
+    icon: '🏷️',
+    bg: 'rgba(148, 163, 184, 0.12)',
+    color: 'var(--muted)',
+    border: 'var(--border)',
+  };
+
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 5,
+        padding: '3px 9px',
+        borderRadius: 6,
+        backgroundColor: item.bg,
+        color: item.color,
+        border: `1px solid ${item.border}`,
+        fontSize: 11,
+        fontWeight: 700,
+        letterSpacing: '0.02em',
+      }}
+    >
+      <span>{item.icon}</span> {item.label}
+    </span>
+  );
+}
