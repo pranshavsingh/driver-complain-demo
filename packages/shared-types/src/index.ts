@@ -12,6 +12,9 @@ export * from './loading';
 export * from './fuel';
 export * from './maintenance';
 export * from './report';
+export * from './warehouse';
+export * from './spare-part';
+export * from './support-chat';
 
 
 

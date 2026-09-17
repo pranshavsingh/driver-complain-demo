@@ -117,6 +117,16 @@ export function emitToUsers(
   io.to(userIds.map(userRoom)).emit(event, payload);
 }
 
+/** Emit any realtime event to specified user rooms. */
+export function emitEventToUsers(
+  userIds: string[],
+  event: string,
+  payload: any,
+): void {
+  if (!io || userIds.length === 0) return;
+  io.to(userIds.map(userRoom)).emit(event as any, payload);
+}
+
 /** Close all sockets during graceful shutdown. Safe to call when realtime never started. */
 export async function closeRealtime(): Promise<void> {
   if (!io) return;

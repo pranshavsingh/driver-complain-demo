@@ -107,7 +107,10 @@ async function fetchRaw(path: string, opts: RequestOptions): Promise<Response> {
   // Reads the access token at call time, so the replay below picks up the refreshed one.
   const send = async (): Promise<Response> => {
     const headers: Record<string, string> = {};
-    if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
+    const isFormData = typeof FormData !== 'undefined' && opts.body instanceof FormData;
+    if (opts.body !== undefined && !isFormData) {
+      headers['Content-Type'] = 'application/json';
+    }
     if (!opts.anonymous) {
       const token = getAccessToken();
       if (token) headers.Authorization = `Bearer ${token}`;
@@ -115,7 +118,12 @@ async function fetchRaw(path: string, opts: RequestOptions): Promise<Response> {
     return fetch(url, {
       method: opts.method ?? 'GET',
       headers,
-      body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
+      body:
+        opts.body === undefined
+          ? undefined
+          : isFormData
+          ? (opts.body as FormData)
+          : JSON.stringify(opts.body),
     });
   };
 

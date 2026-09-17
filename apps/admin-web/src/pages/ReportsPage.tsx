@@ -500,7 +500,7 @@ export function ReportsPage(): ReactElement {
           phaseName: phase === 'TRANSIT' ? 'Phase 2: Highway Transit' : phase === 'DOCK_LOADING' ? 'Phase 1: Loading Dock' : 'Phase 3: Destination & Unloading',
           timestamp: f.createdAt,
           title: `Refueled ${f.quantityLtr}L ${f.type}`,
-          subtitle: `Expense: ₹${f.totalPrice.toLocaleString()}${f.notes ? ` · Note: ${f.notes}` : ''}`,
+          subtitle: f.notes ? `Note: ${f.notes}` : `Refueled ${f.type}`,
           fuel: f,
           relativeContext: relativeContext.replace('Occurred', 'Refueled'),
         });
@@ -1517,7 +1517,7 @@ export function ReportsPage(): ReactElement {
                                       <div className="milestone-title-wrap">
                                         <span className="badge badge-success">⛽ {f.type} Refill</span>
                                         <h4 className="fuel-summary-title">
-                                          {f.quantityLtr} Litres · <strong>₹{f.totalPrice.toLocaleString()}</strong>
+                                          {f.quantityLtr} Litres
                                         </h4>
                                       </div>
                                       <div className="pipeline-time-badge">
@@ -1956,7 +1956,6 @@ export function ReportsPage(): ReactElement {
                     <tr>
                       <th>Type</th>
                       <th>Quantity</th>
-                      <th>Total Cost</th>
                       <th>Odometer</th>
                       <th>Date</th>
                       <th>Receipt</th>
@@ -1965,7 +1964,7 @@ export function ReportsPage(): ReactElement {
                   <tbody>
                     {reportData?.fuelRecords.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="text-center text-muted">
+                        <td colSpan={5} className="text-center text-muted">
                           No fuel logs recorded.
                         </td>
                       </tr>
@@ -1978,7 +1977,6 @@ export function ReportsPage(): ReactElement {
                           <td>
                             <strong>{f.quantityLtr} L</strong>
                           </td>
-                          <td>₹{f.totalPrice.toLocaleString()}</td>
                           <td>{f.odometerKm ? `${f.odometerKm} km` : '—'}</td>
                           <td>{formatDateTime(f.createdAt)}</td>
                           <td>

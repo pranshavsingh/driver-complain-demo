@@ -67,6 +67,11 @@ enum NotificationType {
   ASSIGNMENT_REJECTED
   VEHICLE_ASSIGNED
   VEHICLE_UNASSIGNED
+  SPARE_PART_REQUESTED
+  SPARE_PART_APPROVED
+  SPARE_PART_ISSUED
+  SPARE_PART_REJECTED
+  SUPPORT_MESSAGE_RECEIVED
 }
 
 // What kind of evidence an attachment is. Drives playback in the dashboard (an <img> and an
@@ -111,14 +116,18 @@ model User {
   createdAt           DateTime          @default(now())
   updatedAt           DateTime          @updatedAt
 
-  driver              Driver?
-  assignedComplaints  Complaint[]           @relation("AssignedAdmin")
-  pendingComplaints   Complaint[]           @relation("PendingAssignee")
-  complaintUpdates    ComplaintUpdate[]
-  uploadedAttachments ComplaintAttachment[]
-  notifications       Notification[]
-  deviceTokens        DeviceToken[]
-  refreshTokens       RefreshToken[]
+  driver                  Driver?
+  assignedComplaints      Complaint[]           @relation("AssignedAdmin")
+  pendingComplaints       Complaint[]           @relation("PendingAssignee")
+  complaintUpdates        ComplaintUpdate[]
+  uploadedAttachments     ComplaintAttachment[]
+  notifications           Notification[]
+  deviceTokens            DeviceToken[]
+  refreshTokens           RefreshToken[]
+  approvedSpareParts      SparePartRequest[]    @relation("SparePartApprovedBy")
+  issuedSpareParts        SparePartRequest[]    @relation("SparePartIssuedBy")
+  sentSupportMessages     SupportMessage[]      @relation("SentSupportMessages")
+  receivedSupportMessages SupportMessage[]      @relation("ReceivedSupportMessages")
 
   @@index([role])
   @@index([approvalStatus])
@@ -138,6 +147,7 @@ model Driver {
   loadingRecords     LoadingRecord[]
   fuelRecords        FuelRecord[]
   maintenanceRecords MaintenanceRecord[]
+  sparePartRequests  SparePartRequest[]
 }
 
 model Vehicle {
@@ -160,6 +170,7 @@ model Vehicle {
   complaints         Complaint[]
   fuelRecords        FuelRecord[]
   maintenanceRecords MaintenanceRecord[]
+  sparePartRequests  SparePartRequest[]
 
   @@index([driverId])
 }
@@ -419,6 +430,123 @@ model MaintenanceRecord {
   @@index([driverId])
   @@index([vehicleId])
   @@index([type])
+  @@index([createdAt])
+}
+
+model Warehouse {
+  id          String             @id @default(uuid(7)) @db.Uuid
+  name        String             @unique
+  code        String?            @unique
+  location    String?
+  contactPerson String?
+  contactPhone  String?
+  isActive    Boolean            @default(true)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  issuedParts SparePartRequest[]
+}
+
+enum SparePartRequestStatus {
+  PENDING_APPROVAL
+  APPROVED
+  ISSUED
+  REJECTED
+}
+
+enum SparePartType {
+  NEW
+  EXCHANGE
+  REPAIR
+  OTHER
+}
+
+model SparePartRequest {
+  id                    String                 @id @default(uuid(7)) @db.Uuid
+  requestNo             String                 @unique
+  driverId              String                 @db.Uuid
+  driver                Driver                 @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  vehicleId             String                 @db.Uuid
+  vehicle               Vehicle                @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  // Driver Request Details
+  description           String
+  transcription         String?
+  partName              String?
+  quantity              Int                    @default(1)
+
+  // Evidence
+  photoUrl              String?
+  photoPublicId         String?
+  voiceUrl              String?
+  voicePublicId         String?
+
+  // Status & Type
+  status                SparePartRequestStatus @default(PENDING_APPROVAL)
+  type                  SparePartType          @default(NEW)
+
+  // SuperAdmin Approval
+  approvedById          String?                @db.Uuid
+  approvedBy            User?                  @relation("SparePartApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt            DateTime?
+
+  // Issuance & Warehouse
+  issuedById            String?                @db.Uuid
+  issuedBy              User?                  @relation("SparePartIssuedBy", fields: [issuedById], references: [id], onDelete: SetNull)
+  issuedAt              DateTime?
+  warehouseId           String?                @db.Uuid
+  warehouse             Warehouse?             @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+
+  // Issued item details
+  issuedPartName        String?
+  issuedPartNo          String?
+  issuedQty             Int?
+
+  // Exchange details (item received back from driver)
+  returnedPartNo        String?
+  returnedPartCondition String?
+
+  adminNotes            String?
+  rejectionReason       String?
+
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+
+  @@index([driverId])
+  @@index([vehicleId])
+  @@index([status])
+  @@index([warehouseId])
+  @@index([createdAt])
+}
+
+enum SupportMessageType {
+  TEXT
+  IMAGE
+  AUDIO
+}
+
+model SupportMessage {
+  id                    String             @id @default(uuid(7)) @db.Uuid
+  senderId              String             @db.Uuid
+  sender                User               @relation("SentSupportMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  receiverId            String             @db.Uuid
+  receiver              User               @relation("ReceivedSupportMessages", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  content               String             @default("")
+  type                  SupportMessageType @default(TEXT)
+
+  attachmentUrl         String?
+  attachmentPublicId    String?
+  attachmentDurationSec Int?
+
+  isRead                Boolean            @default(false)
+  readAt                DateTime?
+
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+
+  @@index([senderId, receiverId])
+  @@index([receiverId, isRead])
   @@index([createdAt])
 }
 

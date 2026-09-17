@@ -19,11 +19,15 @@ import { radius, spacing } from '../../../src/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { DashboardGrid, type GridTile } from '../../../src/components/DashboardGrid';
 import { LoadingAssistantCard } from '../../../src/components/LoadingAssistantCard';
+import { SparePartRequestModal } from '../../../src/components/SparePartRequestModal';
+import { SupportChatModal } from '../../../src/components/SupportChatModal';
 
 export default function DriverHomeDashboardScreen(): ReactElement {
   const insets = useSafeAreaInsets();
   const { user, logout } = useAuth();
   const [showLoadingAssistant, setShowLoadingAssistant] = useState(false);
+  const [showSparePartModal, setShowSparePartModal] = useState(false);
+  const [showSupportModal, setShowSupportModal] = useState(false);
 
   const vehicles = useApiResource('vehicles:mine', () => api.vehicles.mine());
   const reloadVehicles = vehicles.reload;
@@ -73,7 +77,19 @@ export default function DriverHomeDashboardScreen(): ReactElement {
       return;
     }
 
-    // 3. All Service Issue Boxes (Fuel / DEF, Breakdown, Tyre issue, Accounts, Support) -> Navigate to Complaint Registration Chat UI
+    // 3. Spare Parts Requisition -> Opens Spare Parts Requisition Modal
+    if ((tile.id as string) === 'SPARE_PARTS') {
+      setShowSparePartModal(true);
+      return;
+    }
+
+    // 4. Helpline & Support Chat -> Opens WhatsApp-like Live Support Modal
+    if (tile.id === 'SUPPORT') {
+      setShowSupportModal(true);
+      return;
+    }
+
+    // 5. All Service Issue Boxes (Fuel / DEF, Breakdown, Tyre issue, Accounts) -> Navigate to Complaint Registration Chat UI
     let initialPriority = 'MEDIUM';
     if (tile.id === 'BREAKDOWN') initialPriority = 'HIGH';
     if (tile.id === 'ACCOUNTS') initialPriority = 'LOW';
@@ -199,6 +215,19 @@ export default function DriverHomeDashboardScreen(): ReactElement {
           </ScrollView>
         </View>
       </Modal>
+
+      {/* Spare Part Requisition Modal */}
+      <SparePartRequestModal
+        visible={showSparePartModal}
+        onClose={() => setShowSparePartModal(false)}
+        vehicles={vehicleList}
+      />
+
+      {/* Realtime Support Helpline WhatsApp-style Modal */}
+      <SupportChatModal
+        visible={showSupportModal}
+        onClose={() => setShowSupportModal(false)}
+      />
     </View>
   );
 }

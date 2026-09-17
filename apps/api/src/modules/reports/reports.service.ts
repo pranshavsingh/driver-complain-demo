@@ -386,7 +386,7 @@ export async function getVehicleReport(query: VehicleReportQuery): Promise<Vehic
       id: `${f.id}-fuel`,
       timestamp: f.createdAt.toISOString(),
       eventType: 'FUEL_LOGGED',
-      title: `${f.type} Refill: ${f.quantityLtr} L (₹${f.totalPrice.toLocaleString()})`,
+      title: `${f.type} Refill: ${f.quantityLtr} L`,
       description: f.notes || (f.odometerKm ? `Odometer: ${f.odometerKm} km` : undefined),
       badgeText: f.type,
       badgeVariant: 'default',

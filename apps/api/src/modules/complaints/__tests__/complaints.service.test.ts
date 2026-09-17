@@ -52,8 +52,10 @@ function q(extra: Partial<ComplaintListQuery> = {}): ComplaintListQuery {
 
 /** Remove every complaint owned by the test drivers (+ the notifications pointing at them). */
 async function cleanupComplaints(): Promise<void> {
+  const driverIds = [driver1Id, driver2Id].filter((id): id is string => Boolean(id));
+  if (driverIds.length === 0) return;
   const complaints = await prisma.complaint.findMany({
-    where: { driverId: { in: [driver1Id, driver2Id] } },
+    where: { driverId: { in: driverIds } },
     select: { id: true },
   });
   const ids = complaints.map((c) => c.id);

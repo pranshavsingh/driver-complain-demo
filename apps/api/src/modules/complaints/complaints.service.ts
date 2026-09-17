@@ -195,14 +195,18 @@ export async function create(
     })),
   );
 
+  const rawDesc = typeof input.description === 'string' ? input.description.trim() : '';
   const isPlaceholderDescription =
-    !input.description.trim() ||
-    input.description === 'Voice note attached' ||
-    input.description === 'Photo attached';
+    !rawDesc ||
+    rawDesc === 'Voice note attached' ||
+    rawDesc === 'Photo attached';
   const finalDescription =
     voiceTranscription && isPlaceholderDescription
       ? voiceTranscription
-      : input.description;
+      : rawDesc || voiceTranscription || 'Issue reported by driver';
+
+  const rawTitle = typeof input.title === 'string' ? input.title.trim() : '';
+  const finalTitle = rawTitle || `${categoryToUse} Issue`;
 
   const activeLoading = await prisma.loadingRecord.findFirst({
     where: {
@@ -225,7 +229,7 @@ export async function create(
         complaintNo,
         driverId: driver.id,
         vehicleId: vehicleIdToUse,
-        title: input.title,
+        title: finalTitle,
         description: finalDescription,
         transcription: voiceTranscription,
         category: categoryToUse,

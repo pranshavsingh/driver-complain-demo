@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, type ReactElement } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { Truck, LayoutDashboard, Users, ClipboardList, LogOut, Bell, Menu, X, Trash2, CheckCircle2, Wrench, FileSpreadsheet } from './Icons';
+import { Truck, LayoutDashboard, Users, ClipboardList, LogOut, Bell, Menu, X, Trash2, CheckCircle2, Wrench, FileSpreadsheet, Package, Headphones } from './Icons';
 
 
 import { isSuperAdmin, useAuth } from '../auth/AuthContext';
@@ -50,6 +50,8 @@ function getPageTitle(pathname: string): string {
   if (pathname.startsWith('/trips')) return 'Trip Analytics & Logs';
   if (pathname.startsWith('/maintenance') || pathname.startsWith('/fuel-logs'))
     return 'Vehicle Maintenance & Servicing';
+  if (pathname.startsWith('/spare-parts')) return 'Spare Parts & Inventory Requisition';
+  if (pathname.startsWith('/support')) return 'Helpline & Realtime Support';
   if (pathname.startsWith('/reports')) return 'Vehicle Reports & Analytics';
   return 'Fleet Administration';
 }
@@ -176,6 +178,22 @@ export function Layout(): ReactElement {
           >
             <Wrench size={18} className="nav-icon" />
             <span className="nav-label">Vehicle Maintenance</span>
+          </NavLink>
+
+          <NavLink
+            to="/spare-parts"
+            className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
+          >
+            <Package size={18} className="nav-icon" />
+            <span className="nav-label">Spare Parts</span>
+          </NavLink>
+
+          <NavLink
+            to="/support"
+            className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
+          >
+            <Headphones size={18} className="nav-icon" />
+            <span className="nav-label">Support Chat</span>
           </NavLink>
 
           <NavLink

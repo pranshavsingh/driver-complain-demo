@@ -27,12 +27,15 @@ export interface RealtimeMessage {
 }
 
 type Handler = (message: RealtimeMessage) => void;
+type CustomHandler = (payload: any) => void;
 
 interface RealtimeContextValue {
   /** Whether the live connection is currently up — shown in the header. */
   connected: boolean;
   /** Register a handler for complaint events. Returns an unsubscribe function. */
   subscribe: (handler: Handler) => () => void;
+  /** Register a handler for any custom realtime socket event (e.g. support:message, support:read). */
+  subscribeCustom: (event: string, handler: CustomHandler) => () => void;
 }
 
 const RealtimeContext = createContext<RealtimeContextValue | null>(null);
@@ -50,11 +53,30 @@ export function RealtimeProvider({ children }: { children: ReactNode }): ReactEl
 
   // Handlers live in a ref so subscribing does not re-create the socket.
   const handlers = useRef(new Set<Handler>());
+  const customHandlers = useRef(new Map<string, Set<CustomHandler>>());
 
   const subscribe = useCallback((handler: Handler): (() => void) => {
     handlers.current.add(handler);
     return () => {
       handlers.current.delete(handler);
+    };
+  }, []);
+
+  const subscribeCustom = useCallback((event: string, handler: CustomHandler): (() => void) => {
+    let set = customHandlers.current.get(event);
+    if (!set) {
+      set = new Set<CustomHandler>();
+      customHandlers.current.set(event, set);
+    }
+    set.add(handler);
+    return () => {
+      const currentSet = customHandlers.current.get(event);
+      if (currentSet) {
+        currentSet.delete(handler);
+        if (currentSet.size === 0) {
+          customHandlers.current.delete(event);
+        }
+      }
     };
   }, []);
 
@@ -106,6 +128,16 @@ export function RealtimeProvider({ children }: { children: ReactNode }): ReactEl
       });
     }
 
+    // Support chat and custom events
+    socket.onAny((eventName: string, payload: any) => {
+      const matching = customHandlers.current.get(eventName);
+      if (matching) {
+        for (const handler of matching) {
+          handler(payload);
+        }
+      }
+    });
+
     return () => {
       socket.removeAllListeners();
       socket.disconnect();
@@ -113,8 +145,8 @@ export function RealtimeProvider({ children }: { children: ReactNode }): ReactEl
   }, [status]);
 
   const value = useMemo<RealtimeContextValue>(
-    () => ({ connected, subscribe }),
-    [connected, subscribe],
+    () => ({ connected, subscribe, subscribeCustom }),
+    [connected, subscribe, subscribeCustom],
   );
 
   return <RealtimeContext.Provider value={value}>{children}</RealtimeContext.Provider>;

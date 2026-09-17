@@ -30,6 +30,15 @@ import {
   type VehicleFullReportResponse,
   FleetVehicleSummaryItemSchema,
   type FleetVehicleSummaryItem,
+  type WarehousePublic,
+  type CreateWarehouseInput,
+  type UpdateWarehouseInput,
+  type SparePartRequestPublic,
+  type IssueSparePartInput,
+  type RejectSparePartRequestInput,
+  type SparePartStatsSummary,
+  type SupportMessagePublic,
+  type SupportConversationSummary,
 } from '@driver-complaint/shared-types';
 import { download, request, requestNoContent, type QueryValue } from './client';
 import { clearTokens, getRefreshToken } from './tokens';
@@ -313,6 +322,91 @@ export const reports = {
       filename || `fleet-full-report-${Date.now()}.xlsx`,
     ),
 };
+
+export const warehouses = {
+  list: (includeInactive = false): Promise<WarehousePublic[]> =>
+    request(z.array(z.any()), '/spare-parts/warehouses', {
+      query: includeInactive ? { includeInactive: 'true' } : undefined,
+    }),
+  create: (input: CreateWarehouseInput): Promise<WarehousePublic> =>
+    request(z.any(), '/spare-parts/warehouses', {
+      method: 'POST',
+      body: input,
+    }),
+  update: (id: string, input: UpdateWarehouseInput): Promise<WarehousePublic> =>
+    request(z.any(), `/spare-parts/warehouses/${id}`, {
+      method: 'PATCH',
+      body: input,
+    }),
+  delete: (id: string): Promise<void> =>
+    requestNoContent(`/spare-parts/warehouses/${id}`, {
+      method: 'DELETE',
+    }),
+};
+
+export const spareParts = {
+  list: (query?: Record<string, QueryValue>): Promise<{ data: SparePartRequestPublic[]; total: number; page: number; limit: number; totalPages: number }> =>
+    request(z.any(), '/spare-parts', { query }),
+  getOne: (id: string): Promise<SparePartRequestPublic> =>
+    request(z.any(), `/spare-parts/${id}`),
+  approveAndIssue: (id: string, input: IssueSparePartInput): Promise<SparePartRequestPublic> =>
+    request(z.any(), `/spare-parts/${id}/issue`, {
+      method: 'PATCH',
+      body: input,
+    }),
+  reject: (id: string, input: RejectSparePartRequestInput): Promise<SparePartRequestPublic> =>
+    request(z.any(), `/spare-parts/${id}/reject`, {
+      method: 'PATCH',
+      body: input,
+    }),
+  stats: (query?: { startDate?: string; endDate?: string; vehicleId?: string }): Promise<SparePartStatsSummary> =>
+    request(z.any(), '/spare-parts/stats', { query: query as Record<string, QueryValue> }),
+  exportXlsx: (query?: Record<string, QueryValue>, filename?: string): Promise<void> =>
+    download(
+      '/spare-parts/export',
+      { query },
+      filename || `spare-parts-requisitions-${Date.now()}.xlsx`,
+    ),
+};
+
+export const support = {
+  getConversations: (): Promise<SupportConversationSummary[]> =>
+    request(z.array(z.any()), '/support/conversations'),
+
+  getMessages: (
+    otherUserId: string,
+    query?: { page?: number; limit?: number },
+  ): Promise<{ data: SupportMessagePublic[]; total: number; page: number; limit: number }> =>
+    request(z.any(), `/support/messages/${otherUserId}`, {
+      query: query as Record<string, QueryValue>,
+    }),
+
+  sendMessage: async (
+    input: { receiverId?: string; content?: string; type?: 'TEXT' | 'IMAGE' | 'AUDIO' },
+    file?: File | Blob,
+  ): Promise<SupportMessagePublic> => {
+    const form = new FormData();
+    if (input.receiverId) form.append('receiverId', input.receiverId);
+    if (input.content) form.append('content', input.content);
+    if (input.type) form.append('type', input.type);
+    if (file) form.append('attachment', file);
+
+    return request(z.any(), '/support/messages', {
+      method: 'POST',
+      body: form,
+    });
+  },
+
+  markRead: (otherUserId: string): Promise<{ updated: number }> =>
+    request(z.any(), `/support/messages/${otherUserId}/read`, {
+      method: 'PATCH',
+    }),
+
+  getUnreadCount: (): Promise<{ unreadCount: number }> =>
+    request(z.any(), '/support/unread-count'),
+};
+
+
 
 
 

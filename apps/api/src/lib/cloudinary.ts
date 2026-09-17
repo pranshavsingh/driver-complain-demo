@@ -2,6 +2,7 @@ import { Readable } from 'node:stream';
 import { v2 as cloudinary, type UploadApiResponse } from 'cloudinary';
 import { env } from '../config/env';
 import { ApiError } from '../errors/api-error';
+import { logger } from './logger';
 
 /** Uploads are only possible when all three credentials are present. */
 export const cloudinaryEnabled = Boolean(
@@ -54,37 +55,41 @@ export async function uploadBuffer(
     throw ApiError.badRequest('File uploads are not configured on this server');
   }
 
-  const result = await new Promise<UploadApiResponse>((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream(
-      {
-        folder: opts.folder ?? cloudinaryFolder,
-        resource_type: opts.resourceType ?? 'image',
-        ...(opts.format ? { format: opts.format } : {}),
-      },
-      (error, res) => {
-        if (error || !res) {
-          reject(error instanceof Error ? error : new Error('Cloudinary upload failed'));
-          return;
-        }
-        resolve(res);
-      },
+  try {
+    const result = await new Promise<UploadApiResponse>((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        {
+          folder: opts.folder ?? cloudinaryFolder,
+          resource_type: opts.resourceType ?? 'image',
+          ...(opts.format ? { format: opts.format } : {}),
+        },
+        (error, res) => {
+          if (error || !res) {
+            reject(error instanceof Error ? error : new Error(error?.message || 'Cloudinary upload failed'));
+            return;
+          }
+          resolve(res);
+        },
+      );
+      Readable.from(buffer).pipe(stream);
+    });
+
+    const rawDuration: unknown = result.duration;
+
+    return {
+      url: result.secure_url,
+      publicId: result.public_id,
+      resourceType: result.resource_type,
+      format: result.format ?? null,
+      bytes: result.bytes ?? null,
+      durationSec: typeof rawDuration === 'number' ? Math.round(rawDuration) : null,
+    };
+  } catch (err: any) {
+    logger.error({ err }, 'Cloudinary attachment upload failed');
+    throw ApiError.badRequest(
+      `File upload failed: ${err?.message || 'Cloudinary service unreachable or unconfigured'}`,
     );
-    Readable.from(buffer).pipe(stream);
-  });
-
-  // `duration` falls under cloudinary's `[futureKey: string]: any` index signature rather than
-  // its declared fields, so it is narrowed here instead of trusted. Fractional seconds are
-  // rounded — the UI shows "0:12", not milliseconds.
-  const rawDuration: unknown = result.duration;
-
-  return {
-    url: result.secure_url,
-    publicId: result.public_id,
-    resourceType: result.resource_type,
-    format: result.format ?? null,
-    bytes: result.bytes ?? null,
-    durationSec: typeof rawDuration === 'number' ? Math.round(rawDuration) : null,
-  };
+  }
 }
 
 export { cloudinary };

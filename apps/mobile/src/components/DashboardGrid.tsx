@@ -77,6 +77,16 @@ export const DASHBOARD_TILES: GridTile[] = [
     iconBgColor: '#FFFFFF',
   },
   {
+    id: 'SPARE_PARTS' as any,
+    title: 'Spare Parts Requisition',
+    subtitle: 'Voice, Photo & Text Request',
+    icon: 'construct',
+    bgColor: '#EFF6FF',
+    borderColor: '#93C5FD',
+    textColor: '#1D4ED8',
+    iconBgColor: '#FFFFFF',
+  },
+  {
     id: 'SUPPORT',
     title: 'Support',
     subtitle: 'Help Helpline',

@@ -314,4 +314,82 @@ export const maintenance = {
     request(z.any(), '/maintenance', { query: { page, limit } }),
 };
 
+export const spareParts = {
+  create: async (
+    input: {
+      vehicleId?: string;
+      vehicleNumber?: string;
+      partName?: string;
+      description?: string;
+      quantity?: number;
+      type?: 'NEW' | 'EXCHANGE' | 'REPAIR' | 'OTHER';
+    },
+    evidence?: {
+      photo?: FileToUpload;
+      voice?: FileToUpload;
+    },
+  ): Promise<any> => {
+    await warmUpServer();
+    const form = new FormData();
+    if (input.vehicleId) form.append('vehicleId', input.vehicleId);
+    if (input.vehicleNumber) form.append('vehicleNumber', input.vehicleNumber);
+    if (input.partName) form.append('partName', input.partName);
+    if (input.description) form.append('description', input.description);
+    if (input.quantity !== undefined) form.append('quantity', String(input.quantity));
+    if (input.type) form.append('type', input.type);
+
+    if (evidence?.photo) appendFile(form, 'photo', evidence.photo);
+    if (evidence?.voice) appendFile(form, 'voice', evidence.voice);
+
+    return request(z.any(), '/spare-parts', { method: 'POST', body: form });
+  },
+
+  mine: (page = 1, limit = 20): Promise<any> =>
+    request(z.any(), '/spare-parts', { query: { page, limit } }),
+};
+
+export const support = {
+  getDefaultAdmin: (): Promise<UserPublic> =>
+    request(UserPublicSchema, '/support/default-admin'),
+
+  getConversations: (): Promise<any[]> =>
+    request(z.array(z.any()), '/support/conversations'),
+
+  getMessages: (
+    otherUserId: string,
+    query?: { page?: number; limit?: number },
+  ): Promise<{ data: any[]; total: number; page: number; limit: number }> =>
+    request(z.any(), `/support/messages/${otherUserId}`, {
+      query: query as Record<string, string | number>,
+    }),
+
+  sendMessage: async (
+    input: { receiverId?: string; content?: string; type?: 'TEXT' | 'IMAGE' | 'AUDIO' },
+    attachment?: FileToUpload,
+  ): Promise<any> => {
+    await warmUpServer();
+    const form = new FormData();
+    if (input.receiverId) form.append('receiverId', input.receiverId);
+    if (input.content) form.append('content', input.content);
+    if (input.type) form.append('type', input.type);
+    if (attachment) {
+      appendFile(form, 'attachment', attachment);
+    }
+    return request(z.any(), '/support/messages', {
+      method: 'POST',
+      body: form,
+    });
+  },
+
+  markRead: (otherUserId: string): Promise<{ updated: number }> =>
+    request(z.any(), `/support/messages/${otherUserId}/read`, {
+      method: 'PATCH',
+    }),
+
+  getUnreadCount: (): Promise<{ unreadCount: number }> =>
+    request(z.any(), '/support/unread-count'),
+};
+
+
+
 

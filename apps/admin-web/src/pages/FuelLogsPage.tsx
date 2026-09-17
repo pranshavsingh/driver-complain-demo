@@ -124,27 +124,27 @@ export function FuelLogsPage(): ReactElement {
       <div className="stat-cards-grid">
         <div className="stat-card stat-success">
           <div className="stat-card-header">
-            <span className="stat-card-title">Total Fuel Expense</span>
+            <span className="stat-card-title">Total Fuel Volume</span>
             <Fuel size={20} color="#15803d" />
           </div>
           <div className="stat-card-value">
-            ₹{stats.totalFuelCost.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+            {stats.totalFuelVolumeLtr.toFixed(1)} L
           </div>
           <div className="stat-card-footer">
-            {stats.totalFuelVolumeLtr.toFixed(1)} Litres filled
+            Combined fleet fuel volume
           </div>
         </div>
 
         <div className="stat-card stat-info">
           <div className="stat-card-header">
-            <span className="stat-card-title">Total DEF Expense</span>
+            <span className="stat-card-title">Total DEF Volume</span>
             <span style={{ fontSize: 18 }}>💧</span>
           </div>
           <div className="stat-card-value">
-            ₹{stats.totalDefCost.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+            {stats.totalDefVolumeLtr.toFixed(1)} L
           </div>
           <div className="stat-card-footer">
-            {stats.totalDefVolumeLtr.toFixed(1)} Litres DEF
+            Combined fleet DEF volume
           </div>
         </div>
 
@@ -284,8 +284,6 @@ export function FuelLogsPage(): ReactElement {
                 <th>Vehicle</th>
                 <th>Type</th>
                 <th>Quantity</th>
-                <th>Total Price</th>
-                <th>Rate / Litre</th>
                 <th>Odometer</th>
                 <th>Receipt Bill</th>
               </tr>
@@ -293,13 +291,13 @@ export function FuelLogsPage(): ReactElement {
             <tbody>
               {logsRes.loading ? (
                 <tr>
-                  <td colSpan={9} style={{ textAlign: 'center', padding: '36px 16px', color: 'var(--muted)' }}>
+                  <td colSpan={7} style={{ textAlign: 'center', padding: '36px 16px', color: 'var(--muted)' }}>
                     Loading fuel fill entries...
                   </td>
                 </tr>
               ) : filteredLogs.length === 0 ? (
                 <tr>
-                  <td colSpan={9} style={{ textAlign: 'center', padding: '36px 16px', color: 'var(--muted)' }}>
+                  <td colSpan={7} style={{ textAlign: 'center', padding: '36px 16px', color: 'var(--muted)' }}>
                     No fuel / DEF entries found matching your filters.
                   </td>
                 </tr>
@@ -309,7 +307,6 @@ export function FuelLogsPage(): ReactElement {
                   const driverName = driverUser ? `${driverUser.firstName} ${driverUser.lastName}` : 'Driver';
                   const empId = driverUser?.employeeId ?? 'N/A';
                   const isFuel = log.type === 'FUEL';
-                  const calculatedRate = log.ratePerLtr ?? (log.quantityLtr > 0 ? (log.totalPrice / log.quantityLtr).toFixed(2) : 0);
 
                   return (
                     <tr key={log.id}>
@@ -343,12 +340,6 @@ export function FuelLogsPage(): ReactElement {
                       </td>
                       <td style={{ fontWeight: 700 }}>
                         {log.quantityLtr} L
-                      </td>
-                      <td style={{ fontWeight: 700, color: 'var(--success-text)' }}>
-                        ₹{log.totalPrice.toLocaleString('en-IN')}
-                      </td>
-                      <td className="created-date-text">
-                        ₹{calculatedRate} / L
                       </td>
                       <td className="created-date-text">
                         {log.odometerKm ? `${log.odometerKm.toLocaleString()} KM` : '—'}

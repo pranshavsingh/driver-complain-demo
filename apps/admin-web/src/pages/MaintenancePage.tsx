@@ -711,43 +711,28 @@ export function MaintenancePage(): ReactElement {
            TAB 2: FUEL & DEF CONSUMPTION LOGS VIEW
            =================================================================== */
         <>
-          {/* 4 Stat Cards */}
+          {/* 3 Stat Cards */}
           <div className="stat-cards-grid">
             <div className="stat-card stat-success selected">
               <div className="stat-card-header">
-                <span className="stat-card-title">Total Fuel Expense</span>
-                <Fuel size={20} color="#15803d" />
-              </div>
-              <div className="stat-card-value">
-                ₹{fuelStats.totalFuelCost.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-              </div>
-              <div className="stat-card-footer">
-                {fuelStats.totalFuelVolumeLtr.toFixed(1)} Litres filled
-              </div>
-            </div>
-
-            <div className="stat-card stat-info selected">
-              <div className="stat-card-header">
-                <span className="stat-card-title">Total DEF Expense</span>
-                <span style={{ fontSize: 18 }}>💧</span>
-              </div>
-              <div className="stat-card-value">
-                ₹{fuelStats.totalDefCost.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-              </div>
-              <div className="stat-card-footer">
-                {fuelStats.totalDefVolumeLtr.toFixed(1)} Litres DEF
-              </div>
-            </div>
-
-            <div className="stat-card stat-warning selected">
-              <div className="stat-card-header">
                 <span className="stat-card-title">Total Fuel Volume</span>
-                <Fuel size={20} color="#b45309" />
+                <Fuel size={20} color="#15803d" />
               </div>
               <div className="stat-card-value">
                 {fuelStats.totalFuelVolumeLtr.toFixed(1)} L
               </div>
-              <div className="stat-card-footer">Combined fleet volume</div>
+              <div className="stat-card-footer">Combined fleet fuel volume</div>
+            </div>
+
+            <div className="stat-card stat-info selected">
+              <div className="stat-card-header">
+                <span className="stat-card-title">Total DEF Volume</span>
+                <span style={{ fontSize: 18 }}>💧</span>
+              </div>
+              <div className="stat-card-value">
+                {fuelStats.totalDefVolumeLtr.toFixed(1)} L
+              </div>
+              <div className="stat-card-footer">Combined fleet DEF volume</div>
             </div>
 
             <div className="stat-card">
@@ -904,8 +889,6 @@ export function MaintenancePage(): ReactElement {
                       <th>Driver</th>
                       <th>Type</th>
                       <th>Quantity (L)</th>
-                      <th>Total Price</th>
-                      <th>Rate / Ltr</th>
                       <th>Receipt</th>
                       <th>Odometer</th>
                       <th>Notes / Station</th>
@@ -921,11 +904,6 @@ export function MaintenancePage(): ReactElement {
                       const vehicleInfo = item.vehicle?.make
                         ? `${item.vehicle.make} ${item.vehicle.model ?? ''}`
                         : '';
-                      const rate =
-                        item.ratePerLtr ??
-                        (item.quantityLtr > 0
-                          ? Number((item.totalPrice / item.quantityLtr).toFixed(2))
-                          : 0);
 
                       return (
                         <tr key={item.id}>
@@ -989,16 +967,6 @@ export function MaintenancePage(): ReactElement {
                             {item.quantityLtr.toFixed(2)} L
                           </td>
 
-                          <td style={{ fontWeight: 700, color: '#16a34a' }}>
-                            ₹{item.totalPrice.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                          </td>
-
-                          <td>
-                            <div style={{ fontSize: 13, fontWeight: 600 }}>
-                              ₹{rate.toFixed(2)}
-                            </div>
-                          </td>
-
                           <td>
                             {item.receiptUrl ? (
                               <button
@@ -1006,7 +974,7 @@ export function MaintenancePage(): ReactElement {
                                 onClick={() =>
                                   setSelectedPhoto({
                                     url: item.receiptUrl,
-                                    title: `${item.type === 'FUEL' ? 'Fuel Receipt' : 'DEF Bill'} (₹${item.totalPrice})`,
+                                    title: `${item.type === 'FUEL' ? 'Fuel Receipt' : 'DEF Bill'}`,
                                     subtitle: `Vehicle: ${vehiclePlate} · Driver: ${driverName}`,
                                     date: formatDateTime(item.createdAt),
                                   })

@@ -37,6 +37,11 @@ export const NotificationTypeSchema = z.enum([
   'ASSIGNMENT_REJECTED',
   'VEHICLE_ASSIGNED',
   'VEHICLE_UNASSIGNED',
+  'SPARE_PART_REQUESTED',
+  'SPARE_PART_APPROVED',
+  'SPARE_PART_ISSUED',
+  'SPARE_PART_REJECTED',
+  'SUPPORT_MESSAGE_RECEIVED',
 ]);
 export type NotificationType = z.infer<typeof NotificationTypeSchema>;
 export const NOTIFICATION_TYPES = NotificationTypeSchema.options;
@@ -100,3 +105,27 @@ export const TripPhaseSchema = z.enum([
 ]);
 export type TripPhase = z.infer<typeof TripPhaseSchema>;
 export const TRIP_PHASES = TripPhaseSchema.options;
+
+export const SparePartRequestStatusSchema = z.enum([
+  'PENDING_APPROVAL',
+  'APPROVED',
+  'ISSUED',
+  'REJECTED',
+]);
+export type SparePartRequestStatus = z.infer<typeof SparePartRequestStatusSchema>;
+export const SPARE_PART_REQUEST_STATUSES = SparePartRequestStatusSchema.options;
+
+export const SparePartTypeSchema = z.enum([
+  'NEW',
+  'EXCHANGE',
+  'REPAIR',
+  'OTHER',
+]);
+export type SparePartType = z.infer<typeof SparePartTypeSchema>;
+export const SPARE_PART_TYPES = SparePartTypeSchema.options;
+
+export const SupportMessageTypeSchema = z.enum(['TEXT', 'IMAGE', 'AUDIO']);
+export type SupportMessageType = z.infer<typeof SupportMessageTypeSchema>;
+export const SUPPORT_MESSAGE_TYPES = SupportMessageTypeSchema.options;
+
+

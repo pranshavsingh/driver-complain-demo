@@ -61,7 +61,6 @@ export async function writeVehicleReportXlsx(
     { metric: 'Fuel / DEF Issues Count', value: summary.fuelIssueCount },
     { metric: '---', value: '---' },
     { metric: 'Total Fuel / DEF Filled', value: `${summary.totalFuelLtr} Litres` },
-    { metric: 'Total Fuel / DEF Cost', value: `₹${summary.totalFuelCost.toLocaleString()}` },
     { metric: 'Total Maintenance & Tyre Cost', value: `₹${summary.totalMaintenanceCost.toLocaleString()}` },
   ];
 
@@ -199,9 +198,9 @@ export async function writeVehicleReportXlsx(
       type: `${f.type} Refill`,
       item: `${f.quantityLtr} Litres`,
       quantity: f.quantityLtr,
-      amount: f.totalPrice,
+      amount: '',
       odometerKm: f.odometerKm ?? '',
-      details: f.ratePerLtr ? `₹${f.ratePerLtr}/L` : '',
+      details: '',
       notes: f.notes ?? '',
       createdAt: new Date(f.createdAt),
       photoUrl: f.receiptUrl ?? '',
@@ -269,16 +268,13 @@ export async function writeFleetFullReportXlsx(
     { header: 'Trip Incident Photo Proofs', key: 'complaintPhotos', width: 35 },
     { header: 'Trip Incident Voice Notes', key: 'complaintVoices', width: 35 },
     { header: 'Fuel Filled on Trip (L)', key: 'tripFuelQty', width: 18 },
-    { header: 'Fuel Cost on Trip (₹)', key: 'tripFuelCost', width: 18, style: { numFmt: '₹#,##0.00' } },
     { header: 'DEF Filled on Trip (L)', key: 'tripDefQty', width: 18 },
-    { header: 'DEF Cost on Trip (₹)', key: 'tripDefCost', width: 18, style: { numFmt: '₹#,##0.00' } },
-    { header: 'Total Refuel Cost on Trip (₹)', key: 'tripTotalRefuelCost', width: 22, style: { numFmt: '₹#,##0.00' } },
     { header: 'Refuel Receipts / Details', key: 'tripRefuelDetails', width: 35 },
     { header: 'Loading Arrival Proof URL', key: 'reachedPhotoUrl', width: 35 },
     { header: 'Loaded Cargo Proof URL', key: 'completedPhotoUrl', width: 35 },
     { header: 'Destination Arrival Proof URL', key: 'tripCompletedPhotoUrl', width: 35 },
     { header: 'Unloaded Cargo Proof URL', key: 'unloadingPhotoUrl', width: 35 },
-    { header: 'Vehicle All-Time Spend (₹)', key: 'vehicleTotalSpend', width: 22, style: { numFmt: '₹#,##0.00' } },
+    { header: 'Vehicle Maintenance Spend (₹)', key: 'vehicleTotalSpend', width: 25, style: { numFmt: '₹#,##0.00' } },
   ];
   masterSheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
   masterSheet.getRow(1).fill = {
@@ -297,9 +293,7 @@ export async function writeFleetFullReportXlsx(
     const driverEmpId = u?.employeeId ?? 'N/A';
     const driverLicense = d?.licenseNumber ?? 'N/A';
 
-    const totalFuelCost = item.fuelRecords.reduce((s, f) => s + f.totalPrice, 0);
-    const totalMaintCost = item.maintenanceRecords.reduce((s, m) => s + (m.cost ?? 0), 0);
-    const vehicleTotalSpend = totalFuelCost + totalMaintCost;
+    const vehicleTotalSpend = item.maintenanceRecords.reduce((s, m) => s + (m.cost ?? 0), 0);
 
     if (item.trips.length === 0) {
       // Vehicle with no trips logged yet - write a vehicle summary row
@@ -315,9 +309,7 @@ export async function writeFleetFullReportXlsx(
         .join(', ');
 
       const totalFuelLtr = item.fuelRecords.filter((f) => f.type === 'FUEL').reduce((s, f) => s + f.quantityLtr, 0);
-      const totalFuelPrice = item.fuelRecords.filter((f) => f.type === 'FUEL').reduce((s, f) => s + f.totalPrice, 0);
       const totalDefLtr = item.fuelRecords.filter((f) => f.type === 'DEF').reduce((s, f) => s + f.quantityLtr, 0);
-      const totalDefPrice = item.fuelRecords.filter((f) => f.type === 'DEF').reduce((s, f) => s + f.totalPrice, 0);
 
       masterSheet.addRow({
         plateNumber: v.plateNumber,
@@ -347,11 +339,8 @@ export async function writeFleetFullReportXlsx(
         complaintPhotos,
         complaintVoices,
         tripFuelQty: totalFuelLtr,
-        tripFuelCost: totalFuelPrice,
         tripDefQty: totalDefLtr,
-        tripDefCost: totalDefPrice,
-        tripTotalRefuelCost: totalFuelPrice + totalDefPrice,
-        tripRefuelDetails: item.fuelRecords.map((f) => `${f.type}: ${f.quantityLtr}L (₹${f.totalPrice})`).join('; '),
+        tripRefuelDetails: item.fuelRecords.map((f) => `${f.type}: ${f.quantityLtr}L`).join('; '),
         reachedPhotoUrl: '',
         completedPhotoUrl: '',
         tripCompletedPhotoUrl: '',
@@ -400,13 +389,10 @@ export async function writeFleetFullReportXlsx(
         const tripDefList = matchedFuel.filter((f) => f.type === 'DEF');
 
         const tripFuelQty = tripFuelList.reduce((s, f) => s + f.quantityLtr, 0);
-        const tripFuelCost = tripFuelList.reduce((s, f) => s + f.totalPrice, 0);
         const tripDefQty = tripDefList.reduce((s, f) => s + f.quantityLtr, 0);
-        const tripDefCost = tripDefList.reduce((s, f) => s + f.totalPrice, 0);
-        const tripTotalRefuelCost = tripFuelCost + tripDefCost;
 
         const tripRefuelDetails = matchedFuel
-          .map((f) => `${f.type}: ${f.quantityLtr}L (₹${f.totalPrice})${f.receiptUrl ? ` [Proof: ${f.receiptUrl}]` : ''}`)
+          .map((f) => `${f.type}: ${f.quantityLtr}L${f.receiptUrl ? ` [Proof: ${f.receiptUrl}]` : ''}`)
           .join('; ');
 
         masterSheet.addRow({
@@ -437,10 +423,7 @@ export async function writeFleetFullReportXlsx(
           complaintPhotos,
           complaintVoices,
           tripFuelQty,
-          tripFuelCost,
           tripDefQty,
-          tripDefCost,
-          tripTotalRefuelCost,
           tripRefuelDetails,
           reachedPhotoUrl: t.reachedPhotoUrl ?? '',
           completedPhotoUrl: t.completedPhotoUrl ?? '',
@@ -474,11 +457,8 @@ export async function writeFleetFullReportXlsx(
     { header: 'Total Issues', key: 'totalComplaints', width: 14 },
     { header: 'Breakdowns', key: 'breakdownCount', width: 14 },
     { header: 'Total Fuel (L)', key: 'totalFuelLtr', width: 16 },
-    { header: 'Total Fuel Cost (₹)', key: 'totalFuelCost', width: 18, style: { numFmt: '₹#,##0.00' } },
     { header: 'Total DEF (L)', key: 'totalDefLtr', width: 16 },
-    { header: 'Total DEF Cost (₹)', key: 'totalDefCost', width: 18, style: { numFmt: '₹#,##0.00' } },
     { header: 'Total Maintenance (₹)', key: 'totalMaintenanceCost', width: 20, style: { numFmt: '₹#,##0.00' } },
-    { header: 'Total Spend (₹)', key: 'totalSpend', width: 20, style: { numFmt: '₹#,##0.00' } },
   ];
   summarySheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
   summarySheet.getRow(1).fill = {
@@ -501,11 +481,8 @@ export async function writeFleetFullReportXlsx(
     const defLogs = item.fuelRecords.filter((f) => f.type === 'DEF');
 
     const totalFuelLtr = fuelLogs.reduce((s, f) => s + f.quantityLtr, 0);
-    const totalFuelCost = fuelLogs.reduce((s, f) => s + f.totalPrice, 0);
     const totalDefLtr = defLogs.reduce((s, f) => s + f.quantityLtr, 0);
-    const totalDefCost = defLogs.reduce((s, f) => s + f.totalPrice, 0);
     const totalMaintenanceCost = item.maintenanceRecords.reduce((s, m) => s + (m.cost ?? 0), 0);
-    const totalSpend = totalFuelCost + totalDefCost + totalMaintenanceCost;
 
     summarySheet.addRow({
       plateNumber: v.plateNumber,
@@ -522,11 +499,8 @@ export async function writeFleetFullReportXlsx(
       totalComplaints: item.complaints.length,
       breakdownCount,
       totalFuelLtr,
-      totalFuelCost,
       totalDefLtr,
-      totalDefCost,
       totalMaintenanceCost,
-      totalSpend,
     }).commit();
   }
   summarySheet.commit();
@@ -668,8 +642,6 @@ export async function writeFleetFullReportXlsx(
     { header: 'Driver', key: 'driverName', width: 22 },
     { header: 'Type', key: 'type', width: 14 },
     { header: 'Quantity (L)', key: 'quantityLtr', width: 16 },
-    { header: 'Total Cost (₹)', key: 'totalPrice', width: 18, style: { numFmt: '₹#,##0.00' } },
-    { header: 'Rate per Litre (₹/L)', key: 'ratePerLtr', width: 20 },
     { header: 'Odometer (km)', key: 'odometerKm', width: 16 },
     { header: 'Notes', key: 'notes', width: 35 },
     { header: 'Date Logged', key: 'createdAt', width: 22, style: { numFmt: 'yyyy-mm-dd hh:mm' } },
@@ -694,8 +666,6 @@ export async function writeFleetFullReportXlsx(
         driverName: `${driverName} (${u?.employeeId ?? 'N/A'})`,
         type: f.type,
         quantityLtr: f.quantityLtr,
-        totalPrice: f.totalPrice,
-        ratePerLtr: f.ratePerLtr ? `₹${f.ratePerLtr}/L` : '',
         odometerKm: f.odometerKm ?? '',
         notes: f.notes ?? '',
         createdAt: new Date(f.createdAt),
