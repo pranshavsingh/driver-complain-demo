@@ -27,6 +27,7 @@ export async function createUser(req: Request, res: Response): Promise<void> {
 }
 
 export async function listUsers(req: Request, res: Response): Promise<void> {
+  if (!req.user) throw ApiError.unauthorized();
   const { role, approvalStatus, isActive, search } = req.query;
   const filters = {
     ...(typeof role === 'string' ? { role: role as Role } : {}),
@@ -35,8 +36,25 @@ export async function listUsers(req: Request, res: Response): Promise<void> {
     ...(typeof search === 'string' ? { search } : {}),
   };
 
-  const users = await usersService.listUsers(filters);
+  const users = await usersService.listUsers(req.user, filters);
   sendSuccess(res, users);
+}
+
+export async function getPendingCount(_req: Request, res: Response): Promise<void> {
+  const result = await usersService.getPendingCount();
+  sendSuccess(res, result);
+}
+
+export async function checkAvailability(req: Request, res: Response): Promise<void> {
+  const { employeeId, phone, email, licenseNumber, excludeUserId } = req.query;
+  const result = await usersService.checkAvailability({
+    employeeId: typeof employeeId === 'string' ? employeeId : undefined,
+    phone: typeof phone === 'string' ? phone : undefined,
+    email: typeof email === 'string' ? email : undefined,
+    licenseNumber: typeof licenseNumber === 'string' ? licenseNumber : undefined,
+    excludeUserId: typeof excludeUserId === 'string' ? excludeUserId : undefined,
+  });
+  sendSuccess(res, result);
 }
 
 export async function approveUser(req: Request, res: Response): Promise<void> {

@@ -1,4 +1,4 @@
-import { useState, type ReactElement } from 'react';
+import { useState, useEffect, type ReactElement } from 'react';
 import type { UserPublic, Role, ComplaintCategory } from '@driver-complaint/shared-types';
 import { COMPLAINT_CATEGORIES } from '@driver-complaint/shared-types';
 import {
@@ -12,6 +12,7 @@ import {
   UserCheck,
   UserX,
   CheckCircle2,
+  Truck,
 } from '../components/Icons';
 import * as api from '../api/endpoints';
 import { useAuth } from '../auth/AuthContext';
@@ -23,7 +24,7 @@ export function UsersPage(): ReactElement {
   const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
 
   const [activeTab, setActiveTab] = useState<'directory' | 'pending'>('directory');
-  const [roleFilter, setRoleFilter] = useState<string>('ALL');
+  const [roleFilter, setRoleFilter] = useState<string>(isSuperAdmin ? 'ALL' : 'DRIVER');
   const [searchQuery, setSearchQuery] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingUser, setEditingUser] = useState<UserPublic | null>(null);
@@ -31,7 +32,7 @@ export function UsersPage(): ReactElement {
   // Form State for User Creation
   const [employeeId, setEmployeeId] = useState('');
   const [pin, setPin] = useState('');
-  const [selectedRole, setSelectedRole] = useState<Role>(isSuperAdmin ? 'ADMIN' : 'EXECUTIVE');
+  const [selectedRole, setSelectedRole] = useState<Role>(isSuperAdmin ? 'ADMIN' : 'DRIVER');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
@@ -40,6 +41,12 @@ export function UsersPage(): ReactElement {
   const [licenseNumber, setLicenseNumber] = useState('');
   const [modalError, setModalError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Real-time Availability State
+  const [empIdStatus, setEmpIdStatus] = useState<{ checking: boolean; available?: boolean; message?: string }>({ checking: false });
+  const [phoneStatus, setPhoneStatus] = useState<{ checking: boolean; available?: boolean; message?: string }>({ checking: false });
+  const [emailStatus, setEmailStatus] = useState<{ checking: boolean; available?: boolean; message?: string }>({ checking: false });
+  const [dlStatus, setDlStatus] = useState<{ checking: boolean; available?: boolean; message?: string }>({ checking: false });
 
   const usersResource = useApiResource('users:list', () => api.users.list());
   const usersList: UserPublic[] = usersResource.data ?? [];
@@ -59,10 +66,90 @@ export function UsersPage(): ReactElement {
     return nameMatch || empMatch || emailMatch;
   });
 
+  // Debounced Employee ID Check
+  useEffect(() => {
+    if (!showCreateModal || !employeeId.trim() || employeeId.trim().length < 2) {
+      setEmpIdStatus({ checking: false });
+      return;
+    }
+    setEmpIdStatus({ checking: true });
+    const timer = setTimeout(async () => {
+      try {
+        const res = await api.users.checkAvailability({ employeeId: employeeId.trim() });
+        if (res.employeeId) {
+          setEmpIdStatus({ checking: false, available: res.employeeId.available, message: res.employeeId.message });
+        }
+      } catch {
+        setEmpIdStatus({ checking: false });
+      }
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [employeeId, showCreateModal]);
+
+  // Debounced Phone Number Check
+  useEffect(() => {
+    if (!showCreateModal || !phone.trim() || phone.trim().length < 7) {
+      setPhoneStatus({ checking: false });
+      return;
+    }
+    setPhoneStatus({ checking: true });
+    const timer = setTimeout(async () => {
+      try {
+        const res = await api.users.checkAvailability({ phone: phone.trim() });
+        if (res.phone) {
+          setPhoneStatus({ checking: false, available: res.phone.available, message: res.phone.message });
+        }
+      } catch {
+        setPhoneStatus({ checking: false });
+      }
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [phone, showCreateModal]);
+
+  // Debounced Email Check
+  useEffect(() => {
+    if (!showCreateModal || !email.trim() || !email.includes('@')) {
+      setEmailStatus({ checking: false });
+      return;
+    }
+    setEmailStatus({ checking: true });
+    const timer = setTimeout(async () => {
+      try {
+        const res = await api.users.checkAvailability({ email: email.trim() });
+        if (res.email) {
+          setEmailStatus({ checking: false, available: res.email.available, message: res.email.message });
+        }
+      } catch {
+        setEmailStatus({ checking: false });
+      }
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [email, showCreateModal]);
+
+  // Debounced Driving License Check
+  useEffect(() => {
+    if (!showCreateModal || selectedRole !== 'DRIVER' || !licenseNumber.trim() || licenseNumber.trim().length < 3) {
+      setDlStatus({ checking: false });
+      return;
+    }
+    setDlStatus({ checking: true });
+    const timer = setTimeout(async () => {
+      try {
+        const res = await api.users.checkAvailability({ licenseNumber: licenseNumber.trim() });
+        if (res.licenseNumber) {
+          setDlStatus({ checking: false, available: res.licenseNumber.available, message: res.licenseNumber.message });
+        }
+      } catch {
+        setDlStatus({ checking: false });
+      }
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [licenseNumber, selectedRole, showCreateModal]);
+
   const handleOpenCreate = (): void => {
     setEmployeeId('');
     setPin('');
-    setSelectedRole(isSuperAdmin ? 'ADMIN' : 'EXECUTIVE');
+    setSelectedRole(isSuperAdmin ? 'ADMIN' : 'DRIVER');
     setFirstName('');
     setLastName('');
     setEmail('');
@@ -70,13 +157,19 @@ export function UsersPage(): ReactElement {
     setCategory('');
     setLicenseNumber('');
     setModalError(null);
+    setEmpIdStatus({ checking: false });
+    setPhoneStatus({ checking: false });
+    setEmailStatus({ checking: false });
+    setDlStatus({ checking: false });
     setShowCreateModal(true);
   };
 
   const handleCreateUser = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
     setModalError(null);
-    if (!employeeId.trim() || !pin.trim() || !firstName.trim() || !lastName.trim()) {
+
+    const normEmp = employeeId.trim().toUpperCase();
+    if (!normEmp || !pin.trim() || !firstName.trim() || !lastName.trim()) {
       setModalError('Please fill in all required fields (Employee ID, PIN, First & Last Name).');
       return;
     }
@@ -86,26 +179,57 @@ export function UsersPage(): ReactElement {
       return;
     }
 
+    if (!phone.trim()) {
+      setModalError('Phone number is required.');
+      return;
+    }
+
+    if (!/^[+0-9\s-]{7,20}$/.test(phone.trim())) {
+      setModalError('Please enter a valid phone number (min 7 digits).');
+      return;
+    }
+
     if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
       setModalError('Please enter a valid email address.');
       return;
     }
 
-    if (phone.trim() && !/^[+0-9\s-]{7,20}$/.test(phone.trim())) {
-      setModalError('Please enter a valid phone number.');
+    if (selectedRole === 'DRIVER' && !licenseNumber.trim()) {
+      setModalError('Driving License (DL) number is required for driver accounts.');
+      return;
+    }
+
+    // Availability validation check
+    if (empIdStatus.available === false) {
+      setModalError(empIdStatus.message || `Employee ID "${normEmp}" is already taken.`);
+      return;
+    }
+
+    if (phoneStatus.available === false) {
+      setModalError(phoneStatus.message || 'Phone number is already registered.');
+      return;
+    }
+
+    if (email.trim() && emailStatus.available === false) {
+      setModalError(emailStatus.message || 'Email address is already in use.');
+      return;
+    }
+
+    if (selectedRole === 'DRIVER' && dlStatus.available === false) {
+      setModalError(dlStatus.message || 'Driving License (DL) is already registered.');
       return;
     }
 
     try {
       setSubmitting(true);
       await api.users.create({
-        employeeId: employeeId.trim().toUpperCase(),
+        employeeId: normEmp,
         pin: pin.trim(),
         role: selectedRole,
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         email: email.trim() || null,
-        phone: phone.trim() || null,
+        phone: phone.trim(),
         category: category ? (category as ComplaintCategory) : null,
         licenseNumber: licenseNumber.trim() || undefined,
       });
@@ -278,10 +402,13 @@ export function UsersPage(): ReactElement {
       <div className="page-header">
         <div>
           <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Users size={26} color="var(--accent)" /> User Accounts & Approvals
+            {isSuperAdmin ? <Users size={26} color="var(--accent)" /> : <Truck size={26} color="var(--accent)" />}
+            {isSuperAdmin ? 'User Accounts & Approvals' : 'Fleet Driver Directory'}
           </h1>
           <p className="page-subtitle">
-            Manage system roles, pending approvals, and category-assigned Admins
+            {isSuperAdmin
+              ? 'Manage system roles, pending driver submissions, and category-assigned Admins'
+              : 'Register fleet drivers and monitor pending SuperAdmin approval statuses'}
           </p>
         </div>
 
@@ -302,14 +429,14 @@ export function UsersPage(): ReactElement {
             onClick={handleOpenCreate}
             style={{ display: 'flex', alignItems: 'center', gap: 6 }}
           >
-            <Plus size={16} /> Create User ID
+            <Plus size={16} /> {isSuperAdmin ? 'Create User ID' : 'Register New Driver'}
           </button>
         </div>
       </div>
 
       <ErrorBanner error={usersResource.error} />
 
-      {/* Modern Navigation Tabs */}
+      {/* Navigation Tabs */}
       <div
         style={{
           display: 'inline-flex',
@@ -339,7 +466,7 @@ export function UsersPage(): ReactElement {
             gap: 8,
           }}
         >
-          <span>All Users Directory</span>
+          <span>{isSuperAdmin ? 'All Users Directory' : 'Drivers Directory'}</span>
           <span
             style={{
               padding: '1px 7px',
@@ -808,15 +935,15 @@ export function UsersPage(): ReactElement {
               onSubmit={handleCreateUser}
               style={{ padding: 24, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 20 }}
             >
-              {!isSuperAdmin && (
+              {!isSuperAdmin ? (
                 <div
                   style={{
-                    backgroundColor: 'var(--warning-bg)',
+                    backgroundColor: 'rgba(59, 130, 246, 0.12)',
                     padding: '12px 16px',
                     borderRadius: 10,
-                    border: '1px solid var(--warning-border)',
+                    border: '1px solid rgba(59, 130, 246, 0.35)',
                     fontSize: 13,
-                    color: 'var(--warning-text)',
+                    color: '#60a5fa',
                     display: 'flex',
                     alignItems: 'flex-start',
                     gap: 10,
@@ -824,11 +951,11 @@ export function UsersPage(): ReactElement {
                 >
                   <ShieldAlert size={18} style={{ flexShrink: 0, marginTop: 1 }} />
                   <div>
-                    <strong>SuperAdmin Approval Required:</strong> Accounts requested by Department Admins remain
-                    pending until approved by Super Admin.
+                    <strong>SuperAdmin Approval Flow:</strong> New driver accounts registered by Department Admins
+                    are automatically submitted with <code>Pending Approval</code> status and will be reviewed by SuperAdmin before activation.
                   </div>
                 </div>
-              )}
+              ) : null}
 
               {modalError && (
                 <div
@@ -839,9 +966,13 @@ export function UsersPage(): ReactElement {
                     borderRadius: 10,
                     border: '1px solid var(--danger-border)',
                     fontSize: 13,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
                   }}
                 >
-                  {modalError}
+                  <ShieldAlert size={16} style={{ flexShrink: 0 }} />
+                  <div>{modalError}</div>
                 </div>
               )}
 
@@ -869,10 +1000,37 @@ export function UsersPage(): ReactElement {
                       className="filter-select"
                       placeholder="e.g. EMP-104 or DRV-501"
                       value={employeeId}
-                      onChange={(e) => setEmployeeId(e.target.value)}
-                      style={{ width: '100%', padding: '9px 12px' }}
+                      onChange={(e) => setEmployeeId(e.target.value.toUpperCase())}
+                      style={{
+                        width: '100%',
+                        padding: '9px 12px',
+                        textTransform: 'uppercase',
+                        fontFamily: 'monospace',
+                        fontWeight: 700,
+                        borderColor:
+                          empIdStatus.available === false
+                            ? 'var(--danger-border)'
+                            : empIdStatus.available === true
+                            ? 'rgba(16, 185, 129, 0.6)'
+                            : undefined,
+                      }}
                       required
                     />
+                    {empIdStatus.checking && (
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <RotateCw size={11} className="spin" /> Checking ID availability...
+                      </div>
+                    )}
+                    {!empIdStatus.checking && empIdStatus.available === true && (
+                      <div style={{ fontSize: 11, color: 'var(--success-text)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600 }}>
+                        <CheckCircle2 size={12} /> {empIdStatus.message || 'Employee ID is available'}
+                      </div>
+                    )}
+                    {!empIdStatus.checking && empIdStatus.available === false && (
+                      <div style={{ fontSize: 11, color: 'var(--danger-text)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600 }}>
+                        <ShieldAlert size={12} /> {empIdStatus.message || 'Already registered in database'}
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
@@ -881,12 +1039,15 @@ export function UsersPage(): ReactElement {
                     <input
                       type="password"
                       className="filter-select"
-                      placeholder="4 to 6 digit PIN"
+                      placeholder="4 to 8 digit PIN"
                       value={pin}
-                      onChange={(e) => setPin(e.target.value)}
+                      onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
                       style={{ width: '100%', padding: '9px 12px' }}
                       required
                     />
+                    <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4 }}>
+                      4 to 8 numeric digits
+                    </div>
                   </div>
                 </div>
               </div>
@@ -903,27 +1064,38 @@ export function UsersPage(): ReactElement {
                     marginBottom: 12,
                   }}
                 >
-                  2. Role & Department Auto-Routing
+                  2. Role & Access Level
                 </h4>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                   <div>
                     <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
                       Account Role <span style={{ color: 'var(--danger-text)' }}>*</span>
                     </label>
-                    <select
-                      className="filter-select"
-                      value={selectedRole}
-                      onChange={(e) => setSelectedRole(e.target.value as Role)}
-                      style={{ width: '100%', padding: '9px 12px' }}
-                    >
-                      {isSuperAdmin && <option value="SUPER_ADMIN">Super Admin (Full Fleet Control)</option>}
-                      {isSuperAdmin && <option value="ADMIN">Department Admin (Category Head)</option>}
-                      <option value="EXECUTIVE">Executive (Category Staff)</option>
-                      <option value="DRIVER">Driver (Mobile App User)</option>
-                    </select>
+                    {isSuperAdmin ? (
+                      <select
+                        className="filter-select"
+                        value={selectedRole}
+                        onChange={(e) => setSelectedRole(e.target.value as Role)}
+                        style={{ width: '100%', padding: '9px 12px' }}
+                      >
+                        <option value="SUPER_ADMIN">Super Admin (Full Fleet Control)</option>
+                        <option value="ADMIN">Department Admin (Category Head)</option>
+                        <option value="EXECUTIVE">Executive (Category Staff)</option>
+                        <option value="DRIVER">Driver (Mobile App User)</option>
+                      </select>
+                    ) : (
+                      <select
+                        className="filter-select"
+                        value="DRIVER"
+                        disabled
+                        style={{ width: '100%', padding: '9px 12px', background: 'var(--bg)', color: 'var(--text)' }}
+                      >
+                        <option value="DRIVER">Driver (Requires SuperAdmin Approval)</option>
+                      </select>
+                    )}
                   </div>
 
-                  {(selectedRole === 'ADMIN' || selectedRole === 'EXECUTIVE') && (
+                  {isSuperAdmin && (selectedRole === 'ADMIN' || selectedRole === 'EXECUTIVE') && (
                     <div
                       style={{
                         backgroundColor: 'var(--bg)',
@@ -968,7 +1140,7 @@ export function UsersPage(): ReactElement {
                     marginBottom: 12,
                   }}
                 >
-                  3. User Information
+                  3. Personal & Contact Information
                 </h4>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
                   <div>
@@ -978,7 +1150,7 @@ export function UsersPage(): ReactElement {
                     <input
                       type="text"
                       className="filter-select"
-                      placeholder="e.g. Rahul"
+                      placeholder="e.g. Dana"
                       value={firstName}
                       onChange={(e) => setFirstName(e.target.value)}
                       style={{ width: '100%', padding: '9px 12px' }}
@@ -992,7 +1164,7 @@ export function UsersPage(): ReactElement {
                     <input
                       type="text"
                       className="filter-select"
-                      placeholder="e.g. Sharma"
+                      placeholder="e.g. Driver"
                       value={lastName}
                       onChange={(e) => setLastName(e.target.value)}
                       style={{ width: '100%', padding: '9px 12px' }}
@@ -1001,23 +1173,93 @@ export function UsersPage(): ReactElement {
                   </div>
                 </div>
 
+                {/* Driving License (Required for Driver) */}
                 {selectedRole === 'DRIVER' && (
                   <div style={{ marginBottom: 14 }}>
                     <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                      Driving License (DL) Number
+                      Driving License (DL) Number <span style={{ color: 'var(--danger-text)' }}>*</span>
                     </label>
                     <input
                       type="text"
                       className="filter-select"
                       placeholder="e.g. DL-1420110012345"
                       value={licenseNumber}
-                      onChange={(e) => setLicenseNumber(e.target.value)}
-                      style={{ width: '100%', padding: '9px 12px' }}
+                      onChange={(e) => setLicenseNumber(e.target.value.toUpperCase())}
+                      style={{
+                        width: '100%',
+                        padding: '9px 12px',
+                        textTransform: 'uppercase',
+                        fontFamily: 'monospace',
+                        fontWeight: 700,
+                        borderColor:
+                          dlStatus.available === false
+                            ? 'var(--danger-border)'
+                            : dlStatus.available === true
+                            ? 'rgba(16, 185, 129, 0.6)'
+                            : undefined,
+                      }}
+                      required
                     />
+                    {dlStatus.checking && (
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <RotateCw size={11} className="spin" /> Checking DL availability...
+                      </div>
+                    )}
+                    {!dlStatus.checking && dlStatus.available === true && (
+                      <div style={{ fontSize: 11, color: 'var(--success-text)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600 }}>
+                        <CheckCircle2 size={12} /> {dlStatus.message || 'Driving License is available'}
+                      </div>
+                    )}
+                    {!dlStatus.checking && dlStatus.available === false && (
+                      <div style={{ fontSize: 11, color: 'var(--danger-text)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600 }}>
+                        <ShieldAlert size={12} /> {dlStatus.message || 'Driving License is already registered'}
+                      </div>
+                    )}
                   </div>
                 )}
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                  {/* Phone (Required & Unique) */}
+                  <div>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
+                      Phone Number <span style={{ color: 'var(--danger-text)' }}>*</span>
+                    </label>
+                    <input
+                      type="tel"
+                      className="filter-select"
+                      placeholder="+91 9876543210"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '9px 12px',
+                        borderColor:
+                          phoneStatus.available === false
+                            ? 'var(--danger-border)'
+                            : phoneStatus.available === true
+                            ? 'rgba(16, 185, 129, 0.6)'
+                            : undefined,
+                      }}
+                      required
+                    />
+                    {phoneStatus.checking && (
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <RotateCw size={11} className="spin" /> Checking phone availability...
+                      </div>
+                    )}
+                    {!phoneStatus.checking && phoneStatus.available === true && (
+                      <div style={{ fontSize: 11, color: 'var(--success-text)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600 }}>
+                        <CheckCircle2 size={12} /> {phoneStatus.message || 'Phone number is available'}
+                      </div>
+                    )}
+                    {!phoneStatus.checking && phoneStatus.available === false && (
+                      <div style={{ fontSize: 11, color: 'var(--danger-text)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600 }}>
+                        <ShieldAlert size={12} /> {phoneStatus.message || 'Phone number is already registered'}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Email (Optional & Unique if provided) */}
                   <div>
                     <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
                       Email (Optional)
@@ -1028,21 +1270,32 @@ export function UsersPage(): ReactElement {
                       placeholder="user@company.com"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      style={{ width: '100%', padding: '9px 12px' }}
+                      style={{
+                        width: '100%',
+                        padding: '9px 12px',
+                        borderColor:
+                          emailStatus.available === false
+                            ? 'var(--danger-border)'
+                            : emailStatus.available === true
+                            ? 'rgba(16, 185, 129, 0.6)'
+                            : undefined,
+                      }}
                     />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                      Phone (Optional)
-                    </label>
-                    <input
-                      type="tel"
-                      className="filter-select"
-                      placeholder="+91 9876543210"
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      style={{ width: '100%', padding: '9px 12px' }}
-                    />
+                    {emailStatus.checking && (
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <RotateCw size={11} className="spin" /> Checking email availability...
+                      </div>
+                    )}
+                    {!emailStatus.checking && emailStatus.available === true && (
+                      <div style={{ fontSize: 11, color: 'var(--success-text)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600 }}>
+                        <CheckCircle2 size={12} /> {emailStatus.message || 'Email is available'}
+                      </div>
+                    )}
+                    {!emailStatus.checking && emailStatus.available === false && (
+                      <div style={{ fontSize: 11, color: 'var(--danger-text)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600 }}>
+                        <ShieldAlert size={12} /> {emailStatus.message || 'Email is already registered'}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1068,7 +1321,17 @@ export function UsersPage(): ReactElement {
                 <button
                   type="submit"
                   className="btn-primary"
-                  disabled={submitting}
+                  disabled={
+                    submitting ||
+                    empIdStatus.checking ||
+                    phoneStatus.checking ||
+                    emailStatus.checking ||
+                    dlStatus.checking ||
+                    empIdStatus.available === false ||
+                    phoneStatus.available === false ||
+                    emailStatus.available === false ||
+                    dlStatus.available === false
+                  }
                   style={{
                     padding: '9px 22px',
                     borderRadius: 8,
@@ -1078,7 +1341,11 @@ export function UsersPage(): ReactElement {
                     gap: 6,
                   }}
                 >
-                  {submitting ? 'Creating User…' : 'Create User ID'}
+                  {submitting
+                    ? 'Submitting…'
+                    : isSuperAdmin
+                    ? 'Create User ID'
+                    : 'Submit Driver for Approval'}
                 </button>
               </div>
             </form>

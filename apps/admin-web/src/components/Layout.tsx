@@ -3,11 +3,13 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { Truck, LayoutDashboard, Users, ClipboardList, LogOut, Bell, Menu, X, Trash2, CheckCircle2, Wrench, FileSpreadsheet, Package, Headphones } from './Icons';
 
 
-import { isSuperAdmin, useAuth } from '../auth/AuthContext';
+import { isAdmin, isSuperAdmin, useAuth } from '../auth/AuthContext';
 import { useRealtime } from '../realtime/RealtimeProvider';
 import { ThemeSwitcher } from './ThemeSwitcher';
 import { PageErrorBoundary } from './ErrorBoundary';
 import { fullName } from '../lib/format';
+import * as api from '../api/endpoints';
+import { useApiResource } from '../hooks/useApiResource';
 
 interface NotificationItem {
   id: string;
@@ -67,6 +69,11 @@ export function Layout(): ReactElement {
   const [notifications, setNotifications] = useState<NotificationItem[]>(INITIAL_NOTIFICATIONS);
 
   const notifRef = useRef<HTMLDivElement>(null);
+
+  const pendingApprovalsResource = useApiResource('users:pendingCount', () =>
+    isAdmin(user) ? api.users.pendingCount() : Promise.resolve({ pendingCount: 0 }),
+  );
+  const pendingCount = pendingApprovalsResource.data?.pendingCount ?? 0;
 
   // Close notifications dropdown on click outside
   useEffect(() => {
@@ -134,13 +141,38 @@ export function Layout(): ReactElement {
             <span className="nav-label">Vehicle Entry</span>
           </NavLink>
 
-          {isSuperAdmin(user) ? (
+          {isAdmin(user) ? (
             <NavLink
               to="/users"
               className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
             >
-              <Users size={18} className="nav-icon" />
-              <span className="nav-label">Users & Approvals</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Users size={18} className="nav-icon" />
+                <span className="nav-label">
+                  {isSuperAdmin(user) ? 'Users & Approvals' : 'Drivers & Approvals'}
+                </span>
+              </div>
+              {pendingCount > 0 && isSuperAdmin(user) ? (
+                <span
+                  style={{
+                    backgroundColor: 'var(--danger-text)',
+                    color: '#ffffff',
+                    fontSize: 10,
+                    fontWeight: 800,
+                    padding: '2px 7px',
+                    borderRadius: 10,
+                    marginLeft: 'auto',
+                    minWidth: 18,
+                    textAlign: 'center',
+                    lineHeight: '13px',
+                    boxShadow: '0 2px 5px rgba(239, 68, 68, 0.4)',
+                  }}
+                  title={`${pendingCount} pending approvals waiting for review`}
+                >
+                  {pendingCount}
+                </span>
+              ) : null}
             </NavLink>
           ) : null}
 

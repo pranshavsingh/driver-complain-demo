@@ -15,17 +15,31 @@ usersRouter.get(
   usersController.listAdmins,
 );
 
+usersRouter.get(
+  '/pending-count',
+  authenticate,
+  requireRole('SUPER_ADMIN', 'ADMIN'),
+  usersController.getPendingCount,
+);
+
+usersRouter.get(
+  '/check-availability',
+  authenticate,
+  requireRole('SUPER_ADMIN', 'ADMIN'),
+  usersController.checkAvailability,
+);
+
 usersRouter.post(
   '/',
   authenticate,
-  requireRole('SUPER_ADMIN'),
+  requireRole('SUPER_ADMIN', 'ADMIN'),
   usersController.createUser,
 );
 
 usersRouter.get(
   '/',
   authenticate,
-  requireRole('SUPER_ADMIN'),
+  requireRole('SUPER_ADMIN', 'ADMIN'),
   usersController.listUsers,
 );
 

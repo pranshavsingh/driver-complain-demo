@@ -39,6 +39,8 @@ import {
   type SparePartStatsSummary,
   type SupportMessagePublic,
   type SupportConversationSummary,
+  UserAvailabilityResponseSchema,
+  type UserAvailabilityResponse,
 } from '@driver-complaint/shared-types';
 import { download, request, requestNoContent, type QueryValue } from './client';
 import { clearTokens, getRefreshToken } from './tokens';
@@ -138,6 +140,18 @@ export const users = {
   admins: (): Promise<AdminSummary[]> => request(z.array(AdminSummarySchema), '/users/admins'),
   list: (query?: { role?: string; approvalStatus?: string; isActive?: boolean; search?: string }): Promise<UserPublic[]> =>
     request(z.array(UserPublicSchema), '/users', { query: query as Record<string, QueryValue> }),
+  pendingCount: (): Promise<{ pendingCount: number }> =>
+    request(z.object({ pendingCount: z.number() }), '/users/pending-count'),
+  checkAvailability: (query: {
+    employeeId?: string;
+    phone?: string;
+    email?: string;
+    licenseNumber?: string;
+    excludeUserId?: string;
+  }): Promise<UserAvailabilityResponse> =>
+    request(UserAvailabilityResponseSchema, '/users/check-availability', {
+      query: query as Record<string, QueryValue>,
+    }),
   create: (input: CreateUser): Promise<UserPublic> =>
     request(UserPublicSchema, '/users', { method: 'POST', body: input }),
   approve: (id: string): Promise<UserPublic> =>

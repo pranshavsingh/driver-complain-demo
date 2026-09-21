@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
-import { RequireAdmin, RequireSuperAdmin } from './auth/RequireAdmin';
+import { RequireAdmin } from './auth/RequireAdmin';
 import { Layout } from './components/Layout';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
@@ -36,14 +36,7 @@ export function App(): ReactElement {
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/vehicles" element={<VehiclesPage />} />
         <Route path="/drivers" element={<Navigate to="/dashboard" replace />} />
-        <Route
-          path="/users"
-          element={
-            <RequireSuperAdmin>
-              <UsersPage />
-            </RequireSuperAdmin>
-          }
-        />
+        <Route path="/users" element={<UsersPage />} />
         <Route path="/complaints" element={<ComplaintsListPage />} />
         <Route path="/complaints/:id" element={<ComplaintDetailPage />} />
         <Route path="/loading" element={<LoadingTrackerPage />} />

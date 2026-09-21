@@ -20,17 +20,31 @@ export const UserPublicSchema = z.object({
 export type UserPublic = z.infer<typeof UserPublicSchema>;
 
 export const CreateUserSchema = z.object({
-  employeeId: z.string().min(2).max(50),
-  pin: z.string().min(4).max(10),
+  employeeId: z.string().trim().min(2, 'Employee ID is required').max(50),
+  pin: z.string().trim().min(4, 'PIN must be at least 4 digits').max(10),
   role: RoleSchema,
-  firstName: z.string().min(1).max(50),
-  lastName: z.string().min(1).max(50),
-  email: z.string().email().nullable().optional(),
-  phone: z.string().nullable().optional(),
+  firstName: z.string().trim().min(1, 'First name is required').max(50),
+  lastName: z.string().trim().min(1, 'Last name is required').max(50),
+  email: z.string().trim().email('Invalid email address').nullable().optional().or(z.literal('')),
+  phone: z.string().trim().min(7, 'Phone number is required').max(20, 'Phone number is too long'),
   category: ComplaintCategorySchema.nullable().optional(),
-  licenseNumber: z.string().optional(),
+  licenseNumber: z.string().trim().max(50).optional(),
 });
 export type CreateUser = z.infer<typeof CreateUserSchema>;
+
+export const AvailabilityFieldResultSchema = z.object({
+  available: z.boolean(),
+  message: z.string().optional(),
+});
+export type AvailabilityFieldResult = z.infer<typeof AvailabilityFieldResultSchema>;
+
+export const UserAvailabilityResponseSchema = z.object({
+  employeeId: AvailabilityFieldResultSchema.optional(),
+  phone: AvailabilityFieldResultSchema.optional(),
+  email: AvailabilityFieldResultSchema.optional(),
+  licenseNumber: AvailabilityFieldResultSchema.optional(),
+});
+export type UserAvailabilityResponse = z.infer<typeof UserAvailabilityResponseSchema>;
 
 export const UpdateUserSchema = z.object({
   firstName: z.string().min(1).max(50).optional(),
