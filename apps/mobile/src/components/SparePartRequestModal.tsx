@@ -17,7 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { VehiclePublic, SparePartType } from '@driver-complaint/shared-types';
 import * as api from '../api/endpoints';
 import { describeVehicle } from '../lib/format';
-import { PHOTO_QUALITY } from '../media/limits';
+import { PHOTO_QUALITY, MAX_PHOTO_BYTES } from '../media/limits';
 import { useVoiceRecorder, type VoiceNote } from '../media/recorder';
 
 interface SparePartRequestModalProps {
@@ -88,6 +88,31 @@ export function SparePartRequestModal({
     manualVehicle.trim() || (selectedVehicle ? describeVehicle(selectedVehicle) : '');
 
   // Photo handlers
+  const handleSafeClose = () => {
+    const isDirty = Boolean(partName.trim() || description.trim() || photo || voiceNote);
+    if (isDirty) {
+      Alert.alert(
+        'Discard Request?',
+        'You have unsaved changes in this spare part request. Are you sure you want to discard them?',
+        [
+          { text: 'Keep Editing', style: 'cancel' },
+          {
+            text: 'Discard',
+            style: 'destructive',
+            onPress: () => {
+              setPhoto(null);
+              setPartName('');
+              setDescription('');
+              onClose();
+            },
+          },
+        ],
+      );
+      return;
+    }
+    onClose();
+  };
+
   const takePhoto = async () => {
     try {
       const perm = await ImagePicker.requestCameraPermissionsAsync();
@@ -103,6 +128,10 @@ export function SparePartRequestModal({
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
         if (asset) {
+          if (asset.fileSize && asset.fileSize > MAX_PHOTO_BYTES) {
+            Alert.alert('File too large', 'Photo exceeds 10 MB limit.');
+            return;
+          }
           const uri = asset.uri;
           const name = uri.split('/').pop() ?? 'spare-part-proof.jpg';
           setPhoto({
@@ -132,6 +161,10 @@ export function SparePartRequestModal({
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
         if (asset) {
+          if (asset.fileSize && asset.fileSize > MAX_PHOTO_BYTES) {
+            Alert.alert('File too large', 'Photo exceeds 10 MB limit.');
+            return;
+          }
           const uri = asset.uri;
           const name = uri.split('/').pop() ?? 'spare-part-proof.jpg';
           setPhoto({
@@ -159,6 +192,17 @@ export function SparePartRequestModal({
       return;
     }
 
+    const parsedQty = parseInt(quantity, 10);
+    if (isNaN(parsedQty) || parsedQty <= 0) {
+      setErrorMessage('Quantity must be at least 1.');
+      return;
+    }
+
+    if (parsedQty > 100) {
+      setErrorMessage('Quantity cannot exceed 100 units.');
+      return;
+    }
+
     try {
       setSubmitting(true);
 
@@ -176,11 +220,11 @@ export function SparePartRequestModal({
           vehicleNumber: activeVehicleName,
           partName: partName.trim() || undefined,
           description: description.trim() || (voiceNote ? 'Voice note attached' : 'Spare part requested'),
-          quantity: parseInt(quantity, 10) || 1,
+          quantity: parsedQty,
           type: partType,
         },
         {
-          photo: photo ?? undefined,
+          photo: photo || undefined,
           voice: voiceFileToUpload,
         },
       );
@@ -214,7 +258,7 @@ export function SparePartRequestModal({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={handleSafeClose}>
       <View style={styles.modalOverlay}>
         <View style={[styles.modalContent, { paddingBottom: Math.max(insets.bottom, 20) }]}>
           {/* Header */}
@@ -229,7 +273,7 @@ export function SparePartRequestModal({
               </View>
             </View>
             <Pressable
-              onPress={onClose}
+              onPress={handleSafeClose}
               disabled={submitting || isRecording}
               style={({ pressed }) => [styles.closeBtn, pressed && styles.btnPressed]}
             >
@@ -362,6 +406,7 @@ export function SparePartRequestModal({
               <TextInput
                 style={styles.textInput}
                 placeholder="Enter exact part name or requirement..."
+                maxLength={100}
                 value={partName}
                 onChangeText={setPartName}
               />
@@ -383,13 +428,14 @@ export function SparePartRequestModal({
                 <TextInput
                   style={styles.qtyInput}
                   keyboardType="numeric"
+                  maxLength={3}
                   value={quantity}
                   onChangeText={(txt) => setQuantity(txt.replace(/[^0-9]/g, ''))}
                 />
                 <Pressable
                   style={styles.qtyBtn}
                   onPress={() => {
-                    const q = (parseInt(quantity, 10) || 1) + 1;
+                    const q = Math.min(100, (parseInt(quantity, 10) || 1) + 1);
                     setQuantity(String(q));
                   }}
                 >
@@ -467,6 +513,7 @@ export function SparePartRequestModal({
                 placeholder="Describe why this part is needed, current issue, or location..."
                 multiline
                 numberOfLines={3}
+                maxLength={1000}
                 value={description}
                 onChangeText={setDescription}
               />

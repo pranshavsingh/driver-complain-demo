@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import multer from 'multer';
 import {
   handleCreateMaintenanceRecord,
   handleListMaintenanceRecords,
@@ -8,11 +7,14 @@ import {
 } from './maintenance.controller';
 import { authenticate } from '../../middleware/authenticate';
 import { requireRole } from '../../middleware/authorize';
+import { createSingleFileUpload } from '../../middleware/upload';
 
-const singlePhotoUpload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 },
-}).single('photo');
+const singlePhotoUpload = createSingleFileUpload({
+  fieldName: 'photo',
+  maxBytes: 10 * 1024 * 1024,
+  allowedMimePrefixes: ['image/'],
+  errorMessage: 'Maintenance photo must be an image file (JPEG, PNG, WebP)',
+});
 
 export const maintenanceRouter = Router();
 

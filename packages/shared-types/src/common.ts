@@ -1,7 +1,13 @@
 import { z } from 'zod';
 
-/** A non-empty entity id (uuid v7 strings in this system). */
+/** A non-empty entity id (uuid strings in this system). */
 export const IdSchema = z.string().min(1);
+
+/** UUID parameter schema for route params validation (e.g. /:id) */
+export const UuidParamSchema = z.object({
+  id: z.string().uuid('Invalid identifier format'),
+});
+export type UuidParam = z.infer<typeof UuidParamSchema>;
 
 /** Standard list-endpoint query params. */
 export const PaginationQuerySchema = z.object({

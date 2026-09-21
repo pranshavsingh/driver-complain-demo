@@ -4,7 +4,7 @@ import {
   RegisterDeviceTokenSchema,
 } from '@driver-complaint/shared-types';
 import { authenticate } from '../../middleware/authenticate';
-import { validate } from '../../middleware/validate';
+import { validate, validateUuidParam } from '../../middleware/validate';
 import * as notificationsController from './notifications.controller';
 
 export const notificationsRouter = Router();
@@ -29,4 +29,4 @@ notificationsRouter.post(
 notificationsRouter.delete('/devices/:token', notificationsController.unregisterDevice);
 
 notificationsRouter.post('/read-all', notificationsController.markAllRead);
-notificationsRouter.patch('/:id/read', notificationsController.markRead);
+notificationsRouter.patch('/:id/read', validateUuidParam('id'), notificationsController.markRead);

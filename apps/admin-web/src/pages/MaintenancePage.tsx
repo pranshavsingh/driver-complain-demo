@@ -197,6 +197,8 @@ export function MaintenancePage(): ReactElement {
     setFuelPage(1);
   };
 
+  const [isExporting, setIsExporting] = useState(false);
+
   // =========================================================================
   // ACTIONS
   // =========================================================================
@@ -210,22 +212,48 @@ export function MaintenancePage(): ReactElement {
     }
   };
 
-  const handleExportCsv = () => {
+  const handleExportCsv = async () => {
+    if (isExporting) return;
+
     if (activeTab === 'replacements') {
-      void api.maintenance.exportCsv({
-        type: maintTypeFilter || undefined,
-        vehicleId: maintVehicleId || undefined,
-        startDate: maintStartDate || undefined,
-        endDate: maintEndDate || undefined,
-        search: maintSearch || undefined,
-      });
+      if (maintStartDate && maintEndDate && maintStartDate > maintEndDate) {
+        alert('Start date cannot be after end date.');
+        return;
+      }
+      try {
+        setIsExporting(true);
+        await api.maintenance.exportCsv({
+          type: maintTypeFilter || undefined,
+          vehicleId: maintVehicleId || undefined,
+          startDate: maintStartDate || undefined,
+          endDate: maintEndDate || undefined,
+          search: maintSearch || undefined,
+        });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        alert(msg || 'Failed to export CSV');
+      } finally {
+        setIsExporting(false);
+      }
     } else {
-      void api.fuel.exportCsv({
-        type: fuelTypeFilter || undefined,
-        vehicleId: fuelVehicleId || undefined,
-        startDate: fuelStartDate || undefined,
-        endDate: fuelEndDate || undefined,
-      });
+      if (fuelStartDate && fuelEndDate && fuelStartDate > fuelEndDate) {
+        alert('Start date cannot be after end date.');
+        return;
+      }
+      try {
+        setIsExporting(true);
+        await api.fuel.exportCsv({
+          type: fuelTypeFilter || undefined,
+          vehicleId: fuelVehicleId || undefined,
+          startDate: fuelStartDate || undefined,
+          endDate: fuelEndDate || undefined,
+        });
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        alert(msg || 'Failed to export CSV');
+      } finally {
+        setIsExporting(false);
+      }
     }
   };
 
@@ -257,7 +285,7 @@ export function MaintenancePage(): ReactElement {
             type="button"
             className="btn-secondary"
             onClick={handleRefresh}
-            disabled={isLoading}
+            disabled={isLoading || isExporting}
           >
             <RotateCw
               size={14}
@@ -267,9 +295,14 @@ export function MaintenancePage(): ReactElement {
             {isLoading ? 'Refreshing…' : 'Refresh'}
           </button>
 
-          <button type="button" className="btn-primary" onClick={handleExportCsv}>
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={handleExportCsv}
+            disabled={isExporting}
+          >
             <Download size={15} style={{ marginRight: 6 }} />
-            Export CSV
+            {isExporting ? 'Exporting…' : 'Export CSV'}
           </button>
         </div>
       </div>

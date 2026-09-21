@@ -100,19 +100,53 @@ export async function getById(id: string): Promise<VehiclePublic> {
 export async function create(input: CreateVehicle): Promise<VehiclePublic> {
   const normalizedPlate = input.plateNumber.trim().toUpperCase();
 
-  const existing = await prisma.vehicle.findUnique({
-    where: { plateNumber: normalizedPlate },
+  // 1. Vehicle Number uniqueness
+  const existingPlate = await prisma.vehicle.findFirst({
+    where: {
+      plateNumber: { equals: normalizedPlate, mode: 'insensitive' },
+    },
   });
-  if (existing) {
-    throw ApiError.badRequest(`Vehicle with plate number ${normalizedPlate} already exists.`);
+  if (existingPlate) {
+    throw ApiError.badRequest(`Vehicle with plate number "${normalizedPlate}" already exists.`);
   }
 
-  if (input.vin?.trim()) {
-    const existingVin = await prisma.vehicle.findUnique({
-      where: { vin: input.vin.trim() },
+  // 2. Chassis No / VIN uniqueness
+  const chassisOrVin = input.chassisNumber?.trim() || input.vin?.trim();
+  if (chassisOrVin) {
+    const existingChassis = await prisma.vehicle.findFirst({
+      where: {
+        OR: [
+          { chassisNumber: { equals: chassisOrVin, mode: 'insensitive' } },
+          { vin: { equals: chassisOrVin, mode: 'insensitive' } },
+        ],
+      },
+      select: { plateNumber: true },
     });
-    if (existingVin) {
-      throw ApiError.badRequest(`Vehicle with Chassis/VIN ${input.vin.trim()} already exists.`);
+    if (existingChassis) {
+      throw ApiError.badRequest(
+        `Vehicle with Chassis No (VIN) "${chassisOrVin}" already exists (registered on vehicle "${existingChassis.plateNumber}").`
+      );
+    }
+  }
+
+  // 3. Driver 1:1 Assignment Validation
+  const targetDriverId = input.driverId?.trim() ? input.driverId.trim() : null;
+  if (targetDriverId) {
+    const existingAssigned = await prisma.vehicle.findFirst({
+      where: { driverId: targetDriverId },
+      select: {
+        id: true,
+        plateNumber: true,
+        driver: { select: { user: { select: { firstName: true, lastName: true } } } },
+      },
+    });
+    if (existingAssigned) {
+      const driverName = existingAssigned.driver?.user
+        ? `${existingAssigned.driver.user.firstName} ${existingAssigned.driver.user.lastName}`.trim()
+        : 'Driver';
+      throw ApiError.badRequest(
+        `Driver ${driverName} is already assigned on vehicle "${existingAssigned.plateNumber}". Please free from that vehicle first then assign to a new vehicle.`
+      );
     }
   }
 
@@ -128,7 +162,7 @@ export async function create(input: CreateVehicle): Promise<VehiclePublic> {
       agreementStatus: input.agreementStatus?.trim() || 'FMS Pack 1',
       year: input.year ?? null,
       vin: input.vin?.trim() || input.chassisNumber?.trim() || null,
-      driverId: input.driverId || null,
+      driverId: targetDriverId,
     },
     include: {
       driver: {
@@ -197,15 +231,39 @@ export async function update(id: string, input: UpdateVehicle): Promise<VehicleP
   });
   if (!existing) throw ApiError.notFound('Vehicle not found');
 
+  // 1. Check plateNumber uniqueness
   if (input.plateNumber) {
     const normalizedPlate = input.plateNumber.trim().toUpperCase();
     if (normalizedPlate !== existing.plateNumber) {
-      const duplicate = await prisma.vehicle.findUnique({
-        where: { plateNumber: normalizedPlate },
+      const duplicate = await prisma.vehicle.findFirst({
+        where: {
+          plateNumber: { equals: normalizedPlate, mode: 'insensitive' },
+          id: { not: id },
+        },
       });
       if (duplicate) {
-        throw ApiError.badRequest(`Vehicle with plate number ${normalizedPlate} already exists.`);
+        throw ApiError.badRequest(`Vehicle with plate number "${normalizedPlate}" already exists.`);
       }
+    }
+  }
+
+  // 2. Check Chassis No (VIN) uniqueness
+  const updatedChassisOrVin = input.chassisNumber !== undefined ? input.chassisNumber?.trim() : input.vin?.trim();
+  if (updatedChassisOrVin) {
+    const duplicateChassis = await prisma.vehicle.findFirst({
+      where: {
+        id: { not: id },
+        OR: [
+          { chassisNumber: { equals: updatedChassisOrVin, mode: 'insensitive' } },
+          { vin: { equals: updatedChassisOrVin, mode: 'insensitive' } },
+        ],
+      },
+      select: { plateNumber: true },
+    });
+    if (duplicateChassis) {
+      throw ApiError.badRequest(
+        `Vehicle with Chassis No (VIN) "${updatedChassisOrVin}" already exists (registered on vehicle "${duplicateChassis.plateNumber}").`
+      );
     }
   }
 
@@ -222,11 +280,33 @@ export async function update(id: string, input: UpdateVehicle): Promise<VehicleP
   if (input.agreementStatus !== undefined) data.agreementStatus = input.agreementStatus?.trim() || 'FMS Pack 1';
   if (input.year !== undefined) data.year = input.year ?? null;
   if (input.vin !== undefined) data.vin = input.vin?.trim() || null;
-  
+
+  // 3. Check Driver 1:1 assignment
   const hasDriverIdInInput = 'driverId' in input && input.driverId !== undefined;
   const newDriverId = hasDriverIdInInput ? (input.driverId?.trim() ? input.driverId.trim() : null) : undefined;
   if (hasDriverIdInInput) {
     data.driverId = newDriverId;
+    if (newDriverId && newDriverId !== existing.driverId) {
+      const assignedOtherVehicle = await prisma.vehicle.findFirst({
+        where: {
+          driverId: newDriverId,
+          id: { not: id },
+        },
+        select: {
+          id: true,
+          plateNumber: true,
+          driver: { select: { user: { select: { firstName: true, lastName: true } } } },
+        },
+      });
+      if (assignedOtherVehicle) {
+        const driverName = assignedOtherVehicle.driver?.user
+          ? `${assignedOtherVehicle.driver.user.firstName} ${assignedOtherVehicle.driver.user.lastName}`.trim()
+          : 'Driver';
+        throw ApiError.badRequest(
+          `Driver ${driverName} is already assigned on vehicle "${assignedOtherVehicle.plateNumber}". Please free from that vehicle first then assign to a new vehicle.`
+        );
+      }
+    }
   }
 
   const vehicle = await prisma.vehicle.update({

@@ -64,13 +64,14 @@ export default function LoginScreen(): ReactElement {
             onChangeText={setEmployeeId}
             placeholder="E1001"
             autoCapitalize="characters"
+            maxLength={20}
             editable={!submitting}
             autoFocus
           />
           <TextField
             label="PIN"
             value={pin}
-            onChangeText={setPin}
+            onChangeText={(val) => setPin(val.replace(/\D/g, ''))}
             placeholder="••••"
             hint="4 to 8 digits"
             keyboardType="number-pad"

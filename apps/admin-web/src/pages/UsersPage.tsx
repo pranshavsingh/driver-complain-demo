@@ -81,6 +81,21 @@ export function UsersPage(): ReactElement {
       return;
     }
 
+    if (!/^\d{4,8}$/.test(pin.trim())) {
+      setModalError('PIN must be 4 to 8 digits (numbers only).');
+      return;
+    }
+
+    if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      setModalError('Please enter a valid email address.');
+      return;
+    }
+
+    if (phone.trim() && !/^[+0-9\s-]{7,20}$/.test(phone.trim())) {
+      setModalError('Please enter a valid phone number.');
+      return;
+    }
+
     try {
       setSubmitting(true);
       await api.users.create({
@@ -146,13 +161,24 @@ export function UsersPage(): ReactElement {
   const handleSaveEdit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
     if (!editingUser) return;
+
+    if (editingUser.email?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(editingUser.email.trim())) {
+      alert('Please enter a valid email address.');
+      return;
+    }
+
+    if (editingUser.phone?.trim() && !/^[+0-9\s-]{7,20}$/.test(editingUser.phone.trim())) {
+      alert('Please enter a valid phone number.');
+      return;
+    }
+
     try {
       setSubmitting(true);
       await api.users.update(editingUser.id, {
         firstName: editingUser.firstName,
         lastName: editingUser.lastName,
-        email: editingUser.email ?? null,
-        phone: editingUser.phone ?? null,
+        email: editingUser.email?.trim() || null,
+        phone: editingUser.phone?.trim() || null,
         category: editingUser.category ?? null,
       });
       setEditingUser(null);

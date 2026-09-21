@@ -72,7 +72,8 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
     if (params.initialText) {
       setTextInput(params.initialText);
     }
-    if (params.initialPriority) {
+    const VALID_PRIORITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'] as const;
+    if (params.initialPriority && (VALID_PRIORITIES as readonly string[]).includes(params.initialPriority)) {
       setPriority(params.initialPriority as Priority);
     }
   }, [params.initialText, params.initialPriority]);
@@ -301,6 +302,7 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
             style={styles.vehicleInput}
             placeholder="enter vehicle number"
             placeholderTextColor="#94A3B8"
+            maxLength={30}
             value={manualVehicleInput || (selectedVehicle ? describeVehicle(selectedVehicle) : '')}
             onChangeText={(txt) => {
               setManualVehicleInput(txt);

@@ -159,6 +159,16 @@ export function SparePartsPage(): ReactElement {
       return;
     }
 
+    const parsedQty = parseInt(String(issueQty), 10);
+    if (isNaN(parsedQty) || parsedQty <= 0) {
+      setActionError('Issued quantity must be a positive integer (at least 1)');
+      return;
+    }
+
+    if (!window.confirm(`Are you sure you want to approve and issue "${issuePartName.trim()}" (${parsedQty} unit(s)) for this vehicle?`)) {
+      return;
+    }
+
     try {
       setActionLoading(true);
       setActionError(null);
@@ -167,7 +177,7 @@ export function SparePartsPage(): ReactElement {
         type: issueType,
         issuedPartName: issuePartName.trim(),
         issuedPartNo: issuePartNo.trim(),
-        issuedQty: Number(issueQty) || 1,
+        issuedQty: parsedQty,
         returnedPartNo: issueType === 'EXCHANGE' ? issueReturnedPartNo.trim() : undefined,
         returnedPartCondition: issueType === 'EXCHANGE' ? issueReturnedCondition.trim() : undefined,
         adminNotes: issueNotes.trim() || undefined,
@@ -192,6 +202,10 @@ export function SparePartsPage(): ReactElement {
       return;
     }
 
+    if (!window.confirm('Are you sure you want to reject this spare part request?')) {
+      return;
+    }
+
     try {
       setActionLoading(true);
       setActionError(null);
@@ -213,6 +227,11 @@ export function SparePartsPage(): ReactElement {
     e.preventDefault();
     if (!whName.trim()) {
       setActionError('Warehouse name is required');
+      return;
+    }
+
+    if (whContactPhone.trim() && !/^[+0-9\s-]{7,20}$/.test(whContactPhone.trim())) {
+      setActionError('Please enter a valid contact phone number');
       return;
     }
 

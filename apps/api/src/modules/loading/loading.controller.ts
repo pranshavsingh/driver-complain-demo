@@ -166,7 +166,8 @@ export async function handleListLoadingRecords(req: Request, res: Response): Pro
 
   const driverId = typeof req.query.driverId === 'string' ? req.query.driverId : undefined;
   const status = typeof req.query.status === 'string' ? (req.query.status as LoadingStatus) : undefined;
-  const limit = req.query.limit ? Number(req.query.limit) : 50;
+  const rawLimit = req.query.limit ? Number(req.query.limit) : 50;
+  const limit = Math.min(100, Math.max(1, isNaN(rawLimit) ? 50 : rawLimit));
 
   const records = await listLoadingRecords({ driverId, status, limit });
   sendSuccess(res, { data: records });

@@ -17,7 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { VehiclePublic, FuelType } from '@driver-complaint/shared-types';
 import * as api from '../api/endpoints';
 import { describeVehicle } from '../lib/format';
-import { PHOTO_QUALITY } from '../media/limits';
+import { PHOTO_QUALITY, MAX_PHOTO_BYTES } from '../media/limits';
 import { radius, spacing } from '../theme';
 
 interface TakeFuelModalProps {
@@ -48,6 +48,29 @@ export function TakeFuelModal({ visible, onClose, vehicles, onSuccess }: TakeFue
 
   const activeVehicleName = manualVehicle.trim() || (selectedVehicle ? describeVehicle(selectedVehicle) : '');
 
+  const handleSafeClose = () => {
+    if (quantity.trim() || receiptPhoto) {
+      Alert.alert(
+        'Discard Entry?',
+        'You have unsaved changes. Are you sure you want to discard this entry?',
+        [
+          { text: 'Keep Editing', style: 'cancel' },
+          {
+            text: 'Discard',
+            style: 'destructive',
+            onPress: () => {
+              resetForm();
+              onClose();
+            },
+          },
+        ],
+      );
+      return;
+    }
+    resetForm();
+    onClose();
+  };
+
   const takePhoto = async () => {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) {
@@ -60,6 +83,10 @@ export function TakeFuelModal({ visible, onClose, vehicles, onSuccess }: TakeFue
     });
     if (!res.canceled && res.assets[0]) {
       const asset = res.assets[0];
+      if (asset.fileSize && asset.fileSize > MAX_PHOTO_BYTES) {
+        Alert.alert('File too large', 'Receipt photo exceeds 10 MB limit.');
+        return;
+      }
       setReceiptPhoto({
         uri: asset.uri,
         name: asset.fileName ?? `${type.toLowerCase()}_receipt.jpg`,
@@ -75,6 +102,10 @@ export function TakeFuelModal({ visible, onClose, vehicles, onSuccess }: TakeFue
     });
     if (!res.canceled && res.assets[0]) {
       const asset = res.assets[0];
+      if (asset.fileSize && asset.fileSize > MAX_PHOTO_BYTES) {
+        Alert.alert('File too large', 'Receipt photo exceeds 10 MB limit.');
+        return;
+      }
       setReceiptPhoto({
         uri: asset.uri,
         name: asset.fileName ?? `${type.toLowerCase()}_receipt.jpg`,
@@ -105,6 +136,11 @@ export function TakeFuelModal({ visible, onClose, vehicles, onSuccess }: TakeFue
     const parsedQty = parseFloat(quantity.trim());
     if (isNaN(parsedQty) || parsedQty <= 0) {
       Alert.alert('Invalid Quantity', `Please enter a valid ${type === 'FUEL' ? 'Fuel' : 'DEF'} quantity in Litres.`);
+      return;
+    }
+
+    if (parsedQty > 10000) {
+      Alert.alert('Quantity Too Large', 'Quantity cannot exceed 10,000 Litres.');
       return;
     }
 
@@ -141,7 +177,7 @@ export function TakeFuelModal({ visible, onClose, vehicles, onSuccess }: TakeFue
   const isFuel = type === 'FUEL';
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} animationType="slide" onRequestClose={handleSafeClose}>
       <View style={styles.container}>
         {/* Modal Header */}
         <View style={[styles.header, { paddingTop: insets.top + spacing.xs }]}>
@@ -149,7 +185,7 @@ export function TakeFuelModal({ visible, onClose, vehicles, onSuccess }: TakeFue
             <Ionicons name={isFuel ? 'flame' : 'water'} size={22} color="#FFFFFF" />
             <Text style={styles.headerTitle}>Take {isFuel ? 'Fuel' : 'DEF'} Log</Text>
           </View>
-          <Pressable onPress={onClose} style={styles.closeBtn} accessibilityLabel="Close modal">
+          <Pressable onPress={handleSafeClose} style={styles.closeBtn} accessibilityLabel="Close modal">
             <Ionicons name="close" size={24} color="#FFFFFF" />
           </Pressable>
         </View>
@@ -189,6 +225,7 @@ export function TakeFuelModal({ visible, onClose, vehicles, onSuccess }: TakeFue
                 style={styles.textInput}
                 placeholder="Vehicle number"
                 placeholderTextColor="#94A3B8"
+                maxLength={30}
                 value={manualVehicle || (selectedVehicle ? describeVehicle(selectedVehicle) : '')}
                 onChangeText={(val) => {
                   setManualVehicle(val);
@@ -241,6 +278,7 @@ export function TakeFuelModal({ visible, onClose, vehicles, onSuccess }: TakeFue
                 placeholder={isFuel ? 'e.g. 45.5 Litres' : 'e.g. 20 Litres'}
                 placeholderTextColor="#94A3B8"
                 keyboardType="decimal-pad"
+                maxLength={7}
                 value={quantity}
                 onChangeText={setQuantity}
                 autoFocus

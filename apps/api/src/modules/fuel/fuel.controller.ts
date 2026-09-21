@@ -1,33 +1,28 @@
 import type { Request, Response, NextFunction } from 'express';
 import { createFuelRecord, listFuelRecords, getFuelStatsSummary } from './fuel.service';
 import { sendSuccess } from '../../lib/http';
-import type { FuelType } from '@driver-complaint/shared-types';
+import { CreateFuelRecordSchema, type FuelType } from '@driver-complaint/shared-types';
 
 export async function handleCreateFuelRecord(req: Request, res: Response, next: NextFunction) {
   try {
     const userId = req.user!.id;
     const body = req.body;
 
-    const quantityLtr = Number(body.quantityLtr ?? body.quantity);
-    const totalPrice =
-      body.totalPrice !== undefined && body.totalPrice !== ''
-        ? Number(body.totalPrice)
-        : body.price !== undefined && body.price !== ''
-          ? Number(body.price)
-          : 0;
-    const odometerKm = body.odometerKm ? Number(body.odometerKm) : undefined;
+    // Harmonize legacy/mobile quantity & price fields before validation
+    const rawQuantity = body.quantityLtr ?? body.quantity;
+    const rawPrice = body.totalPrice !== undefined && body.totalPrice !== ''
+      ? body.totalPrice
+      : body.price !== undefined && body.price !== ''
+        ? body.price
+        : 0;
 
-    const input = {
-      vehicleId: body.vehicleId,
-      vehicleNumber: body.vehicleNumber,
-      type: (body.type as FuelType) || 'FUEL',
-      quantityLtr,
-      totalPrice,
-      odometerKm,
-      notes: body.notes,
-    };
+    const parsed = CreateFuelRecordSchema.parse({
+      ...body,
+      quantityLtr: rawQuantity,
+      totalPrice: rawPrice,
+    });
 
-    const record = await createFuelRecord(userId, input, req.file);
+    const record = await createFuelRecord(userId, parsed, req.file);
     sendSuccess(res, record, 201);
   } catch (err) {
     next(err);
@@ -39,6 +34,12 @@ export async function handleListFuelRecords(req: Request, res: Response, next: N
     const userId = req.user!.id;
     const role = req.user!.role;
 
+    const rawPage = req.query.page ? Number(req.query.page) : 1;
+    const rawLimit = req.query.limit ? Number(req.query.limit) : 20;
+
+    const page = Math.max(1, isNaN(rawPage) ? 1 : rawPage);
+    const limit = Math.min(100, Math.max(1, isNaN(rawLimit) ? 20 : rawLimit));
+
     const result = await listFuelRecords({
       driverUserId: role === 'DRIVER' ? userId : (req.query.driverId as string),
       userRole: role,
@@ -46,8 +47,8 @@ export async function handleListFuelRecords(req: Request, res: Response, next: N
       type: req.query.type as FuelType,
       startDate: req.query.startDate as string,
       endDate: req.query.endDate as string,
-      page: req.query.page ? Number(req.query.page) : 1,
-      limit: req.query.limit ? Number(req.query.limit) : 20,
+      page,
+      limit,
     });
 
     sendSuccess(res, result);

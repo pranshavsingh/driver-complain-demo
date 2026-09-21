@@ -49,6 +49,12 @@ export function LoginPage(): ReactElement {
     event.preventDefault();
     if (!employeeId.trim()) return;
 
+    const trimmedPin = pin.trim();
+    if (!/^\d{4,8}$/.test(trimmedPin)) {
+      setError(new Error('PIN must be 4 to 8 digits (numbers only)'));
+      return;
+    }
+
     setError(null);
     setSubmitting(true);
 

@@ -12,6 +12,27 @@ import { getAccessToken, getRefreshToken, notifySessionEnded, setTokens } from '
  * A failed API call, carrying the server's error envelope so the UI can show the message the
  * API chose and the requestId that correlates with the server logs.
  */
+function formatErrorMessage(payload: ApiErrorPayload): string {
+  if (payload.details && typeof payload.details === 'object') {
+    const details = payload.details as Record<string, any>;
+    if (details.fieldErrors && typeof details.fieldErrors === 'object') {
+      const fieldMsgs = Object.entries(details.fieldErrors)
+        .map(([field, errs]) => `${field}: ${Array.isArray(errs) ? errs.join(', ') : String(errs)}`)
+        .filter(Boolean);
+      if (fieldMsgs.length > 0) {
+        return `${payload.message}: ${fieldMsgs.join('; ')}`;
+      }
+    }
+    if (Array.isArray(details.issues)) {
+      const issueMsgs = details.issues.map((i: any) => i.message).filter(Boolean);
+      if (issueMsgs.length > 0) {
+        return `${payload.message}: ${issueMsgs.join('; ')}`;
+      }
+    }
+  }
+  return payload.message;
+}
+
 export class ApiClientError extends Error {
   readonly status: number;
   readonly code: string;
@@ -19,7 +40,7 @@ export class ApiClientError extends Error {
   readonly requestId: string | undefined;
 
   constructor(status: number, payload: ApiErrorPayload) {
-    super(payload.message);
+    super(formatErrorMessage(payload));
     this.name = 'ApiClientError';
     this.status = status;
     this.code = payload.code;

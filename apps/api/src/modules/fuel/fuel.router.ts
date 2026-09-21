@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import multer from 'multer';
 import {
   handleCreateFuelRecord,
   handleListFuelRecords,
@@ -8,11 +7,14 @@ import {
 } from './fuel.controller';
 import { authenticate } from '../../middleware/authenticate';
 import { requireRole } from '../../middleware/authorize';
+import { createSingleFileUpload } from '../../middleware/upload';
 
-const singleReceiptUpload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 },
-}).single('receipt');
+const singleReceiptUpload = createSingleFileUpload({
+  fieldName: 'receipt',
+  maxBytes: 10 * 1024 * 1024,
+  allowedMimePrefixes: ['image/', 'application/pdf'],
+  errorMessage: 'Receipt must be an image (JPEG, PNG, WebP) or PDF document',
+});
 
 export const fuelRouter = Router();
 

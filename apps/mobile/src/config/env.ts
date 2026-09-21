@@ -1,4 +1,3 @@
-import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { z } from 'zod';
 
@@ -10,7 +9,7 @@ const parsed = EnvSchema.safeParse({
   EXPO_PUBLIC_API_URL: process.env.EXPO_PUBLIC_API_URL,
 });
 
-const DEFAULT_PROD_URL = 'https://driver-complain-demo.onrender.com';
+export const DEFAULT_PROD_URL = 'https://driver-complain-demo.onrender.com';
 
 function resolveApiUrl(): string {
   const envUrl = parsed.success ? parsed.data.EXPO_PUBLIC_API_URL?.trim() : undefined;
@@ -23,7 +22,7 @@ function resolveApiUrl(): string {
     return envUrl.replace(/\/+$/, '');
   }
 
-  // 2. Default to online production server on Render
+  // 2. Default directly to deployed Render cloud backend
   return DEFAULT_PROD_URL;
 }
 
@@ -32,4 +31,3 @@ export const apiUrl = resolveApiUrl();
 
 /** Versioned REST base, e.g. https://driver-complain-demo.onrender.com/api/v1 */
 export const apiBase = `${apiUrl}/api/v1`;
-

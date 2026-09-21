@@ -20,7 +20,7 @@ import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-au
 import * as api from '../api/endpoints';
 import { useAuth } from '../auth/AuthContext';
 import { useVoiceRecorder, type VoiceNote } from '../media/recorder';
-import { PHOTO_QUALITY } from '../media/limits';
+import { PHOTO_QUALITY, MAX_PHOTO_BYTES } from '../media/limits';
 import { spacing } from '../theme';
 
 interface SupportChatModalProps {
@@ -121,6 +121,10 @@ export function SupportChatModal({ visible, onClose }: SupportChatModalProps): R
         });
         if (!result.canceled && result.assets[0]) {
           const asset = result.assets[0];
+          if (asset.fileSize && asset.fileSize > MAX_PHOTO_BYTES) {
+            Alert.alert('File too large', 'Photo exceeds 10 MB limit.');
+            return;
+          }
           setPickedPhoto({
             uri: asset.uri,
             name: asset.fileName || `support-photo-${Date.now()}.jpg`,
@@ -134,6 +138,10 @@ export function SupportChatModal({ visible, onClose }: SupportChatModalProps): R
         });
         if (!result.canceled && result.assets[0]) {
           const asset = result.assets[0];
+          if (asset.fileSize && asset.fileSize > MAX_PHOTO_BYTES) {
+            Alert.alert('File too large', 'Photo exceeds 10 MB limit.');
+            return;
+          }
           setPickedPhoto({
             uri: asset.uri,
             name: asset.fileName || `support-photo-${Date.now()}.jpg`,

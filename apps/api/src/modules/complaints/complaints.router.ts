@@ -5,10 +5,14 @@ import {
   AssignComplaintSchema,
   ComplaintListQuerySchema,
   ComplaintExportQuerySchema,
+  RejectAssignmentSchema,
+  AcceptAssignmentSchema,
+  TranslateComplaintSchema,
+  TranscribeComplaintSchema,
 } from '@driver-complaint/shared-types';
 import { authenticate } from '../../middleware/authenticate';
 import { requireRole } from '../../middleware/authorize';
-import { validate } from '../../middleware/validate';
+import { validate, validateUuidParam } from '../../middleware/validate';
 import { uploadEvidence } from '../../middleware/upload';
 import * as complaintsController from './complaints.controller';
 
@@ -37,36 +41,45 @@ complaintsRouter.get(
   complaintsController.exportXlsx,
 );
 
-complaintsRouter.get('/:id', complaintsController.getOne);
+complaintsRouter.get('/:id', validateUuidParam('id'), complaintsController.getOne);
 complaintsRouter.patch(
   '/:id/status',
+  validateUuidParam('id'),
   requireRole('ADMIN', 'SUPER_ADMIN'),
   validate(UpdateComplaintStatusSchema),
   complaintsController.updateStatus,
 );
 complaintsRouter.post(
   '/:id/assign',
+  validateUuidParam('id'),
   requireRole('ADMIN', 'SUPER_ADMIN'),
   validate(AssignComplaintSchema),
   complaintsController.assign,
 );
 complaintsRouter.post(
   '/:id/accept-assignment',
+  validateUuidParam('id'),
   requireRole('SUPER_ADMIN'),
+  validate(AcceptAssignmentSchema),
   complaintsController.acceptAssignment,
 );
 complaintsRouter.post(
   '/:id/reject-assignment',
+  validateUuidParam('id'),
   requireRole('SUPER_ADMIN'),
+  validate(RejectAssignmentSchema),
   complaintsController.rejectAssignment,
 );
 complaintsRouter.post(
   '/:id/transcribe',
+  validateUuidParam('id'),
   requireRole('ADMIN', 'SUPER_ADMIN', 'EXECUTIVE'),
+  validate(TranscribeComplaintSchema),
   complaintsController.transcribe,
 );
 complaintsRouter.post(
   '/translate',
+  requireRole('ADMIN', 'SUPER_ADMIN', 'EXECUTIVE'),
+  validate(TranslateComplaintSchema),
   complaintsController.translate,
 );
-

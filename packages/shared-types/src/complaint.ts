@@ -38,6 +38,22 @@ export const RejectAssignmentSchema = z.object({
 });
 export type RejectAssignment = z.infer<typeof RejectAssignmentSchema>;
 
+export const AcceptAssignmentSchema = z.object({
+  note: z.string().max(2000).optional(),
+}).optional();
+export type AcceptAssignment = z.infer<typeof AcceptAssignmentSchema>;
+
+export const TranslateComplaintSchema = z.object({
+  text: z.string().min(1, 'Text to translate is required').max(5000),
+  targetLang: z.string().min(2).max(10).default('en'),
+});
+export type TranslateComplaint = z.infer<typeof TranslateComplaintSchema>;
+
+export const TranscribeComplaintSchema = z.object({
+  attachmentId: z.string().uuid().optional(),
+}).optional();
+export type TranscribeComplaint = z.infer<typeof TranscribeComplaintSchema>;
+
 export const ComplaintPublicSchema = z.object({
   id: z.string(),
   complaintNo: z.string(),

@@ -48,11 +48,13 @@ const AGREEMENT_STATUS_OPTIONS = [
 function InlineDriverSelect({
   vehicle,
   driversList,
+  driverAssignedVehicleMap,
   onAssign,
   isUpdating,
 }: {
   vehicle: VehiclePublic;
   driversList: DriverListItem[];
+  driverAssignedVehicleMap: Map<string, { vehicleId: string; plateNumber: string; driverName: string }>;
   onAssign: (vehicleId: string, driverId: string | null) => Promise<void>;
   isUpdating: boolean;
 }): ReactElement {
@@ -127,6 +129,17 @@ function InlineDriverSelect({
   }, [driversList, search]);
 
   const handleSelect = async (dId: string | null) => {
+    if (dId) {
+      const assigned = driverAssignedVehicleMap.get(dId);
+      if (assigned && assigned.vehicleId !== vehicle.id) {
+        const driverObj = driversList.find((d) => d.id === dId);
+        const dName = driverObj ? `${driverObj.firstName} ${driverObj.lastName}` : 'Driver';
+        alert(
+          `Driver ${dName} is already assigned on vehicle "${assigned.plateNumber}".\n\nPlease free from vehicle "${assigned.plateNumber}" first then assign to a new vehicle.`
+        );
+        return;
+      }
+    }
     setIsOpen(false);
     await onAssign(vehicle.id, dId);
   };
@@ -314,6 +327,9 @@ function InlineDriverSelect({
               ) : (
                 filteredDrivers.map((driver) => {
                   const isSelected = vehicle.driverId === driver.id;
+                  const assignedInfo = driverAssignedVehicleMap.get(driver.id);
+                  const isAssignedToOther = Boolean(assignedInfo && assignedInfo.vehicleId !== vehicle.id);
+
                   return (
                     <button
                       key={driver.id}
@@ -327,17 +343,22 @@ function InlineDriverSelect({
                         padding: '8px 10px',
                         borderRadius: 8,
                         border: 'none',
-                        background: isSelected ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
+                        background: isSelected
+                          ? 'rgba(59, 130, 246, 0.15)'
+                          : isAssignedToOther
+                          ? 'rgba(239, 68, 68, 0.04)'
+                          : 'transparent',
                         color: isSelected ? 'var(--accent)' : 'var(--text)',
                         cursor: 'pointer',
                         textAlign: 'left',
                         marginBottom: 2,
+                        opacity: isAssignedToOther ? 0.75 : 1,
                       }}
                       onMouseEnter={(e) => {
-                        if (!isSelected) e.currentTarget.style.backgroundColor = 'var(--bg)';
+                        if (!isSelected) e.currentTarget.style.backgroundColor = isAssignedToOther ? 'rgba(239, 68, 68, 0.08)' : 'var(--bg)';
                       }}
                       onMouseLeave={(e) => {
-                        if (!isSelected) e.currentTarget.style.backgroundColor = 'transparent';
+                        if (!isSelected) e.currentTarget.style.backgroundColor = isAssignedToOther ? 'rgba(239, 68, 68, 0.04)' : 'transparent';
                       }}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -346,8 +367,8 @@ function InlineDriverSelect({
                             width: 24,
                             height: 24,
                             borderRadius: '50%',
-                            background: isSelected ? 'var(--accent)' : 'var(--border)',
-                            color: isSelected ? '#ffffff' : 'var(--text)',
+                            background: isSelected ? 'var(--accent)' : isAssignedToOther ? 'rgba(239, 68, 68, 0.15)' : 'var(--border)',
+                            color: isSelected ? '#ffffff' : isAssignedToOther ? 'var(--danger-text)' : 'var(--text)',
                             fontSize: 11,
                             fontWeight: 800,
                             display: 'inline-flex',
@@ -359,8 +380,39 @@ function InlineDriverSelect({
                           {driver.firstName[0]}
                         </span>
                         <div>
-                          <div style={{ fontSize: 13, fontWeight: 700 }}>
-                            {driver.firstName} {driver.lastName}
+                          <div style={{ fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span>
+                              {driver.firstName} {driver.lastName}
+                            </span>
+                            {isAssignedToOther && (
+                              <span
+                                style={{
+                                  fontSize: 10,
+                                  padding: '1px 5px',
+                                  borderRadius: 4,
+                                  backgroundColor: 'var(--danger-bg)',
+                                  color: 'var(--danger-text)',
+                                  border: '1px solid var(--danger-border)',
+                                  fontWeight: 700,
+                                }}
+                              >
+                                On {assignedInfo!.plateNumber}
+                              </span>
+                            )}
+                            {!assignedInfo && (
+                              <span
+                                style={{
+                                  fontSize: 10,
+                                  padding: '1px 5px',
+                                  borderRadius: 4,
+                                  backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                                  color: 'var(--success-text)',
+                                  fontWeight: 600,
+                                }}
+                              >
+                                Free
+                              </span>
+                            )}
                           </div>
                           <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                             ID: {driver.employeeId} {driver.licenseNumber ? `• Lic: ${driver.licenseNumber}` : ''}
@@ -412,6 +464,21 @@ export function VehiclesPage(): ReactElement {
 
   const vehiclesList: VehiclePublic[] = vehiclesResource.data ?? [];
   const driversList: DriverListItem[] = driversResource.data ?? [];
+
+  // Map of driverId -> assigned vehicle details (for 1:1 driver assignment enforcement)
+  const driverAssignedVehicleMap = useMemo(() => {
+    const map = new Map<string, { vehicleId: string; plateNumber: string; driverName: string }>();
+    for (const v of vehiclesList) {
+      if (v.driverId) {
+        map.set(v.driverId, {
+          vehicleId: v.id,
+          plateNumber: v.plateNumber,
+          driverName: v.driverName || 'Driver',
+        });
+      }
+    }
+    return map;
+  }, [vehiclesList]);
 
   // Filter vehicles
   const filteredVehicles = useMemo(() => {
@@ -510,25 +577,77 @@ export function VehiclesPage(): ReactElement {
     e.preventDefault();
     setModalError(null);
 
-    if (!plateNumber.trim()) {
+    const normPlate = plateNumber.trim().toUpperCase();
+    if (!normPlate) {
       setModalError('Vehicle Number is required.');
       return;
+    }
+
+    // 1. Uniqueness check for Vehicle Number (Plate)
+    const dupPlate = vehiclesList.find(
+      (v) => v.plateNumber.toUpperCase() === normPlate && v.id !== editingVehicle?.id
+    );
+    if (dupPlate) {
+      setModalError(`Vehicle Number "${normPlate}" already exists in the fleet.`);
+      return;
+    }
+
+    // 2. Uniqueness check for Chassis No (VIN)
+    const normChassis = chassisNumber.trim().toUpperCase();
+    if (normChassis) {
+      const dupChassis = vehiclesList.find(
+        (v) =>
+          ((v.chassisNumber && v.chassisNumber.toUpperCase() === normChassis) ||
+            (v.vin && v.vin.toUpperCase() === normChassis)) &&
+          v.id !== editingVehicle?.id
+      );
+      if (dupChassis) {
+        setModalError(
+          `Chassis No (VIN) "${normChassis}" already exists (registered on vehicle "${dupChassis.plateNumber}").`
+        );
+        return;
+      }
+    }
+
+    // 3. Driver 1:1 Assignment Validation
+    const trimmedDriverId = driverId.trim();
+    if (trimmedDriverId) {
+      const assigned = driverAssignedVehicleMap.get(trimmedDriverId);
+      if (assigned && assigned.vehicleId !== editingVehicle?.id) {
+        const driverObj = driversList.find((d) => d.id === trimmedDriverId);
+        const dName = driverObj ? `${driverObj.firstName} ${driverObj.lastName}` : 'Driver';
+        const errMsg = `Driver ${dName} is already assigned on vehicle "${assigned.plateNumber}". Please free from that vehicle first then assign to a new vehicle.`;
+        alert(errMsg);
+        setModalError(errMsg);
+        return;
+      }
+    }
+
+    let parsedYear: number | undefined = undefined;
+    if (year.trim()) {
+      const y = parseInt(year.trim(), 10);
+      const currentYear = new Date().getFullYear();
+      if (isNaN(y) || y < 1990 || y > currentYear + 2) {
+        setModalError(`Year must be a valid 4-digit year between 1990 and ${currentYear + 2}.`);
+        return;
+      }
+      parsedYear = y;
     }
 
     try {
       setSubmitting(true);
       const payload = {
-        plateNumber: plateNumber.trim().toUpperCase(),
+        plateNumber: normPlate,
         model: model.trim() || undefined,
         make: make.trim() || undefined,
         modelNumber: modelNumber.trim() || undefined,
         registrationDate: registrationDate.trim() || undefined,
-        chassisNumber: chassisNumber.trim() || undefined,
+        chassisNumber: normChassis || undefined,
         wheels: wheels.trim() || undefined,
         agreementStatus: agreementStatus.trim() || 'FMS Pack 1',
-        year: year.trim() ? parseInt(year.trim(), 10) : undefined,
-        vin: chassisNumber.trim() || undefined,
-        driverId: driverId.trim() ? driverId.trim() : null,
+        year: parsedYear,
+        vin: normChassis || undefined,
+        driverId: trimmedDriverId ? trimmedDriverId : null,
       };
 
       if (editingVehicle) {
@@ -901,6 +1020,7 @@ export function VehiclesPage(): ReactElement {
                         <InlineDriverSelect
                           vehicle={vehicle}
                           driversList={driversList}
+                          driverAssignedVehicleMap={driverAssignedVehicleMap}
                           onAssign={handleInlineAssignDriver}
                           isUpdating={updatingDriverVehicleId === vehicle.id}
                         />
@@ -1174,15 +1294,42 @@ export function VehiclesPage(): ReactElement {
                   <select
                     className="filter-select"
                     value={driverId}
-                    onChange={(e) => setDriverId(e.target.value)}
+                    onChange={(e) => {
+                      const selectedVal = e.target.value;
+                      if (selectedVal) {
+                        const assignedInfo = driverAssignedVehicleMap.get(selectedVal);
+                        if (assignedInfo && assignedInfo.vehicleId !== editingVehicle?.id) {
+                          const driverObj = driversList.find((d) => d.id === selectedVal);
+                          const dName = driverObj ? `${driverObj.firstName} ${driverObj.lastName}` : 'This driver';
+                          alert(
+                            `Driver ${dName} is already assigned on vehicle "${assignedInfo.plateNumber}".\n\nPlease free from vehicle "${assignedInfo.plateNumber}" first then assign to a new vehicle.`
+                          );
+                          setModalError(`Driver ${dName} is already assigned on vehicle "${assignedInfo.plateNumber}". Please free from that vehicle first.`);
+                          setDriverId('');
+                          return;
+                        }
+                      }
+                      setModalError(null);
+                      setDriverId(selectedVal);
+                    }}
                     style={{ width: '100%' }}
                   >
                     <option value="">-- No Driver (Free / Unassigned Vehicle) --</option>
-                    {driversList.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.firstName} {d.lastName} ({d.employeeId})
-                      </option>
-                    ))}
+                    {driversList.map((d) => {
+                      const assignedInfo = driverAssignedVehicleMap.get(d.id);
+                      const isAssignedElsewhere = Boolean(assignedInfo && assignedInfo.vehicleId !== editingVehicle?.id);
+                      const isAssignedHere = Boolean(assignedInfo && assignedInfo.vehicleId === editingVehicle?.id);
+
+                      return (
+                        <option
+                          key={d.id}
+                          value={d.id}
+                          style={isAssignedElsewhere ? { color: 'var(--danger-text)', fontWeight: 600 } : undefined}
+                        >
+                          {d.firstName} {d.lastName} ({d.employeeId}) {isAssignedElsewhere ? `[⚠️ Already on ${assignedInfo!.plateNumber}]` : isAssignedHere ? '[Currently Assigned Here]' : '[Free / Available]'}
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
               </div>

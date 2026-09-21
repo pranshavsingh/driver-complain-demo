@@ -131,3 +131,51 @@ export function uploadEvidence(req: Request, res: Response, next: NextFunction):
     next(oversize ? ApiError.badRequest(oversize) : undefined);
   });
 }
+
+/**
+ * Creates a single-file upload middleware with strict MIME type checking and size bounds.
+ */
+export function createSingleFileUpload({
+  fieldName,
+  maxBytes = 10 * MB,
+  allowedMimePrefixes = ['image/'],
+  errorMessage = 'File must be an image',
+}: {
+  fieldName: string;
+  maxBytes?: number;
+  allowedMimePrefixes?: string[];
+  errorMessage?: string;
+}) {
+  const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: maxBytes },
+    fileFilter: (_req, file, cb) => {
+      const allowed = allowedMimePrefixes.some((prefix) =>
+        prefix.endsWith('/') ? file.mimetype.startsWith(prefix) : file.mimetype === prefix,
+      );
+      if (!allowed) {
+        cb(ApiError.badRequest(errorMessage));
+        return;
+      }
+      cb(null, true);
+    },
+  }).single(fieldName);
+
+  return (req: Request, res: Response, next: NextFunction): void => {
+    upload(req, res, (err: unknown) => {
+      if (err instanceof MulterError) {
+        if (err.code === 'LIMIT_FILE_SIZE') {
+          next(ApiError.badRequest(`File exceeds the ${Math.round(maxBytes / MB)} MB limit`));
+          return;
+        }
+        next(ApiError.badRequest(err.message));
+        return;
+      }
+      if (err) {
+        next(err);
+        return;
+      }
+      next();
+    });
+  };
+}

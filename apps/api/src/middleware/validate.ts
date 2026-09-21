@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import type { ZodType } from 'zod';
+import { ApiError } from '../errors/api-error';
 
 type Part = 'body' | 'query' | 'params';
 
@@ -21,6 +22,23 @@ export function validate(schema: ZodType, part: Part = 'body') {
       res.locals.query = result.data;
     } else {
       (req as unknown as Record<string, unknown>)[part] = result.data;
+    }
+    next();
+  };
+}
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Validates that a route param is a well-formed UUID string.
+ */
+export function validateUuidParam(paramName = 'id') {
+  return (req: Request, _res: Response, next: NextFunction): void => {
+    const raw = req.params[paramName];
+    const value = Array.isArray(raw) ? raw[0] : raw;
+    if (!value || typeof value !== 'string' || !UUID_REGEX.test(value)) {
+      next(ApiError.badRequest(`Invalid ${paramName} parameter (must be a valid UUID)`));
+      return;
     }
     next();
   };

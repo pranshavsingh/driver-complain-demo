@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import {
   ComplaintDetailSchema,
-  ComplaintPublicSchema,
   DeviceTokenPublicSchema,
   ListComplaintsResponseSchema,
   LoginResponseSchema,
@@ -9,9 +8,12 @@ import {
   VehiclePublicSchema,
   LoadingRecordSchema,
   ActiveLoadingResponseSchema,
+  FuelRecordPublicSchema,
+  ListFuelRecordsResponseSchema,
+  MaintenanceRecordPublicSchema,
+  ListMaintenanceRecordsResponseSchema,
   type ActiveLoadingResponse,
   type ComplaintDetail,
-  type ComplaintPublic,
   type CreateComplaint,
   type DeviceTokenPublic,
   type ListComplaintsResponse,
@@ -21,6 +23,8 @@ import {
   type UserPublic,
   type VehiclePublic,
   type LoadingRecord,
+  type FuelRecordPublic,
+  type MaintenanceRecordPublic,
 } from '@driver-complaint/shared-types';
 import { request, requestNoContent, warmUpServer } from './client';
 import { clearTokens, getRefreshToken } from './tokens';
@@ -45,6 +49,19 @@ export interface EvidenceUpload {
   video?: FileToUpload;
 }
 
+export function validateGpsCoordinates(lat?: number, lng?: number): void {
+  if (lat !== undefined) {
+    if (typeof lat !== 'number' || isNaN(lat) || lat < -90 || lat > 90) {
+      throw new Error('Latitude must be a valid number between -90 and 90');
+    }
+  }
+  if (lng !== undefined) {
+    if (typeof lng !== 'number' || isNaN(lng) || lng < -180 || lng > 180) {
+      throw new Error('Longitude must be a valid number between -180 and 180');
+    }
+  }
+}
+
 export const auth = {
   login: (input: LoginRequest): Promise<LoginResponse> =>
     request(LoginResponseSchema, '/auth/login', {
@@ -60,12 +77,16 @@ export const auth = {
    * driver with no signal can still hand the phone back without leaving a live session on it.
    */
   logout: async (): Promise<void> => {
-    const refreshToken = getRefreshToken();
-    if (refreshToken) {
+    const token = await getRefreshToken();
+    if (token) {
       try {
-        await requestNoContent('/auth/logout', { method: 'POST', body: { refreshToken } });
+        await requestNoContent('/auth/logout', {
+          method: 'POST',
+          body: { refreshToken: token },
+          anonymous: true,
+        });
       } catch {
-        // Already expired, revoked, or offline — nothing useful left to do server-side.
+        // Drop network failures silently; clearing local tokens is the priority.
       }
     }
     await clearTokens();
@@ -77,98 +98,102 @@ export const users = {
 };
 
 export const vehicles = {
-  /** The vehicles assigned to the signed-in driver. Usually exactly one. */
-  mine: (): Promise<VehiclePublic[]> => request(z.array(VehiclePublicSchema), '/vehicles/mine'),
+  /** The vehicles currently assigned to the logged-in driver. */
+  mine: (): Promise<VehiclePublic[]> =>
+    request(z.array(VehiclePublicSchema), '/vehicles/mine'),
 };
 
-export function normalizeFileUri(uri: string): string {
-  if (!uri) return uri;
-  let clean = uri.trim();
-  if (clean.startsWith('file:/') && !clean.startsWith('file:///')) {
-    clean = clean.replace(/^file:\/+/, 'file:///');
-  } else if (clean.startsWith('/')) {
-    clean = `file://${clean}`;
-  }
-  return clean;
-}
-
-/** React Native resolves this native URI when it builds the multipart request. */
-function appendFile(form: FormData, field: string, file: FileToUpload): void {
-  const cleanUri = normalizeFileUri(file.uri);
-  const defaultName = field === 'voice' ? 'voice.m4a' : field === 'video' ? 'video.mp4' : 'photo.jpg';
-  const defaultType = field === 'voice' ? 'audio/m4a' : field === 'video' ? 'video/mp4' : 'image/jpeg';
-  const fileName = file.name || defaultName;
-  const mimeType = file.type || defaultType;
-
-  console.log(`[endpoints] Appending ${field} to FormData:`, {
-    cleanUri,
-    name: fileName,
-    type: mimeType,
-  });
-
-  form.append(field, {
-    uri: cleanUri,
-    name: fileName,
-    type: mimeType,
+/**
+ * Helper to append a single FileToUpload to a React Native FormData instance.
+ *
+ * React Native's FormData implementation expects `{ uri, name, type }` as the second argument
+ * (typed here as `any` because the web `Blob` typings don't match the RN native object).
+ */
+function appendFile(form: FormData, fieldName: string, file: FileToUpload): void {
+  form.append(fieldName, {
+    uri: file.uri,
+    name: file.name,
+    type: file.type,
   } as unknown as Blob);
 }
 
 export const complaints = {
-  /**
-   * The driver's own complaints. The API scopes this by the caller's role — a driver never
-   * sees another driver's rows — so no driverId filter is sent from here.
-   */
-  mine: (page: number, pageSize: number): Promise<ListComplaintsResponse> =>
-    request(ListComplaintsResponseSchema, '/complaints', { query: { page, pageSize } }),
+  create: async (input: CreateComplaint, evidence?: EvidenceUpload): Promise<ComplaintDetail> => {
+    await warmUpServer();
+
+    const form = new FormData();
+    form.append('title', input.title);
+    form.append('description', input.description);
+    if (input.vehicleId) form.append('vehicleId', input.vehicleId);
+    if (input.vehicleNumber) form.append('vehicleNumber', input.vehicleNumber);
+    if (input.priority) form.append('priority', input.priority);
+    if (input.category) form.append('category', input.category);
+    if (input.tripPhase) form.append('tripPhase', input.tripPhase);
+
+    if (evidence?.photo) appendFile(form, 'photo', evidence.photo);
+    if (evidence?.voice) appendFile(form, 'voice', evidence.voice);
+    if (evidence?.video) appendFile(form, 'video', evidence.video);
+
+    return request(ComplaintDetailSchema, '/complaints', {
+      method: 'POST',
+      body: form,
+    });
+  },
+
+  mine: (page = 1, pageSize = 15, status?: string): Promise<ListComplaintsResponse> =>
+    request(ListComplaintsResponseSchema, '/complaints', {
+      query: { page, pageSize, ...(status ? { status } : {}) },
+    }),
+
+  listMine: (query?: {
+    page?: number;
+    pageSize?: number;
+    status?: string;
+  }): Promise<ListComplaintsResponse> =>
+    request(ListComplaintsResponseSchema, '/complaints', {
+      query: query as Record<string, string | number>,
+    }),
 
   get: (id: string): Promise<ComplaintDetail> =>
     request(ComplaintDetailSchema, `/complaints/${encodeURIComponent(id)}`),
 
-  /**
-   * File a complaint, with optional photo / voice note / video, as one multipart request.
-   *
-   * Multipart even with no evidence: the endpoint runs multer before zod either way, and one
-   * code path means the with-evidence case is the one that gets exercised every time.
-   *
-   * warmUpServer() pings /health first so Render.com's sleeping free-tier server has time
-   * to wake before the large multipart body arrives — without this, the upload fails with
-   * "Network request failed" during the server's ~30-60 s cold-start window.
-   */
-  create: async (input: CreateComplaint, evidence: EvidenceUpload = {}): Promise<ComplaintPublic> => {
-    // Wake the server before sending the complaint
-    await warmUpServer();
-    const form = new FormData();
-    form.append('title', input.title);
-    form.append('description', input.description);
-    if (input.category) form.append('category', input.category);
-    if (input.vehicleId) form.append('vehicleId', input.vehicleId);
-    if (input.vehicleNumber) form.append('vehicleNumber', input.vehicleNumber);
-    if (input.priority) form.append('priority', input.priority);
-    for (const [field, file] of Object.entries(evidence)) {
-      if (file) appendFile(form, field, file);
-    }
-    return request(ComplaintPublicSchema, '/complaints', { method: 'POST', body: form });
-  },
+  getById: (id: string): Promise<ComplaintDetail> =>
+    request(ComplaintDetailSchema, `/complaints/${encodeURIComponent(id)}`),
 };
 
 export const notifications = {
-  /** Register this device for push. Safe to call on every launch — the API upserts on token. */
   registerDevice: (input: RegisterDeviceToken): Promise<DeviceTokenPublic> =>
-    request(DeviceTokenPublicSchema, '/notifications/devices', { method: 'POST', body: input }),
+    request(DeviceTokenPublicSchema, '/notifications/devices', {
+      method: 'POST',
+      body: input,
+    }),
 
-  /** De-register on logout, so the next person to hold this phone gets no pushes for it. */
   unregisterDevice: (token: string): Promise<void> =>
-    requestNoContent(`/notifications/devices/${encodeURIComponent(token)}`, { method: 'DELETE' }),
+    requestNoContent(`/notifications/devices/${encodeURIComponent(token)}`, {
+      method: 'DELETE',
+    }),
 };
+
+export const devices = notifications;
 
 export const loading = {
   active: (): Promise<ActiveLoadingResponse> =>
     request(ActiveLoadingResponseSchema, '/loading/active'),
 
+  getActive: (): Promise<ActiveLoadingResponse> =>
+    request(ActiveLoadingResponseSchema, '/loading/active'),
+
   reached: async (
-    input: { latitude: number; longitude: number; address?: string; locationName?: string; complaintId?: string },
+    input: {
+      latitude: number;
+      longitude: number;
+      address?: string;
+      locationName?: string;
+      complaintId?: string;
+    },
     photo: FileToUpload,
   ): Promise<LoadingRecord> => {
+    validateGpsCoordinates(input.latitude, input.longitude);
     await warmUpServer();
     const form = new FormData();
     form.append('latitude', String(input.latitude));
@@ -185,6 +210,7 @@ export const loading = {
     input: { latitude: number; longitude: number; address?: string },
     photo: FileToUpload,
   ): Promise<LoadingRecord> => {
+    validateGpsCoordinates(input.latitude, input.longitude);
     await warmUpServer();
     const form = new FormData();
     form.append('latitude', String(input.latitude));
@@ -201,6 +227,7 @@ export const loading = {
     loadingId: string,
     input: { latitude: number; longitude: number; address?: string },
   ): Promise<LoadingRecord> => {
+    validateGpsCoordinates(input.latitude, input.longitude);
     return request(LoadingRecordSchema, `/loading/${encodeURIComponent(loadingId)}/start-trip`, {
       method: 'POST',
       body: input,
@@ -213,6 +240,7 @@ export const loading = {
     input: { latitude: number; longitude: number; address?: string },
     photo: FileToUpload,
   ): Promise<LoadingRecord> => {
+    validateGpsCoordinates(input.latitude, input.longitude);
     await warmUpServer();
     const form = new FormData();
     form.append('latitude', String(input.latitude));
@@ -231,6 +259,7 @@ export const loading = {
     input: { latitude: number; longitude: number; address?: string },
     photo: FileToUpload,
   ): Promise<LoadingRecord> => {
+    validateGpsCoordinates(input.latitude, input.longitude);
     await warmUpServer();
     const form = new FormData();
     form.append('latitude', String(input.latitude));
@@ -256,7 +285,7 @@ export const fuel = {
       notes?: string;
     },
     receiptPhoto?: FileToUpload,
-  ): Promise<any> => {
+  ): Promise<FuelRecordPublic> => {
     await warmUpServer();
     const form = new FormData();
     if (input.vehicleId) form.append('vehicleId', input.vehicleId);
@@ -268,11 +297,11 @@ export const fuel = {
     if (input.notes) form.append('notes', input.notes);
     if (receiptPhoto) appendFile(form, 'receipt', receiptPhoto);
 
-    return request(z.any(), '/fuel', { method: 'POST', body: form });
+    return request(FuelRecordPublicSchema, '/fuel', { method: 'POST', body: form });
   },
 
-  mine: (page = 1, limit = 20): Promise<any> =>
-    request(z.any(), '/fuel', { query: { page, limit } }),
+  mine: (page = 1, limit = 20): Promise<{ data: FuelRecordPublic[]; meta: any }> =>
+    request(ListFuelRecordsResponseSchema, '/fuel', { query: { page, limit } }),
 };
 
 export const maintenance = {
@@ -291,7 +320,7 @@ export const maintenance = {
       notes?: string;
     },
     photo?: FileToUpload,
-  ): Promise<any> => {
+  ): Promise<MaintenanceRecordPublic> => {
     await warmUpServer();
     const form = new FormData();
     if (input.vehicleId) form.append('vehicleId', input.vehicleId);
@@ -307,11 +336,11 @@ export const maintenance = {
     if (input.notes) form.append('notes', input.notes);
     if (photo) appendFile(form, 'photo', photo);
 
-    return request(z.any(), '/maintenance', { method: 'POST', body: form });
+    return request(MaintenanceRecordPublicSchema, '/maintenance', { method: 'POST', body: form });
   },
 
-  mine: (page = 1, limit = 20): Promise<any> =>
-    request(z.any(), '/maintenance', { query: { page, limit } }),
+  mine: (page = 1, limit = 20): Promise<{ data: MaintenanceRecordPublic[]; meta: any }> =>
+    request(ListMaintenanceRecordsResponseSchema, '/maintenance', { query: { page, limit } }),
 };
 
 export const spareParts = {
@@ -344,7 +373,7 @@ export const spareParts = {
     return request(z.any(), '/spare-parts', { method: 'POST', body: form });
   },
 
-  mine: (page = 1, limit = 20): Promise<any> =>
+  mine: (page = 1, limit = 20): Promise<{ data: any[]; meta: any }> =>
     request(z.any(), '/spare-parts', { query: { page, limit } }),
 };
 
@@ -359,9 +388,18 @@ export const support = {
     otherUserId: string,
     query?: { page?: number; limit?: number },
   ): Promise<{ data: any[]; total: number; page: number; limit: number }> =>
-    request(z.any(), `/support/messages/${otherUserId}`, {
-      query: query as Record<string, string | number>,
-    }),
+    request(
+      z.object({
+        data: z.array(z.any()),
+        total: z.number(),
+        page: z.number(),
+        limit: z.number(),
+      }),
+      `/support/messages/${encodeURIComponent(otherUserId)}`,
+      {
+        query: query as Record<string, string | number>,
+      },
+    ),
 
   sendMessage: async (
     input: { receiverId?: string; content?: string; type?: 'TEXT' | 'IMAGE' | 'AUDIO' },
@@ -382,14 +420,10 @@ export const support = {
   },
 
   markRead: (otherUserId: string): Promise<{ updated: number }> =>
-    request(z.any(), `/support/messages/${otherUserId}/read`, {
+    request(z.object({ updated: z.number() }), `/support/messages/${encodeURIComponent(otherUserId)}/read`, {
       method: 'PATCH',
     }),
 
   getUnreadCount: (): Promise<{ unreadCount: number }> =>
-    request(z.any(), '/support/unread-count'),
+    request(z.object({ unreadCount: z.number() }), '/support/unread-count'),
 };
-
-
-
-

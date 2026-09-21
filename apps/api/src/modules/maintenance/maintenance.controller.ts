@@ -5,7 +5,7 @@ import {
   getMaintenanceStatsSummary,
 } from './maintenance.service';
 import { sendSuccess } from '../../lib/http';
-import type { MaintenanceType } from '@driver-complaint/shared-types';
+import { CreateMaintenanceRecordSchema, type MaintenanceType } from '@driver-complaint/shared-types';
 
 export async function handleCreateMaintenanceRecord(
   req: Request,
@@ -16,25 +16,18 @@ export async function handleCreateMaintenanceRecord(
     const userId = req.user!.id;
     const body = req.body;
 
-    const quantity = body.quantity ? Number(body.quantity) : 1;
-    const odometerKm = body.odometerKm ? Number(body.odometerKm) : undefined;
-    const cost = body.cost !== undefined && body.cost !== '' ? Number(body.cost) : undefined;
+    const rawQuantity = body.quantity ? Number(body.quantity) : 1;
+    const rawCost = body.cost !== undefined && body.cost !== '' ? Number(body.cost) : undefined;
+    const rawOdometer = body.odometerKm ? Number(body.odometerKm) : undefined;
 
-    const input = {
-      vehicleId: body.vehicleId,
-      vehicleNumber: body.vehicleNumber,
-      type: (body.type as MaintenanceType) || 'TYRE',
-      itemNumber: body.itemNumber || '',
-      oldItemNumber: body.oldItemNumber || undefined,
-      quantity,
-      odometerKm,
-      brand: body.brand,
-      position: body.position,
-      cost,
-      notes: body.notes,
-    };
+    const parsed = CreateMaintenanceRecordSchema.parse({
+      ...body,
+      quantity: rawQuantity,
+      cost: rawCost,
+      odometerKm: rawOdometer,
+    });
 
-    const record = await createMaintenanceRecord(userId, input, req.file);
+    const record = await createMaintenanceRecord(userId, parsed, req.file);
     sendSuccess(res, record, 201);
   } catch (err) {
     next(err);
@@ -50,6 +43,12 @@ export async function handleListMaintenanceRecords(
     const userId = req.user!.id;
     const role = req.user!.role;
 
+    const rawPage = req.query.page ? Number(req.query.page) : 1;
+    const rawLimit = req.query.limit ? Number(req.query.limit) : 20;
+
+    const page = Math.max(1, isNaN(rawPage) ? 1 : rawPage);
+    const limit = Math.min(100, Math.max(1, isNaN(rawLimit) ? 20 : rawLimit));
+
     const result = await listMaintenanceRecords({
       driverUserId: role === 'DRIVER' ? userId : (req.query.driverId as string),
       userRole: role,
@@ -58,8 +57,8 @@ export async function handleListMaintenanceRecords(
       startDate: req.query.startDate as string,
       endDate: req.query.endDate as string,
       search: req.query.search as string,
-      page: req.query.page ? Number(req.query.page) : 1,
-      limit: req.query.limit ? Number(req.query.limit) : 20,
+      page,
+      limit,
     });
 
     sendSuccess(res, result);

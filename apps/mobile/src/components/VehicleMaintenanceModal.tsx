@@ -17,7 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { VehiclePublic } from '@driver-complaint/shared-types';
 import * as api from '../api/endpoints';
 import { describeVehicle } from '../lib/format';
-import { PHOTO_QUALITY } from '../media/limits';
+import { PHOTO_QUALITY, MAX_PHOTO_BYTES } from '../media/limits';
 import { radius, spacing } from '../theme';
 
 export type MaintenanceTab = 'TYRE' | 'BATTERY';
@@ -71,6 +71,30 @@ export function VehicleMaintenanceModal({
   const activeVehicleName =
     manualVehicle.trim() || (selectedVehicle ? describeVehicle(selectedVehicle) : '');
 
+  const handleSafeClose = () => {
+    const isDirty = Boolean(itemNumber.trim() || oldItemNumber.trim() || maintenancePhoto);
+    if (isDirty) {
+      Alert.alert(
+        'Discard Entry?',
+        'You have unsaved changes in this maintenance log. Are you sure you want to discard them?',
+        [
+          { text: 'Keep Editing', style: 'cancel' },
+          {
+            text: 'Discard',
+            style: 'destructive',
+            onPress: () => {
+              resetAllForms();
+              onClose();
+            },
+          },
+        ],
+      );
+      return;
+    }
+    resetAllForms();
+    onClose();
+  };
+
   // Photo handlers for Tyre/Battery Proof
   const takeMaintenancePhoto = async () => {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
@@ -87,6 +111,10 @@ export function VehicleMaintenanceModal({
     });
     if (!res.canceled && res.assets[0]) {
       const asset = res.assets[0];
+      if (asset.fileSize && asset.fileSize > MAX_PHOTO_BYTES) {
+        Alert.alert('File too large', 'Maintenance photo exceeds 10 MB limit.');
+        return;
+      }
       setMaintenancePhoto({
         uri: asset.uri,
         name: asset.fileName ?? `${activeTab.toLowerCase()}_photo.jpg`,
@@ -102,6 +130,10 @@ export function VehicleMaintenanceModal({
     });
     if (!res.canceled && res.assets[0]) {
       const asset = res.assets[0];
+      if (asset.fileSize && asset.fileSize > MAX_PHOTO_BYTES) {
+        Alert.alert('File too large', 'Maintenance photo exceeds 10 MB limit.');
+        return;
+      }
       setMaintenancePhoto({
         uri: asset.uri,
         name: asset.fileName ?? `${activeTab.toLowerCase()}_photo.jpg`,
@@ -157,6 +189,11 @@ export function VehicleMaintenanceModal({
       return;
     }
 
+    if (parsedQty > 100) {
+      Alert.alert('Quantity Too Large', 'Quantity cannot exceed 100 units.');
+      return;
+    }
+
     if (!maintenancePhoto) {
       Alert.alert(
         'Photo Mandatory',
@@ -207,7 +244,7 @@ export function VehicleMaintenanceModal({
   const isTyre = activeTab === 'TYRE';
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} animationType="slide" onRequestClose={handleSafeClose}>
       <View style={styles.container}>
         {/* Modal Header */}
         <View style={[styles.header, { paddingTop: insets.top + spacing.xs }]}>
@@ -217,7 +254,7 @@ export function VehicleMaintenanceModal({
               {isTyre ? 'Tyre Replacement' : 'Battery Replacement'}
             </Text>
           </View>
-          <Pressable onPress={onClose} style={styles.closeBtn} accessibilityLabel="Close modal">
+          <Pressable onPress={handleSafeClose} style={styles.closeBtn} accessibilityLabel="Close modal">
             <Ionicons name="close" size={24} color="#FFFFFF" />
           </Pressable>
         </View>
@@ -270,6 +307,7 @@ export function VehicleMaintenanceModal({
                 style={styles.textInput}
                 placeholder="Vehicle number"
                 placeholderTextColor="#94A3B8"
+                maxLength={30}
                 value={manualVehicle || (selectedVehicle ? describeVehicle(selectedVehicle) : '')}
                 onChangeText={(val) => {
                   setManualVehicle(val);
@@ -330,6 +368,7 @@ export function VehicleMaintenanceModal({
                 }
                 placeholderTextColor="#94A3B8"
                 autoCapitalize="characters"
+                maxLength={100}
                 value={itemNumber}
                 onChangeText={setItemNumber}
               />
@@ -342,7 +381,7 @@ export function VehicleMaintenanceModal({
               {isTyre
                 ? 'Old Tyre Number (replaced with this)'
                 : 'Old Battery Number (replaced with this)'}{' '}
-              <Text style={styles.requiredStar}>*</Text>
+                <Text style={styles.requiredStar}>*</Text>
             </Text>
             <View style={styles.inputBox}>
               <Ionicons
@@ -359,6 +398,7 @@ export function VehicleMaintenanceModal({
                 }
                 placeholderTextColor="#94A3B8"
                 autoCapitalize="characters"
+                maxLength={100}
                 value={oldItemNumber}
                 onChangeText={setOldItemNumber}
               />
@@ -377,6 +417,7 @@ export function VehicleMaintenanceModal({
                 placeholder="1"
                 placeholderTextColor="#94A3B8"
                 keyboardType="number-pad"
+                maxLength={3}
                 value={quantity}
                 onChangeText={setQuantity}
               />
