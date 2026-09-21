@@ -76,9 +76,11 @@ export function initRealtime(server: HttpServer): RealtimeServer {
 
   instance.on('connection', (socket) => {
     const { userId, role } = socket.data;
-    // SAFETY-CRITICAL: a socket only ever joins its OWN user room. Never join a room from
-    // client-supplied input — that would let any driver subscribe to another driver's events.
+    // SAFETY-CRITICAL: a socket only ever joins its OWN user room and its verified role room.
     void socket.join(userRoom(userId));
+    if (role) {
+      void socket.join(`role:${role}`);
+    }
     logger.debug({ userId, role, socketId: socket.id }, 'Realtime client connected');
 
     socket.on('disconnect', (reason) => {
@@ -125,6 +127,22 @@ export function emitEventToUsers(
 ): void {
   if (!io || userIds.length === 0) return;
   io.to(userIds.map(userRoom)).emit(event as any, payload);
+}
+
+/** Emit any realtime event to all users with the specified roles. */
+export function emitToRoles(
+  roles: Role[],
+  event: string,
+  payload: any,
+): void {
+  if (!io || roles.length === 0) return;
+  io.to(roles.map((r) => `role:${r}`)).emit(event as any, payload);
+}
+
+/** Broadcast any realtime event to all connected sockets. */
+export function emitToAll(event: string, payload: any): void {
+  if (!io) return;
+  io.emit(event as any, payload);
 }
 
 /** Close all sockets during graceful shutdown. Safe to call when realtime never started. */

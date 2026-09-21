@@ -72,6 +72,9 @@ enum NotificationType {
   SPARE_PART_ISSUED
   SPARE_PART_REJECTED
   SUPPORT_MESSAGE_RECEIVED
+  USER_APPROVAL_REQUESTED
+  USER_APPROVED
+  USER_REJECTED
 }
 
 // What kind of evidence an attachment is. Drives playback in the dashboard (an <img> and an

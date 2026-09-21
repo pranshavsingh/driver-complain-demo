@@ -58,15 +58,23 @@ function getPageTitle(pathname: string): string {
   return 'Fleet Administration';
 }
 
+interface ToastItem {
+  id: string;
+  title: string;
+  message: string;
+  type: 'info' | 'success' | 'warning';
+}
+
 export function Layout(): ReactElement {
   const { user, logout } = useAuth();
-  const { connected } = useRealtime();
+  const { connected, subscribeCustom } = useRealtime();
   const location = useLocation();
 
   const [signingOut, setSigningOut] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>(INITIAL_NOTIFICATIONS);
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
 
   const notifRef = useRef<HTMLDivElement>(null);
 
@@ -74,6 +82,99 @@ export function Layout(): ReactElement {
     isAdmin(user) ? api.users.pendingCount() : Promise.resolve({ pendingCount: 0 }),
   );
   const pendingCount = pendingApprovalsResource.data?.pendingCount ?? 0;
+
+  const showToast = (title: string, message: string, type: 'info' | 'success' | 'warning' = 'info') => {
+    const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    setToasts((prev) => [...prev, { id, title, message, type }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 6000);
+  };
+
+  // Load database notifications on mount
+  useEffect(() => {
+    if (!user) return;
+    api.notifications
+      .list({ page: 1, pageSize: 15 })
+      .then((res: any) => {
+        if (res?.data && Array.isArray(res.data) && res.data.length > 0) {
+          setNotifications(
+            res.data.map((n: any) => ({
+              id: n.id,
+              msg: n.body || n.title,
+              time: new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              type: n.type?.toLowerCase().includes('complaint') ? 'complaint' : 'trip',
+              unread: !n.isRead,
+            })),
+          );
+        }
+      })
+      .catch(() => {});
+  }, [user]);
+
+  // Realtime Live Updates for Approvals & Notifications
+  useEffect(() => {
+    const reloadApprovals = () => {
+      void pendingApprovalsResource.reload();
+    };
+
+    const unsubReq = subscribeCustom('user:approval-requested', (payload: any) => {
+      reloadApprovals();
+      if (isSuperAdmin(user)) {
+        showToast(
+          'New Driver Approval Request',
+          payload?.name ? `Driver ${payload.name} (${payload.employeeId}) requires approval.` : 'New driver submitted for approval.',
+          'info'
+        );
+      }
+    });
+
+    const unsubAppr = subscribeCustom('user:approved', (payload: any) => {
+      reloadApprovals();
+      showToast(
+        'Driver Approved',
+        payload?.name ? `Driver ${payload.name} (${payload.employeeId}) has been approved.` : 'Driver approved.',
+        'success'
+      );
+    });
+
+    const unsubRej = subscribeCustom('user:rejected', (payload: any) => {
+      reloadApprovals();
+      showToast(
+        'Driver Approval Rejected',
+        payload?.name ? `Driver ${payload.name} (${payload.employeeId}) was rejected.` : 'Driver rejected.',
+        'warning'
+      );
+    });
+
+    const unsubCreate = subscribeCustom('user:created', reloadApprovals);
+    const unsubUpdate = subscribeCustom('user:updated', reloadApprovals);
+
+    const unsubNotif = subscribeCustom('notification:new', (payload: any) => {
+      if (payload) {
+        setNotifications((prev) => [
+          {
+            id: payload.id || `notif-${Date.now()}`,
+            msg: payload.body || payload.title || 'New notification',
+            time: 'Just now',
+            type: payload.type?.toLowerCase().includes('complaint') ? 'complaint' : 'trip',
+            unread: true,
+          },
+          ...prev,
+        ]);
+        showToast(payload.title || 'Notification', payload.body || '', 'info');
+      }
+    });
+
+    return () => {
+      unsubReq();
+      unsubAppr();
+      unsubRej();
+      unsubCreate();
+      unsubUpdate();
+      unsubNotif();
+    };
+  }, [subscribeCustom, pendingApprovalsResource, user]);
 
   // Close notifications dropdown on click outside
   useEffect(() => {
@@ -100,16 +201,96 @@ export function Layout(): ReactElement {
 
   const handleClearNotifications = (): void => {
     setNotifications([]);
+    void api.notifications.markAllRead().catch(() => {});
   };
 
   const handleDismissNotification = (id: string): void => {
     setNotifications((prev) => prev.filter((item) => item.id !== id));
+    void api.notifications.markRead(id).catch(() => {});
   };
 
   const unreadCount = notifications.filter((n) => n.unread).length;
 
   return (
     <div className={`admin-app-container ${sidebarOpen ? 'sidebar-expanded' : ''}`}>
+      {/* Floating Toast Notification Container */}
+      <div
+        style={{
+          position: 'fixed',
+          top: 20,
+          right: 20,
+          zIndex: 999999,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 10,
+          maxWidth: 380,
+          pointerEvents: 'none',
+        }}
+      >
+        {toasts.map((t) => (
+          <div
+            key={t.id}
+            style={{
+              pointerEvents: 'auto',
+              backgroundColor: 'var(--surface-bg, #1e293b)',
+              color: 'var(--text-main, #f8fafc)',
+              borderRadius: 12,
+              padding: '12px 16px',
+              boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.3)',
+              border: `1.5px solid ${
+                t.type === 'success'
+                  ? '#22c55e'
+                  : t.type === 'warning'
+                    ? '#ef4444'
+                    : '#3b82f6'
+              }`,
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 12,
+              animation: 'fadeIn 0.2s ease-out',
+            }}
+          >
+            <div style={{ flex: 1 }}>
+              <div
+                style={{
+                  fontWeight: 700,
+                  fontSize: 13,
+                  marginBottom: 3,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  color:
+                    t.type === 'success'
+                      ? '#22c55e'
+                      : t.type === 'warning'
+                        ? '#ef4444'
+                        : '#60a5fa',
+                }}
+              >
+                <span>{t.type === 'success' ? '✓' : t.type === 'warning' ? '✕' : '🔔'}</span>
+                {t.title}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted, #94a3b8)', lineHeight: 1.4 }}>
+                {t.message}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setToasts((prev) => prev.filter((item) => item.id !== t.id))}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-muted, #94a3b8)',
+                cursor: 'pointer',
+                padding: 2,
+              }}
+            >
+              <X size={14} />
+            </button>
+          </div>
+        ))}
+      </div>
+
       {/* Full-Height Left Sidebar (Starts at top: 0, bottom: 0 - Never cut off) */}
       <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
         <div className="sidebar-brand">

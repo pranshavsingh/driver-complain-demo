@@ -16,11 +16,13 @@ import {
 } from '../components/Icons';
 import * as api from '../api/endpoints';
 import { useAuth } from '../auth/AuthContext';
+import { useRealtime } from '../realtime/RealtimeProvider';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { useApiResource } from '../hooks/useApiResource';
 
 export function UsersPage(): ReactElement {
   const { user: currentUser } = useAuth();
+  const { subscribeCustom } = useRealtime();
   const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
 
   const [activeTab, setActiveTab] = useState<'directory' | 'pending'>('directory');
@@ -50,6 +52,27 @@ export function UsersPage(): ReactElement {
 
   const usersResource = useApiResource('users:list', () => api.users.list());
   const usersList: UserPublic[] = usersResource.data ?? [];
+
+  // Realtime live update on any user creation / approval / rejection
+  useEffect(() => {
+    const handleUserEvent = () => {
+      void usersResource.reload();
+    };
+
+    const unsubReq = subscribeCustom('user:approval-requested', handleUserEvent);
+    const unsubAppr = subscribeCustom('user:approved', handleUserEvent);
+    const unsubRej = subscribeCustom('user:rejected', handleUserEvent);
+    const unsubCreate = subscribeCustom('user:created', handleUserEvent);
+    const unsubUpdate = subscribeCustom('user:updated', handleUserEvent);
+
+    return () => {
+      unsubReq();
+      unsubAppr();
+      unsubRej();
+      unsubCreate();
+      unsubUpdate();
+    };
+  }, [subscribeCustom, usersResource]);
 
   const pendingUsers = usersList.filter((u) => u.approvalStatus === 'PENDING_APPROVAL');
 

@@ -11,6 +11,7 @@ import { prisma } from '../../lib/prisma';
 import { toUserPublic, toAdminSummary } from '../../lib/serializers';
 import { ApiError } from '../../errors/api-error';
 import { hashPin } from '../../lib/password';
+import { emitToRoles, emitEventToUsers } from '../../realtime/socket';
 
 export interface Actor {
   id: string;
@@ -125,6 +126,61 @@ export async function createUser(actor: Actor, input: CreateUser): Promise<UserP
     }
 
     return newUser;
+  });
+
+  // Realtime Broadcasts & Notifications
+  if (user.approvalStatus === 'PENDING_APPROVAL') {
+    // Notify all SuperAdmins
+    const superAdmins = await prisma.user.findMany({
+      where: { role: 'SUPER_ADMIN', isActive: true },
+      select: { id: true },
+    });
+
+    if (superAdmins.length > 0) {
+      await prisma.notification.createMany({
+        data: superAdmins.map((sa) => ({
+          userId: sa.id,
+          type: 'USER_APPROVAL_REQUESTED',
+          title: 'New Driver Approval Request',
+          body: `Driver ${user.firstName} ${user.lastName} (${user.employeeId}) submitted by Admin for approval.`,
+          data: { userId: user.id, employeeId: user.employeeId, role: user.role },
+        })),
+      });
+
+      for (const sa of superAdmins) {
+        emitEventToUsers([sa.id], 'notification:new', {
+          id: `notif-${user.id}-${Date.now()}`,
+          userId: sa.id,
+          type: 'USER_APPROVAL_REQUESTED',
+          title: 'New Driver Approval Request',
+          body: `Driver ${user.firstName} ${user.lastName} (${user.employeeId}) submitted by Admin for approval.`,
+          createdAt: new Date().toISOString(),
+          isRead: false,
+        });
+      }
+    }
+
+    emitToRoles(['SUPER_ADMIN', 'ADMIN'], 'user:approval-requested', {
+      userId: user.id,
+      employeeId: user.employeeId,
+      name: `${user.firstName} ${user.lastName}`,
+      role: user.role,
+      approvalStatus: user.approvalStatus,
+      createdByAdminId: user.createdByAdminId,
+      action: 'APPROVAL_REQUESTED',
+      at: new Date().toISOString(),
+    });
+  }
+
+  emitToRoles(['SUPER_ADMIN', 'ADMIN'], 'user:created', {
+    userId: user.id,
+    employeeId: user.employeeId,
+    name: `${user.firstName} ${user.lastName}`,
+    role: user.role,
+    approvalStatus: user.approvalStatus,
+    createdByAdminId: user.createdByAdminId,
+    action: 'CREATED',
+    at: new Date().toISOString(),
   });
 
   return toUserPublic(user);
@@ -272,6 +328,50 @@ export async function approveUser(userId: string): Promise<UserPublic> {
     },
   });
 
+  // If created by an Admin, notify that Admin
+  if (user.createdByAdminId) {
+    await prisma.notification.create({
+      data: {
+        userId: user.createdByAdminId,
+        type: 'USER_APPROVED',
+        title: 'Driver Approved',
+        body: `Driver ${updated.firstName} ${updated.lastName} (${updated.employeeId}) has been approved by SuperAdmin.`,
+        data: { userId: updated.id, employeeId: updated.employeeId },
+      },
+    });
+
+    emitEventToUsers([user.createdByAdminId], 'notification:new', {
+      id: `notif-${updated.id}-appr-${Date.now()}`,
+      userId: user.createdByAdminId,
+      type: 'USER_APPROVED',
+      title: 'Driver Approved',
+      body: `Driver ${updated.firstName} ${updated.lastName} (${updated.employeeId}) has been approved by SuperAdmin.`,
+      createdAt: new Date().toISOString(),
+      isRead: false,
+    });
+  }
+
+  // Realtime Broadcasts to SuperAdmin and Admin roles
+  emitToRoles(['SUPER_ADMIN', 'ADMIN'], 'user:approved', {
+    userId: updated.id,
+    employeeId: updated.employeeId,
+    name: `${updated.firstName} ${updated.lastName}`,
+    role: updated.role,
+    approvalStatus: updated.approvalStatus,
+    action: 'APPROVED',
+    at: new Date().toISOString(),
+  });
+
+  emitToRoles(['SUPER_ADMIN', 'ADMIN'], 'user:updated', {
+    userId: updated.id,
+    employeeId: updated.employeeId,
+    name: `${updated.firstName} ${updated.lastName}`,
+    role: updated.role,
+    approvalStatus: updated.approvalStatus,
+    action: 'UPDATED',
+    at: new Date().toISOString(),
+  });
+
   return toUserPublic(updated);
 }
 
@@ -285,6 +385,50 @@ export async function rejectUser(userId: string): Promise<UserPublic> {
       approvalStatus: 'REJECTED',
       isActive: false,
     },
+  });
+
+  // If created by an Admin, notify that Admin
+  if (user.createdByAdminId) {
+    await prisma.notification.create({
+      data: {
+        userId: user.createdByAdminId,
+        type: 'USER_REJECTED',
+        title: 'Driver Approval Rejected',
+        body: `Driver ${updated.firstName} ${updated.lastName} (${updated.employeeId}) was rejected by SuperAdmin.`,
+        data: { userId: updated.id, employeeId: updated.employeeId },
+      },
+    });
+
+    emitEventToUsers([user.createdByAdminId], 'notification:new', {
+      id: `notif-${updated.id}-rej-${Date.now()}`,
+      userId: user.createdByAdminId,
+      type: 'USER_REJECTED',
+      title: 'Driver Approval Rejected',
+      body: `Driver ${updated.firstName} ${updated.lastName} (${updated.employeeId}) was rejected by SuperAdmin.`,
+      createdAt: new Date().toISOString(),
+      isRead: false,
+    });
+  }
+
+  // Realtime Broadcasts to SuperAdmin and Admin roles
+  emitToRoles(['SUPER_ADMIN', 'ADMIN'], 'user:rejected', {
+    userId: updated.id,
+    employeeId: updated.employeeId,
+    name: `${updated.firstName} ${updated.lastName}`,
+    role: updated.role,
+    approvalStatus: updated.approvalStatus,
+    action: 'REJECTED',
+    at: new Date().toISOString(),
+  });
+
+  emitToRoles(['SUPER_ADMIN', 'ADMIN'], 'user:updated', {
+    userId: updated.id,
+    employeeId: updated.employeeId,
+    name: `${updated.firstName} ${updated.lastName}`,
+    role: updated.role,
+    approvalStatus: updated.approvalStatus,
+    action: 'UPDATED',
+    at: new Date().toISOString(),
   });
 
   return toUserPublic(updated);
@@ -328,6 +472,16 @@ export async function updateUser(userId: string, input: UpdateUser): Promise<Use
       ...(input.category !== undefined && { category: input.category }),
       ...(input.isActive !== undefined && { isActive: input.isActive }),
     },
+  });
+
+  emitToRoles(['SUPER_ADMIN', 'ADMIN'], 'user:updated', {
+    userId: updated.id,
+    employeeId: updated.employeeId,
+    name: `${updated.firstName} ${updated.lastName}`,
+    role: updated.role,
+    approvalStatus: updated.approvalStatus,
+    action: 'UPDATED',
+    at: new Date().toISOString(),
   });
 
   return toUserPublic(updated);

@@ -420,8 +420,11 @@ export const support = {
     request(z.any(), '/support/unread-count'),
 };
 
-
-
-
-
-
+export const notifications = {
+  list: (query?: { page?: number; pageSize?: number; unreadOnly?: boolean }): Promise<any> =>
+    request(z.any(), '/notifications', { query: query as Record<string, QueryValue> }),
+  markRead: (id: string): Promise<any> =>
+    request(z.any(), `/notifications/${id}/read`, { method: 'PATCH' }),
+  markAllRead: (): Promise<{ updated: number }> =>
+    request(z.any(), '/notifications/read-all', { method: 'POST' }),
+};

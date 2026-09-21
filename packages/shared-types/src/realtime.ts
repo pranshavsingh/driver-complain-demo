@@ -15,6 +15,12 @@ export const REALTIME_EVENTS = {
   complaintAssigned: 'complaint:assigned',
   loadingReached: 'loading:reached',
   loadingCompleted: 'loading:completed',
+  userCreated: 'user:created',
+  userApprovalRequested: 'user:approval-requested',
+  userApproved: 'user:approved',
+  userRejected: 'user:rejected',
+  userUpdated: 'user:updated',
+  notificationNew: 'notification:new',
 } as const;
 export type RealtimeEvent = (typeof REALTIME_EVENTS)[keyof typeof REALTIME_EVENTS];
 
@@ -28,3 +34,28 @@ export const ComplaintEventPayloadSchema = z.object({
   at: z.string(),
 });
 export type ComplaintEventPayload = z.infer<typeof ComplaintEventPayloadSchema>;
+
+export const UserEventPayloadSchema = z.object({
+  userId: z.string(),
+  employeeId: z.string(),
+  name: z.string(),
+  role: z.string(),
+  approvalStatus: z.string(),
+  createdByAdminId: z.string().nullable().optional(),
+  action: z.enum(['CREATED', 'APPROVAL_REQUESTED', 'APPROVED', 'REJECTED', 'UPDATED']),
+  at: z.string(),
+});
+export type UserEventPayload = z.infer<typeof UserEventPayloadSchema>;
+
+export const NotificationNewPayloadSchema = z.object({
+  id: z.string(),
+  userId: z.string(),
+  type: z.string(),
+  title: z.string(),
+  body: z.string(),
+  isRead: z.boolean().default(false),
+  createdAt: z.string(),
+  data: z.record(z.string(), z.unknown()).optional(),
+});
+export type NotificationNewPayload = z.infer<typeof NotificationNewPayloadSchema>;
+

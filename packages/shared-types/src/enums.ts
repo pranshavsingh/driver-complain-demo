@@ -42,6 +42,9 @@ export const NotificationTypeSchema = z.enum([
   'SPARE_PART_ISSUED',
   'SPARE_PART_REJECTED',
   'SUPPORT_MESSAGE_RECEIVED',
+  'USER_APPROVAL_REQUESTED',
+  'USER_APPROVED',
+  'USER_REJECTED',
 ]);
 export type NotificationType = z.infer<typeof NotificationTypeSchema>;
 export const NOTIFICATION_TYPES = NotificationTypeSchema.options;
