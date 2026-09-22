@@ -321,6 +321,16 @@ export async function create(
     at: new Date().toISOString(),
   });
 
+  emitToRoles(['SUPER_ADMIN', 'ADMIN', 'EXECUTIVE'], 'notification:new', {
+    id: `notif-${created.id}`,
+    type: 'COMPLAINT_CREATED',
+    title: `New complaint ${created.complaintNo}`,
+    body: created.title,
+    isRead: false,
+    createdAt: new Date().toISOString(),
+    data: { complaintId: created.id, type: 'COMPLAINT_CREATED' },
+  });
+
   return toComplaintPublic(created);
 }
 
@@ -595,22 +605,26 @@ export async function updateStatus(
   });
 
   // Tell the driver their complaint moved or was updated. Post-commit, best-effort.
+  const statusPayload = {
+    complaintId: updated.id,
+    complaintNo: updated.complaintNo,
+    title: updated.title,
+    status: updated.status,
+    at: new Date().toISOString(),
+  };
+
   dispatchComplaintEvent({
     userIds: [existing.driver.userId],
     event: REALTIME_EVENTS.complaintStatusChanged,
-    payload: {
-      complaintId: updated.id,
-      complaintNo: updated.complaintNo,
-      title: updated.title,
-      status: updated.status,
-      at: new Date().toISOString(),
-    },
+    payload: statusPayload,
     push: {
       title: notifTitle,
       body: notifBody,
       data: { complaintId: updated.id, type: notifType, status: to },
     },
   });
+
+  emitToRoles(['SUPER_ADMIN', 'ADMIN', 'EXECUTIVE'], REALTIME_EVENTS.complaintStatusChanged, statusPayload);
 
   return toComplaintPublic(updated);
 }
@@ -695,16 +709,18 @@ export async function assign(
   });
 
   // Notify target user
+  const assignPayload = {
+    complaintId: updated.id,
+    complaintNo: updated.complaintNo,
+    title: updated.title,
+    status: updated.status,
+    at: new Date().toISOString(),
+  };
+
   dispatchComplaintEvent({
     userIds: [target.id],
     event: REALTIME_EVENTS.complaintAssigned,
-    payload: {
-      complaintId: updated.id,
-      complaintNo: updated.complaintNo,
-      title: updated.title,
-      status: updated.status,
-      at: new Date().toISOString(),
-    },
+    payload: assignPayload,
     push: {
       title: isRequestingSuperAdmin
         ? `Assignment Request for ${existing.complaintNo}`
@@ -715,6 +731,8 @@ export async function assign(
       data: { complaintId: updated.id, type: isRequestingSuperAdmin ? 'ASSIGNMENT_REQUESTED' : 'ASSIGNED' },
     },
   });
+
+  emitToRoles(['SUPER_ADMIN', 'ADMIN', 'EXECUTIVE'], REALTIME_EVENTS.complaintAssigned, assignPayload);
 
   return toComplaintPublic(updated);
 }
@@ -795,6 +813,14 @@ export async function acceptAssignment(
       },
     });
   }
+
+  emitToRoles(['SUPER_ADMIN', 'ADMIN', 'EXECUTIVE'], REALTIME_EVENTS.complaintAssigned, {
+    complaintId: updated.id,
+    complaintNo: updated.complaintNo,
+    title: updated.title,
+    status: updated.status,
+    at: new Date().toISOString(),
+  });
 
   return toComplaintPublic(updated);
 }
@@ -878,6 +904,14 @@ export async function rejectAssignment(
       },
     });
   }
+
+  emitToRoles(['SUPER_ADMIN', 'ADMIN', 'EXECUTIVE'], REALTIME_EVENTS.complaintAssigned, {
+    complaintId: updated.id,
+    complaintNo: updated.complaintNo,
+    title: updated.title,
+    status: updated.status,
+    at: new Date().toISOString(),
+  });
 
   return toComplaintPublic(updated);
 }

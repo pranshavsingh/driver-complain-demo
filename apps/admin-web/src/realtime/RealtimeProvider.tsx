@@ -123,13 +123,20 @@ export function RealtimeProvider({ children }: { children: ReactNode }): ReactEl
         // Validate against the shared contract: a malformed event is dropped rather than
         // pushed into the UI as a half-populated row.
         const parsed = ComplaintEventPayloadSchema.safeParse(raw);
-        if (!parsed.success) return;
-        for (const handler of handlers.current) handler({ event: event as RealtimeEvent, payload: parsed.data });
+        if (parsed.success) {
+          for (const handler of handlers.current) handler({ event: event as RealtimeEvent, payload: parsed.data });
+        }
+        const matching = customHandlers.current.get(event);
+        if (matching) {
+          for (const handler of matching) handler(raw);
+        }
       });
     }
 
     // Support chat and custom events
     socket.onAny((eventName: string, payload: any) => {
+      const isRegisteredRealtimeEvent = (Object.values(REALTIME_EVENTS) as string[]).includes(eventName);
+      if (isRegisteredRealtimeEvent) return; // Already handled by socket.on
       const matching = customHandlers.current.get(eventName);
       if (matching) {
         for (const handler of matching) {

@@ -117,14 +117,20 @@ export function Layout(): ReactElement {
       .catch(() => {});
   }, [user]);
 
+  const pendingRef = useRef(pendingApprovalsResource);
+  pendingRef.current = pendingApprovalsResource;
+
+  const complaintsRef = useRef(complaintsUnreadResource);
+  complaintsRef.current = complaintsUnreadResource;
+
   // Realtime Live Updates for Approvals, Complaints & Notifications
   useEffect(() => {
     const reloadApprovals = () => {
-      void pendingApprovalsResource.reload();
+      void pendingRef.current.reload();
     };
 
     const reloadComplaintsCount = () => {
-      void complaintsUnreadResource.reload();
+      void complaintsRef.current.reload();
     };
 
     const unsubReq = subscribeCustom('user:approval-requested', (payload: any) => {
@@ -170,10 +176,16 @@ export function Layout(): ReactElement {
       );
     });
 
-    const unsubComplaintStatus = subscribeCustom('complaint:status-changed', reloadComplaintsCount);
-    const unsubComplaintAssigned = subscribeCustom('complaint:assigned', reloadComplaintsCount);
+    const unsubComplaintStatus = subscribeCustom('complaint:status-changed', () => {
+      reloadComplaintsCount();
+    });
+
+    const unsubComplaintAssigned = subscribeCustom('complaint:assigned', () => {
+      reloadComplaintsCount();
+    });
 
     const unsubNotif = subscribeCustom('notification:new', (payload: any) => {
+      reloadComplaintsCount();
       if (payload) {
         setNotifications((prev) => [
           {
@@ -201,7 +213,7 @@ export function Layout(): ReactElement {
       unsubComplaintAssigned();
       unsubNotif();
     };
-  }, [subscribeCustom, pendingApprovalsResource, complaintsUnreadResource, user]);
+  }, [subscribeCustom, user]);
 
   // Close notifications dropdown on click outside
   useEffect(() => {
