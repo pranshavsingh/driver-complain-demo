@@ -43,7 +43,6 @@ export const UserEventPayloadSchema = z.object({
   role: z.string(),
   approvalStatus: z.string(),
   createdByAdminId: z.string().nullable().optional(),
-  action: z.enum(['CREATED', 'APPROVAL_REQUESTED', 'APPROVED', 'REJECTED', 'UPDATED']),
   action: z.enum(['CREATED', 'APPROVAL_REQUESTED', 'APPROVED', 'REJECTED', 'UPDATED', 'DELETED']),
   at: z.string(),
 });
