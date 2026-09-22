@@ -41,6 +41,7 @@ export function UsersPage(): ReactElement {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [category, setCategory] = useState<ComplaintCategory | ''>('');
+  const [selectedAdminId, setSelectedAdminId] = useState('');
   const [licenseNumber, setLicenseNumber] = useState('');
   const [modalError, setModalError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -179,12 +180,13 @@ export function UsersPage(): ReactElement {
   const handleOpenCreate = (): void => {
     setEmployeeId('');
     setPin('');
-    setSelectedRole(isSuperAdmin ? 'ADMIN' : 'DRIVER');
+    setSelectedRole(isSuperAdmin ? 'ADMIN' : 'EXECUTIVE');
     setFirstName('');
     setLastName('');
     setEmail('');
     setPhone('');
     setCategory('');
+    setSelectedAdminId('');
     setLicenseNumber('');
     setModalError(null);
     setEmpIdStatus({ checking: false });
@@ -229,6 +231,11 @@ export function UsersPage(): ReactElement {
       return;
     }
 
+    if ((selectedRole === 'ADMIN' || selectedRole === 'EXECUTIVE') && !category) {
+      setModalError('Please select a category / executive function.');
+      return;
+    }
+
     // Availability validation check
     if (empIdStatus.available === false) {
       setModalError(empIdStatus.message || `Employee ID "${normEmp}" is already taken.`);
@@ -261,7 +268,8 @@ export function UsersPage(): ReactElement {
         email: email.trim() || null,
         phone: phone.trim(),
         category: category ? (category as ComplaintCategory) : null,
-        licenseNumber: licenseNumber.trim() || undefined,
+        licenseNumber: selectedRole === 'DRIVER' ? (licenseNumber.trim() || undefined) : undefined,
+        createdByAdminId: isSuperAdmin && selectedAdminId ? selectedAdminId : undefined,
       });
 
       setShowCreateModal(false);
@@ -482,7 +490,7 @@ export function UsersPage(): ReactElement {
             onClick={handleOpenCreate}
             style={{ display: 'flex', alignItems: 'center', gap: 6 }}
           >
-            <Plus size={16} /> {isSuperAdmin ? 'Create User ID' : 'Register New Driver'}
+            <Plus size={16} /> Create User ID
           </button>
         </div>
       </div>
@@ -1160,16 +1168,42 @@ export function UsersPage(): ReactElement {
                     ) : (
                       <select
                         className="filter-select"
-                        value="DRIVER"
-                        disabled
-                        style={{ width: '100%', padding: '9px 12px', background: 'var(--bg)', color: 'var(--text)' }}
+                        value={selectedRole}
+                        onChange={(e) => setSelectedRole(e.target.value as Role)}
+                        style={{ width: '100%', padding: '9px 12px' }}
                       >
-                        <option value="DRIVER">Driver (Requires SuperAdmin Approval)</option>
+                        <option value="EXECUTIVE">Executive (Category Staff)</option>
+                        <option value="DRIVER">Driver (Mobile App User)</option>
                       </select>
                     )}
                   </div>
 
-                  {isSuperAdmin && (selectedRole === 'ADMIN' || selectedRole === 'EXECUTIVE') && (
+                  {/* Supervising Department Admin Selection for Executive (SuperAdmin view) */}
+                  {isSuperAdmin && selectedRole === 'EXECUTIVE' && (
+                    <div>
+                      <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
+                        Supervising Department Admin (Optional)
+                      </label>
+                      <select
+                        className="filter-select"
+                        value={selectedAdminId}
+                        onChange={(e) => setSelectedAdminId(e.target.value)}
+                        style={{ width: '100%', padding: '9px 12px' }}
+                      >
+                        <option value="">-- Direct SuperAdmin Oversight --</option>
+                        {usersList
+                          .filter((u) => u.role === 'ADMIN' && u.isActive)
+                          .map((a) => (
+                            <option key={a.id} value={a.id}>
+                              {a.firstName} {a.lastName} ({a.employeeId}){a.category ? ` - ${a.category}` : ''}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Category / Executive Function Picker */}
+                  {(selectedRole === 'ADMIN' || selectedRole === 'EXECUTIVE') && (
                     <div
                       style={{
                         backgroundColor: 'var(--bg)',
@@ -1179,23 +1213,30 @@ export function UsersPage(): ReactElement {
                       }}
                     >
                       <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 4 }}>
-                        Assigned Complaint Category (Auto-Routing)
+                        {selectedRole === 'EXECUTIVE' ? 'Executive Function / Department' : 'Assigned Complaint Category'} <span style={{ color: 'var(--danger-text)' }}>*</span>
                       </label>
                       <p style={{ fontSize: 12, color: 'var(--muted)', margin: '0 0 10px 0' }}>
-                        Driver complaints raised under this category will auto-assign directly to this user.
+                        {selectedRole === 'EXECUTIVE'
+                          ? 'Select executive operational department (Spare Parts, Loading, Unloading, Fuel/DEF, Service).'
+                          : 'Driver complaints under this category auto-assign to this Department Admin.'}
                       </p>
                       <select
                         className="filter-select"
                         value={category}
                         onChange={(e) => setCategory(e.target.value as ComplaintCategory)}
                         style={{ width: '100%', padding: '9px 12px' }}
+                        required
                       >
-                        <option value="">-- Select Category --</option>
-                        {COMPLAINT_CATEGORIES.map((cat) => (
-                          <option key={cat} value={cat}>
-                            {cat}
-                          </option>
-                        ))}
+                        <option value="">-- Select Executive Function / Category --</option>
+                        <option value="SUPPORT">📦 Spare Parts Executive (Inventory & Requisition)</option>
+                        <option value="LOADING">🏭 Loading Executive (Plant Loading & Detention)</option>
+                        <option value="UNLOADING">📦 Unloading Executive (Destination Unloading)</option>
+                        <option value="FUEL_DEF">⛽ Fuel / DEF Executive (Fueling & Logs)</option>
+                        <option value="VEHICLE_MAINTENANCE">🔧 Service Executive (Vehicle Servicing & Maintenance)</option>
+                        <option value="BREAKDOWN">🚨 Breakdown Support Executive</option>
+                        <option value="TYRE_ISSUE">🛞 Tyre Issue Executive</option>
+                        <option value="ACCOUNTS">💼 Accounts Executive</option>
+                        <option value="MEDICAL_EMERGENCY">🚑 Medical Emergency Executive</option>
                       </select>
                     </div>
                   )}

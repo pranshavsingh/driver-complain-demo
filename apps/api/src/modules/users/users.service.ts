@@ -41,10 +41,10 @@ export async function createUser(actor: Actor, input: CreateUser): Promise<UserP
     throw ApiError.forbidden('Only admins can create or request user accounts');
   }
 
-  // Admin can only add Drivers for SuperAdmin approval
+  // Admin can register Drivers or Executives for SuperAdmin approval
   if (actor.role === 'ADMIN') {
-    if (input.role !== 'DRIVER') {
-      throw ApiError.forbidden('Admins can only register Drivers for SuperAdmin approval.');
+    if (input.role !== 'DRIVER' && input.role !== 'EXECUTIVE') {
+      throw ApiError.forbidden('Admins can only register Drivers or Executives for SuperAdmin approval.');
     }
   }
 
@@ -98,6 +98,7 @@ export async function createUser(actor: Actor, input: CreateUser): Promise<UserP
   const isSuperAdmin = actor.role === 'SUPER_ADMIN';
   const approvalStatus: ApprovalStatus = isSuperAdmin ? 'APPROVED' : 'PENDING_APPROVAL';
   const isActive = isSuperAdmin;
+  const targetCreatedByAdminId = isSuperAdmin ? (input.createdByAdminId ?? null) : actor.id;
 
   const user = await prisma.$transaction(async (tx) => {
     const newUser = await tx.user.create({
@@ -107,7 +108,7 @@ export async function createUser(actor: Actor, input: CreateUser): Promise<UserP
         role: input.role,
         approvalStatus,
         category: input.category ?? null,
-        createdByAdminId: isSuperAdmin ? null : actor.id,
+        createdByAdminId: targetCreatedByAdminId,
         firstName: input.firstName.trim(),
         lastName: input.lastName.trim(),
         email: normEmail,
@@ -197,9 +198,12 @@ export async function listUsers(
 ): Promise<UserPublic[]> {
   const where: Prisma.UserWhereInput = {};
 
-  // Admin can ONLY see drivers
+  // Admin can see Drivers and Executives created by them
   if (actor.role === 'ADMIN') {
-    where.role = 'DRIVER';
+    where.OR = [
+      { role: 'DRIVER' },
+      { createdByAdminId: actor.id },
+    ];
   } else if (filters?.role) {
     where.role = filters.role;
   }

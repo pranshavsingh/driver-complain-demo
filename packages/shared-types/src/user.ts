@@ -29,6 +29,7 @@ export const CreateUserSchema = z.object({
   phone: z.string().trim().min(7, 'Phone number is required').max(20, 'Phone number is too long'),
   category: ComplaintCategorySchema.nullable().optional(),
   licenseNumber: z.string().trim().max(50).optional(),
+  createdByAdminId: z.string().nullable().optional(),
 });
 export type CreateUser = z.infer<typeof CreateUserSchema>;
 
