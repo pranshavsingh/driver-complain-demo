@@ -41,6 +41,8 @@ complaintsRouter.get(
   complaintsController.exportXlsx,
 );
 
+complaintsRouter.get('/unread-count', complaintsController.getUnreadCount);
+
 complaintsRouter.get('/:id', validateUuidParam('id'), complaintsController.getOne);
 complaintsRouter.patch(
   '/:id/status',

@@ -170,3 +170,9 @@ export async function translate(
   sendSuccess(res, result);
 }
 
+export async function getUnreadCount(req: Request, res: Response): Promise<void> {
+  if (!req.user) throw ApiError.unauthorized();
+  const result = await complaintsService.getUnreadCount({ id: req.user.id, role: req.user.role });
+  sendSuccess(res, result);
+}
+

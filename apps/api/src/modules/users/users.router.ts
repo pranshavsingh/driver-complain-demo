@@ -66,3 +66,11 @@ usersRouter.patch(
   requireRole('SUPER_ADMIN'),
   usersController.updateUser,
 );
+
+usersRouter.delete(
+  '/:id',
+  authenticate,
+  validateUuidParam('id'),
+  requireRole('SUPER_ADMIN'),
+  usersController.deleteUser,
+);

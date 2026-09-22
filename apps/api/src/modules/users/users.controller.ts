@@ -79,3 +79,10 @@ export async function updateUser(req: Request, res: Response): Promise<void> {
   const updated = await usersService.updateUser(id, parsed.data);
   sendSuccess(res, updated);
 }
+
+export async function deleteUser(req: Request, res: Response): Promise<void> {
+  if (!req.user) throw ApiError.unauthorized();
+  const id = req.params.id as string;
+  await usersService.deleteUser(req.user, id);
+  sendSuccess(res, { success: true, message: 'User deleted successfully' });
+}

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   ComplaintDetailSchema,
+  ComplaintPublicSchema,
   DeviceTokenPublicSchema,
   ListComplaintsResponseSchema,
   LoginResponseSchema,
@@ -14,6 +15,7 @@ import {
   ListMaintenanceRecordsResponseSchema,
   type ActiveLoadingResponse,
   type ComplaintDetail,
+  type ComplaintPublic,
   type CreateComplaint,
   type DeviceTokenPublic,
   type ListComplaintsResponse,
@@ -118,7 +120,7 @@ function appendFile(form: FormData, fieldName: string, file: FileToUpload): void
 }
 
 export const complaints = {
-  create: async (input: CreateComplaint, evidence?: EvidenceUpload): Promise<ComplaintDetail> => {
+  create: async (input: CreateComplaint, evidence?: EvidenceUpload): Promise<ComplaintPublic> => {
     await warmUpServer();
 
     const form = new FormData();
@@ -134,7 +136,7 @@ export const complaints = {
     if (evidence?.voice) appendFile(form, 'voice', evidence.voice);
     if (evidence?.video) appendFile(form, 'video', evidence.video);
 
-    return request(ComplaintDetailSchema, '/complaints', {
+    return request(ComplaintPublicSchema, '/complaints', {
       method: 'POST',
       body: form,
     });

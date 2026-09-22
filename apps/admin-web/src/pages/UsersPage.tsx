@@ -9,6 +9,7 @@ import {
   ShieldAlert,
   Plus,
   Edit2,
+  Trash2,
   UserCheck,
   UserX,
   CheckCircle2,
@@ -54,6 +55,7 @@ export function UsersPage(): ReactElement {
   const usersList: UserPublic[] = usersResource.data ?? [];
 
   // Realtime live update on any user creation / approval / rejection
+  // Realtime live update on any user creation / approval / rejection / deletion
   useEffect(() => {
     const handleUserEvent = () => {
       void usersResource.reload();
@@ -64,6 +66,7 @@ export function UsersPage(): ReactElement {
     const unsubRej = subscribeCustom('user:rejected', handleUserEvent);
     const unsubCreate = subscribeCustom('user:created', handleUserEvent);
     const unsubUpdate = subscribeCustom('user:updated', handleUserEvent);
+    const unsubDel = subscribeCustom('user:deleted', handleUserEvent);
 
     return () => {
       unsubReq();
@@ -71,6 +74,7 @@ export function UsersPage(): ReactElement {
       unsubRej();
       unsubCreate();
       unsubUpdate();
+      unsubDel();
     };
   }, [subscribeCustom, usersResource]);
 
@@ -78,6 +82,9 @@ export function UsersPage(): ReactElement {
 
   const filteredUsers = usersList.filter((u) => {
     if (activeTab === 'pending') return u.approvalStatus === 'PENDING_APPROVAL';
+
+    // Do NOT show rejected drivers / users in User Directory
+    if (u.approvalStatus === 'REJECTED') return false;
 
     if (roleFilter !== 'ALL' && u.role !== roleFilter) return false;
 
@@ -302,6 +309,29 @@ export function UsersPage(): ReactElement {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       alert(msg || `Failed to ${actionLabel} user`);
+    }
+  };
+
+  const handleDeleteUser = async (targetUser: UserPublic): Promise<void> => {
+    if (!isSuperAdmin) return;
+    if (currentUser?.id === targetUser.id) {
+      alert('You cannot delete your own SuperAdmin account.');
+      return;
+    }
+    if (
+      !confirm(
+        `Are you sure you want to permanently delete user "${targetUser.firstName} ${targetUser.lastName}" (${targetUser.employeeId})? This action cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+
+    try {
+      await api.users.remove(targetUser.id);
+      void usersResource.reload();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      alert(msg || 'Failed to delete user');
     }
   };
 
@@ -857,6 +887,27 @@ export function UsersPage(): ReactElement {
                             title="Edit user details"
                           >
                             <Edit2 size={13} />
+                          </button>
+                        )}
+
+                        {/* Delete User for SuperAdmin */}
+                        {isSuperAdmin && (
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            style={{
+                              padding: '6px 10px',
+                              borderRadius: 6,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              color: 'var(--danger-text, #ef4444)',
+                              borderColor: 'var(--danger-border, #fca5a5)',
+                            }}
+                            onClick={() => handleDeleteUser(u)}
+                            title="Delete user account"
+                          >
+                            <Trash2 size={13} />
                           </button>
                         )}
                       </div>

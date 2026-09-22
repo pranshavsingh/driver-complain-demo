@@ -21,6 +21,7 @@ import { transcribeAudio, transcribeAudioFromUrl, translateText } from '../../li
 import { getActiveAdminUserIds } from '../../lib/admin-cache';
 import { logger } from '../../lib/logger';
 import { ApiError } from '../../errors/api-error';
+import { emitToRoles } from '../../realtime/socket';
 
 async function findLeastLoadedAdmin(category: string): Promise<string | null> {
   const admins = await prisma.user.findMany({
@@ -310,6 +311,14 @@ export async function create(
       body: created.title,
       data: { complaintId: created.id, type: 'COMPLAINT_CREATED' },
     },
+  });
+
+  emitToRoles(['SUPER_ADMIN', 'ADMIN', 'EXECUTIVE'], REALTIME_EVENTS.complaintCreated, {
+    complaintId: created.id,
+    complaintNo: created.complaintNo,
+    title: created.title,
+    status: created.status,
+    at: new Date().toISOString(),
   });
 
   return toComplaintPublic(created);
@@ -926,4 +935,21 @@ export async function translateComplaintText(
   }
   const translatedText = await translateText(text, targetLang);
   return { text, translatedText, targetLang };
+}
+
+export async function getUnreadCount(actor: Actor): Promise<{ unreadCount: number }> {
+  const where: Prisma.ComplaintWhereInput = {};
+
+  if (actor.role === 'DRIVER') {
+    const driver = await prisma.driver.findUnique({ where: { userId: actor.id } });
+    if (!driver) return { unreadCount: 0 };
+    where.driverId = driver.id;
+    where.status = 'NEW';
+  } else {
+    // For Admins / SuperAdmins / Executives
+    where.status = 'NEW';
+  }
+
+  const unreadCount = await prisma.complaint.count({ where });
+  return { unreadCount };
 }

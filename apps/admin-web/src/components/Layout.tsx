@@ -83,6 +83,11 @@ export function Layout(): ReactElement {
   );
   const pendingCount = pendingApprovalsResource.data?.pendingCount ?? 0;
 
+  const complaintsUnreadResource = useApiResource('complaints:unreadCount', () =>
+    api.complaints.unreadCount(),
+  );
+  const unreadComplaintsCount = complaintsUnreadResource.data?.unreadCount ?? 0;
+
   const showToast = (title: string, message: string, type: 'info' | 'success' | 'warning' = 'info') => {
     const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     setToasts((prev) => [...prev, { id, title, message, type }]);
@@ -112,10 +117,14 @@ export function Layout(): ReactElement {
       .catch(() => {});
   }, [user]);
 
-  // Realtime Live Updates for Approvals & Notifications
+  // Realtime Live Updates for Approvals, Complaints & Notifications
   useEffect(() => {
     const reloadApprovals = () => {
       void pendingApprovalsResource.reload();
+    };
+
+    const reloadComplaintsCount = () => {
+      void complaintsUnreadResource.reload();
     };
 
     const unsubReq = subscribeCustom('user:approval-requested', (payload: any) => {
@@ -149,6 +158,20 @@ export function Layout(): ReactElement {
 
     const unsubCreate = subscribeCustom('user:created', reloadApprovals);
     const unsubUpdate = subscribeCustom('user:updated', reloadApprovals);
+    const unsubDel = subscribeCustom('user:deleted', reloadApprovals);
+
+    // Complaint Realtime Listeners for Live Unread Count Badge
+    const unsubComplaintCreated = subscribeCustom('complaint:created', (payload: any) => {
+      reloadComplaintsCount();
+      showToast(
+        'New Complaint Registered',
+        payload?.title ? `[${payload.complaintNo ?? 'CMP'}] ${payload.title}` : 'A new driver complaint has been registered.',
+        'info',
+      );
+    });
+
+    const unsubComplaintStatus = subscribeCustom('complaint:status-changed', reloadComplaintsCount);
+    const unsubComplaintAssigned = subscribeCustom('complaint:assigned', reloadComplaintsCount);
 
     const unsubNotif = subscribeCustom('notification:new', (payload: any) => {
       if (payload) {
@@ -172,9 +195,13 @@ export function Layout(): ReactElement {
       unsubRej();
       unsubCreate();
       unsubUpdate();
+      unsubDel();
+      unsubComplaintCreated();
+      unsubComplaintStatus();
+      unsubComplaintAssigned();
       unsubNotif();
     };
-  }, [subscribeCustom, pendingApprovalsResource, user]);
+  }, [subscribeCustom, pendingApprovalsResource, complaintsUnreadResource, user]);
 
   // Close notifications dropdown on click outside
   useEffect(() => {
@@ -360,9 +387,32 @@ export function Layout(): ReactElement {
           <NavLink
             to="/complaints"
             className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
           >
-            <ClipboardList size={18} className="nav-icon" />
-            <span className="nav-label">Complaints</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <ClipboardList size={18} className="nav-icon" />
+              <span className="nav-label">Complaints</span>
+            </div>
+            {unreadComplaintsCount > 0 ? (
+              <span
+                style={{
+                  backgroundColor: 'var(--danger-text)',
+                  color: '#ffffff',
+                  fontSize: 10,
+                  fontWeight: 800,
+                  padding: '2px 7px',
+                  borderRadius: 10,
+                  marginLeft: 'auto',
+                  minWidth: 18,
+                  textAlign: 'center',
+                  lineHeight: '13px',
+                  boxShadow: '0 2px 5px rgba(239, 68, 68, 0.4)',
+                }}
+                title={`${unreadComplaintsCount} unread/new complaints waiting for review`}
+              >
+                {unreadComplaintsCount}
+              </span>
+            ) : null}
           </NavLink>
 
           <NavLink

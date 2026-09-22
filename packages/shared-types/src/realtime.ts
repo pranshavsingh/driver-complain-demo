@@ -20,6 +20,7 @@ export const REALTIME_EVENTS = {
   userApproved: 'user:approved',
   userRejected: 'user:rejected',
   userUpdated: 'user:updated',
+  userDeleted: 'user:deleted',
   notificationNew: 'notification:new',
 } as const;
 export type RealtimeEvent = (typeof REALTIME_EVENTS)[keyof typeof REALTIME_EVENTS];
@@ -43,6 +44,7 @@ export const UserEventPayloadSchema = z.object({
   approvalStatus: z.string(),
   createdByAdminId: z.string().nullable().optional(),
   action: z.enum(['CREATED', 'APPROVAL_REQUESTED', 'APPROVED', 'REJECTED', 'UPDATED']),
+  action: z.enum(['CREATED', 'APPROVAL_REQUESTED', 'APPROVED', 'REJECTED', 'UPDATED', 'DELETED']),
   at: z.string(),
 });
 export type UserEventPayload = z.infer<typeof UserEventPayloadSchema>;

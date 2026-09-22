@@ -160,6 +160,8 @@ export const users = {
     request(UserPublicSchema, `/users/${id}/reject`, { method: 'POST' }),
   update: (id: string, input: UpdateUser): Promise<UserPublic> =>
     request(UserPublicSchema, `/users/${id}`, { method: 'PATCH', body: input }),
+  remove: (id: string): Promise<void> =>
+    requestNoContent(`/users/${id}`, { method: 'DELETE' }),
 };
 
 export const drivers = {
@@ -234,6 +236,9 @@ export const complaints = {
   /** Streams the filtered result set as .xlsx — the same filters the list is showing. */
   exportXlsx: (filter: ComplaintFilterInput): Promise<void> =>
     download('/complaints/export', { query: toQuery(filter) }, 'complaints.xlsx'),
+
+  unreadCount: (): Promise<{ unreadCount: number }> =>
+    request(z.object({ unreadCount: z.number() }), '/complaints/unread-count'),
 };
 
 export interface TripFilterQuery {

@@ -486,3 +486,109 @@ export async function updateUser(userId: string, input: UpdateUser): Promise<Use
 
   return toUserPublic(updated);
 }
+
+export async function deleteUser(actor: Actor, targetUserId: string): Promise<void> {
+  if (actor.role !== 'SUPER_ADMIN') {
+    throw ApiError.forbidden('Only SuperAdmin can delete user accounts.');
+  }
+
+  if (actor.id === targetUserId) {
+    throw ApiError.badRequest('You cannot delete your own SuperAdmin account.');
+  }
+
+  const target = await prisma.user.findUnique({
+    where: { id: targetUserId },
+    include: { driver: true },
+  });
+
+  if (!target) {
+    throw ApiError.notFound('User not found');
+  }
+
+  await prisma.$transaction(async (tx) => {
+    // 1. Unassign createdByAdminId reference for any users created by this admin
+    await tx.user.updateMany({
+      where: { createdByAdminId: targetUserId },
+      data: { createdByAdminId: null },
+    });
+
+    // 2. Unassign assignedToId / pendingAssigneeId on Complaints
+    await tx.complaint.updateMany({
+      where: { assignedToId: targetUserId },
+      data: { assignedToId: null, assignmentStatus: 'NONE' },
+    });
+
+    await tx.complaint.updateMany({
+      where: { pendingAssigneeId: targetUserId },
+      data: { pendingAssigneeId: null },
+    });
+
+    // 3. Handle Driver relations if the user is a driver
+    if (target.driver) {
+      const driverId = target.driver.id;
+
+      // Unassign driver from any vehicles
+      await tx.vehicle.updateMany({
+        where: { driverId },
+        data: { driverId: null },
+      });
+
+      // Find complaints created for this driver
+      const driverComplaints = await tx.complaint.findMany({
+        where: { driverId },
+        select: { id: true },
+      });
+
+      const complaintIds = driverComplaints.map((c) => c.id);
+
+      if (complaintIds.length > 0) {
+        await tx.notification.deleteMany({ where: { complaintId: { in: complaintIds } } });
+        await tx.complaintAttachment.deleteMany({ where: { complaintId: { in: complaintIds } } });
+        await tx.complaintUpdate.deleteMany({ where: { complaintId: { in: complaintIds } } });
+        await tx.loadingRecord.deleteMany({ where: { complaintId: { in: complaintIds } } });
+        await tx.complaint.deleteMany({ where: { id: { in: complaintIds } } });
+      }
+
+      // Delete driver-specific records
+      await tx.loadingRecord.deleteMany({ where: { driverId } });
+      await tx.fuelRecord.deleteMany({ where: { driverId } });
+      await tx.maintenanceRecord.deleteMany({ where: { driverId } });
+      await tx.sparePartRequest.deleteMany({ where: { driverId } });
+      await tx.driver.delete({ where: { id: driverId } });
+    }
+
+    // 4. Delete user-level relations
+    await tx.notification.deleteMany({ where: { userId: targetUserId } });
+    await tx.deviceToken.deleteMany({ where: { userId: targetUserId } });
+    await tx.refreshToken.deleteMany({ where: { userId: targetUserId } });
+    await tx.supportMessage.deleteMany({
+      where: {
+        OR: [{ senderId: targetUserId }, { receiverId: targetUserId }],
+      },
+    });
+
+    // 5. Delete the User record
+    await tx.user.delete({ where: { id: targetUserId } });
+  });
+
+  // 6. Broadcast Realtime Delete Event
+  emitToRoles(['SUPER_ADMIN', 'ADMIN'], 'user:deleted', {
+    userId: targetUserId,
+    employeeId: target.employeeId,
+    name: `${target.firstName} ${target.lastName}`,
+    role: target.role,
+    approvalStatus: target.approvalStatus,
+    action: 'DELETED',
+    at: new Date().toISOString(),
+  });
+
+  emitToRoles(['SUPER_ADMIN', 'ADMIN'], 'user:updated', {
+    userId: targetUserId,
+    employeeId: target.employeeId,
+    name: `${target.firstName} ${target.lastName}`,
+    role: target.role,
+    approvalStatus: target.approvalStatus,
+    action: 'UPDATED',
+    at: new Date().toISOString(),
+  });
+}
