@@ -23,7 +23,48 @@ import { logger } from '../../lib/logger';
 import { ApiError } from '../../errors/api-error';
 import { emitToRoles } from '../../realtime/socket';
 
-async function findLeastLoadedAdmin(category: string): Promise<string | null> {
+async function findLeastLoadedAdmin(category: string, siteInchargeId?: string | null): Promise<string | null> {
+  // If vehicle has a Site In-charge, try to route to an Executive under that Site In-charge first
+  if (siteInchargeId) {
+    const siteExecutives = await prisma.user.findMany({
+      where: {
+        role: { in: ['ADMIN', 'EXECUTIVE'] },
+        isActive: true,
+        approvalStatus: 'APPROVED',
+        category: category as Prisma.EnumComplaintCategoryFilter,
+        OR: [
+          { createdByAdminId: siteInchargeId },
+          { id: siteInchargeId },
+        ],
+      },
+      select: { id: true },
+    });
+
+    if (siteExecutives.length > 0) {
+      if (siteExecutives.length === 1) return siteExecutives[0]!.id;
+      const counts = await prisma.complaint.groupBy({
+        by: ['assignedToId'],
+        where: {
+          assignedToId: { in: siteExecutives.map((e) => e.id) },
+          status: { in: ['NEW', 'IN_PROGRESS'] },
+        },
+        _count: { id: true },
+      });
+      const loadMap = new Map<string | null, number>(counts.map((c) => [c.assignedToId, c._count.id]));
+      let minLoad = Infinity;
+      let bestExec: string | null = null;
+      for (const exec of siteExecutives) {
+        const load = loadMap.get(exec.id) ?? 0;
+        if (load < minLoad) {
+          minLoad = load;
+          bestExec = exec.id;
+        }
+      }
+      if (bestExec) return bestExec;
+    }
+  }
+
+  // System-wide fallback: pick least loaded executive/admin across the system
   const admins = await prisma.user.findMany({
     where: {
       role: { in: ['ADMIN', 'SUPER_ADMIN', 'EXECUTIVE'] },
@@ -34,7 +75,7 @@ async function findLeastLoadedAdmin(category: string): Promise<string | null> {
     select: { id: true },
   });
 
-  if (admins.length === 0) return null;
+  if (admins.length === 0) return siteInchargeId ?? null;
   if (admins.length === 1) return admins[0]!.id;
 
   const counts = await prisma.complaint.groupBy({
@@ -59,7 +100,7 @@ async function findLeastLoadedAdmin(category: string): Promise<string | null> {
   }
 
   logger.debug({ category, bestAdmin, minLoad, candidates: admins.length }, 'Load-balanced admin assignment');
-  return bestAdmin;
+  return bestAdmin ?? siteInchargeId ?? null;
 }
 
 /** The authenticated caller, as far as the complaint layer is concerned. */
@@ -162,9 +203,18 @@ export async function create(
     }
   }
 
+  let siteInchargeIdForVehicle: string | null = null;
+  if (vehicleIdToUse) {
+    const vRecord = await prisma.vehicle.findUnique({
+      where: { id: vehicleIdToUse },
+      select: { siteInchargeId: true },
+    });
+    siteInchargeIdForVehicle = vRecord?.siteInchargeId ?? null;
+  }
+
   const categoryToUse = input.category ?? 'SUPPORT';
-  // Load-balanced admin assignment — picks the admin with fewest active complaints.
-  const autoAssignedToId = await findLeastLoadedAdmin(categoryToUse);
+  // Route to executive under vehicle's Site In-charge first, or least loaded admin.
+  const autoAssignedToId = await findLeastLoadedAdmin(categoryToUse, siteInchargeIdForVehicle);
 
   const year = new Date().getFullYear();
   const adminIds = await getActiveAdminUserIds();
@@ -344,7 +394,13 @@ function buildWhere(
 
   if (actor.role === 'DRIVER') {
     where.driverId = actorDriverId;
-  } else if (actor.role === 'ADMIN' || actor.role === 'EXECUTIVE') {
+  } else if (actor.role === 'ADMIN') {
+    where.OR = [
+      { assignedToId: actor.id },
+      { vehicle: { siteInchargeId: actor.id } },
+      { assignedTo: { createdByAdminId: actor.id } },
+    ];
+  } else if (actor.role === 'EXECUTIVE') {
     where.assignedToId = actor.id;
   } else if (query.driverId) {
     where.driverId = query.driverId;

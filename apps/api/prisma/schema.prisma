@@ -131,6 +131,7 @@ model User {
   issuedSpareParts        SparePartRequest[]    @relation("SparePartIssuedBy")
   sentSupportMessages     SupportMessage[]      @relation("SentSupportMessages")
   receivedSupportMessages SupportMessage[]      @relation("ReceivedSupportMessages")
+  siteInchargeVehicles    Vehicle[]             @relation("SiteInchargeVehicles")
 
   @@index([role])
   @@index([approvalStatus])
@@ -157,6 +158,8 @@ model Vehicle {
   id               String    @id @default(uuid(7)) @db.Uuid
   driverId         String?   @db.Uuid
   driver           Driver?   @relation(fields: [driverId], references: [id], onDelete: SetNull)
+  siteInchargeId   String?   @db.Uuid
+  siteIncharge     User?     @relation("SiteInchargeVehicles", fields: [siteInchargeId], references: [id], onDelete: SetNull)
   plateNumber      String    @unique
   make             String?
   model            String?
@@ -176,6 +179,7 @@ model Vehicle {
   sparePartRequests  SparePartRequest[]
 
   @@index([driverId])
+  @@index([siteInchargeId])
 }
 
 model Complaint {

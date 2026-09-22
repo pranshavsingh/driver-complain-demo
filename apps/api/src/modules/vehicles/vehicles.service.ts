@@ -51,6 +51,7 @@ export async function list(query?: VehicleFilterQuery): Promise<VehiclePublic[]>
           user: true,
         },
       },
+      siteIncharge: true,
     },
     orderBy: { createdAt: 'desc' },
   });
@@ -74,6 +75,7 @@ export async function listForUser(userId: string): Promise<VehiclePublic[]> {
           user: true,
         },
       },
+      siteIncharge: true,
     },
     orderBy: { plateNumber: 'asc' },
   });
@@ -90,6 +92,7 @@ export async function getById(id: string): Promise<VehiclePublic> {
           user: true,
         },
       },
+      siteIncharge: true,
     },
   });
   if (!vehicle) throw ApiError.notFound('Vehicle not found');
@@ -150,6 +153,8 @@ export async function create(input: CreateVehicle): Promise<VehiclePublic> {
     }
   }
 
+  const targetSiteInchargeId = input.siteInchargeId?.trim() ? input.siteInchargeId.trim() : null;
+
   const vehicle = await prisma.vehicle.create({
     data: {
       plateNumber: normalizedPlate,
@@ -163,6 +168,7 @@ export async function create(input: CreateVehicle): Promise<VehiclePublic> {
       year: input.year ?? null,
       vin: input.vin?.trim() || input.chassisNumber?.trim() || null,
       driverId: targetDriverId,
+      siteInchargeId: targetSiteInchargeId,
     },
     include: {
       driver: {
@@ -170,6 +176,7 @@ export async function create(input: CreateVehicle): Promise<VehiclePublic> {
           user: true,
         },
       },
+      siteIncharge: true,
     },
   });
 
@@ -280,6 +287,9 @@ export async function update(id: string, input: UpdateVehicle): Promise<VehicleP
   if (input.agreementStatus !== undefined) data.agreementStatus = input.agreementStatus?.trim() || 'FMS Pack 1';
   if (input.year !== undefined) data.year = input.year ?? null;
   if (input.vin !== undefined) data.vin = input.vin?.trim() || null;
+  if ('siteInchargeId' in input && input.siteInchargeId !== undefined) {
+    data.siteInchargeId = input.siteInchargeId?.trim() ? input.siteInchargeId.trim() : null;
+  }
 
   // 3. Check Driver 1:1 assignment
   const hasDriverIdInInput = 'driverId' in input && input.driverId !== undefined;
@@ -318,6 +328,7 @@ export async function update(id: string, input: UpdateVehicle): Promise<VehicleP
           user: true,
         },
       },
+      siteIncharge: true,
     },
   });
 

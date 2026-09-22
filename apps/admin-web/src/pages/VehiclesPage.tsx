@@ -458,12 +458,17 @@ export function VehiclesPage(): ReactElement {
   const [make, setMake] = useState('');
   const [year, setYear] = useState<string>('');
   const [driverId, setDriverId] = useState<string>('');
+  const [siteInchargeId, setSiteInchargeId] = useState<string>('');
 
   const vehiclesResource = useApiResource('vehicles:list', () => api.vehicles.list());
   const driversResource = useApiResource('drivers:list', () => api.drivers.list());
+  const usersResource = useApiResource('users:admins', () => api.users.list());
 
   const vehiclesList: VehiclePublic[] = vehiclesResource.data ?? [];
   const driversList: DriverListItem[] = driversResource.data ?? [];
+  const siteInchargesList = (usersResource.data ?? []).filter(
+    (u) => (u.role === 'ADMIN' || u.role === 'SUPER_ADMIN') && u.isActive,
+  );
 
   // Map of driverId -> assigned vehicle details (for 1:1 driver assignment enforcement)
   const driverAssignedVehicleMap = useMemo(() => {
@@ -539,6 +544,7 @@ export function VehiclesPage(): ReactElement {
     setMake('');
     setYear(new Date().getFullYear().toString());
     setDriverId('');
+    setSiteInchargeId('');
     setModalError(null);
     setShowModal(true);
   };
@@ -555,6 +561,7 @@ export function VehiclesPage(): ReactElement {
     setMake(vehicle.make || '');
     setYear(vehicle.year ? vehicle.year.toString() : '');
     setDriverId(vehicle.driverId || '');
+    setSiteInchargeId(vehicle.siteInchargeId || '');
     setModalError(null);
     setShowModal(true);
   };
@@ -648,6 +655,7 @@ export function VehiclesPage(): ReactElement {
         year: parsedYear,
         vin: normChassis || undefined,
         driverId: trimmedDriverId ? trimmedDriverId : null,
+        siteInchargeId: siteInchargeId.trim() ? siteInchargeId.trim() : null,
       };
 
       if (editingVehicle) {
@@ -929,6 +937,7 @@ export function VehiclesPage(): ReactElement {
                 <thead>
                   <tr>
                     <th>Vehicle Number</th>
+                    <th>Site In-charge</th>
                     <th>Vehicle Model & Make</th>
                     <th>Model No</th>
                     <th>Registration Date</th>
@@ -960,6 +969,28 @@ export function VehiclesPage(): ReactElement {
                             {vehicle.plateNumber}
                           </span>
                         </div>
+                      </td>
+                      <td>
+                        {vehicle.siteInchargeName ? (
+                          <span
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 5,
+                              fontSize: 12,
+                              fontWeight: 700,
+                              padding: '3px 8px',
+                              borderRadius: 6,
+                              background: 'rgba(59, 130, 246, 0.12)',
+                              color: '#60a5fa',
+                              border: '1px solid rgba(59, 130, 246, 0.3)',
+                            }}
+                          >
+                            👤 {vehicle.siteInchargeName}
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: 12, color: 'var(--muted)' }}>—</span>
+                        )}
                       </td>
                       <td>
                         <div style={{ fontWeight: 700, color: 'var(--text)' }}>
@@ -1267,8 +1298,27 @@ export function VehiclesPage(): ReactElement {
                 </div>
               </div>
 
-              {/* Row 4: Status of Agreements & Assigned Driver */}
+              {/* Row 4: Site In-charge & Status of Agreements */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                <div>
+                  <label style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
+                    Select Under Site In-charge
+                  </label>
+                  <select
+                    className="filter-select"
+                    value={siteInchargeId}
+                    onChange={(e) => setSiteInchargeId(e.target.value)}
+                    style={{ width: '100%', fontWeight: 700 }}
+                  >
+                    <option value="">-- Select Site In-charge (Admin) --</option>
+                    {siteInchargesList.map((admin) => (
+                      <option key={admin.id} value={admin.id}>
+                        {admin.firstName} {admin.lastName} ({admin.employeeId}){admin.category ? ` - ${admin.category}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 <div>
                   <label style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
                     Status of Agreements
@@ -1286,52 +1336,53 @@ export function VehiclesPage(): ReactElement {
                     ))}
                   </select>
                 </div>
+              </div>
 
-                <div>
-                  <label style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                    Assigned Driver
-                  </label>
-                  <select
-                    className="filter-select"
-                    value={driverId}
-                    onChange={(e) => {
-                      const selectedVal = e.target.value;
-                      if (selectedVal) {
-                        const assignedInfo = driverAssignedVehicleMap.get(selectedVal);
-                        if (assignedInfo && assignedInfo.vehicleId !== editingVehicle?.id) {
-                          const driverObj = driversList.find((d) => d.id === selectedVal);
-                          const dName = driverObj ? `${driverObj.firstName} ${driverObj.lastName}` : 'This driver';
-                          alert(
-                            `Driver ${dName} is already assigned on vehicle "${assignedInfo.plateNumber}".\n\nPlease free from vehicle "${assignedInfo.plateNumber}" first then assign to a new vehicle.`
-                          );
-                          setModalError(`Driver ${dName} is already assigned on vehicle "${assignedInfo.plateNumber}". Please free from that vehicle first.`);
-                          setDriverId('');
-                          return;
-                        }
+              {/* Row 4b: Assigned Driver */}
+              <div>
+                <label style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
+                  Assigned Driver
+                </label>
+                <select
+                  className="filter-select"
+                  value={driverId}
+                  onChange={(e) => {
+                    const selectedVal = e.target.value;
+                    if (selectedVal) {
+                      const assignedInfo = driverAssignedVehicleMap.get(selectedVal);
+                      if (assignedInfo && assignedInfo.vehicleId !== editingVehicle?.id) {
+                        const driverObj = driversList.find((d) => d.id === selectedVal);
+                        const dName = driverObj ? `${driverObj.firstName} ${driverObj.lastName}` : 'This driver';
+                        alert(
+                          `Driver ${dName} is already assigned on vehicle "${assignedInfo.plateNumber}".\n\nPlease free from vehicle "${assignedInfo.plateNumber}" first then assign to a new vehicle.`
+                        );
+                        setModalError(`Driver ${dName} is already assigned on vehicle "${assignedInfo.plateNumber}". Please free from that vehicle first.`);
+                        setDriverId('');
+                        return;
                       }
-                      setModalError(null);
-                      setDriverId(selectedVal);
-                    }}
-                    style={{ width: '100%' }}
-                  >
-                    <option value="">-- No Driver (Free / Unassigned Vehicle) --</option>
-                    {driversList.map((d) => {
-                      const assignedInfo = driverAssignedVehicleMap.get(d.id);
-                      const isAssignedElsewhere = Boolean(assignedInfo && assignedInfo.vehicleId !== editingVehicle?.id);
-                      const isAssignedHere = Boolean(assignedInfo && assignedInfo.vehicleId === editingVehicle?.id);
+                    }
+                    setModalError(null);
+                    setDriverId(selectedVal);
+                  }}
+                  style={{ width: '100%' }}
+                >
+                  <option value="">-- No Driver (Free / Unassigned Vehicle) --</option>
+                  {driversList.map((d) => {
+                    const assignedInfo = driverAssignedVehicleMap.get(d.id);
+                    const isAssignedElsewhere = Boolean(assignedInfo && assignedInfo.vehicleId !== editingVehicle?.id);
+                    const isAssignedHere = Boolean(assignedInfo && assignedInfo.vehicleId === editingVehicle?.id);
 
-                      return (
-                        <option
-                          key={d.id}
-                          value={d.id}
-                          style={isAssignedElsewhere ? { color: 'var(--danger-text)', fontWeight: 600 } : undefined}
-                        >
-                          {d.firstName} {d.lastName} ({d.employeeId}) {isAssignedElsewhere ? `[⚠️ Already on ${assignedInfo!.plateNumber}]` : isAssignedHere ? '[Currently Assigned Here]' : '[Free / Available]'}
-                        </option>
-                      );
-                    })}
-                  </select>
-                </div>
+                    return (
+                      <option
+                        key={d.id}
+                        value={d.id}
+                        style={isAssignedElsewhere ? { color: 'var(--danger-text)', fontWeight: 600 } : undefined}
+                      >
+                        {d.firstName} {d.lastName} ({d.employeeId}) {isAssignedElsewhere ? `[⚠️ Already on ${assignedInfo!.plateNumber}]` : isAssignedHere ? '[Currently Assigned Here]' : '[Free / Available]'}
+                      </option>
+                    );
+                  })}
+                </select>
               </div>
 
               {/* Row 5: Make & Year (Optional Details) */}

@@ -12,6 +12,7 @@ export const CreateVehicleSchema = z.object({
   year: z.number().int().min(1900).max(2100).optional().nullable(),
   vin: z.string().max(64).optional().nullable(),
   driverId: z.string().uuid().optional().nullable().or(z.literal('')).or(z.null()),
+  siteInchargeId: z.string().uuid().optional().nullable().or(z.literal('')).or(z.null()),
 });
 export type CreateVehicle = z.infer<typeof CreateVehicleSchema>;
 
@@ -22,6 +23,8 @@ export const VehiclePublicSchema = z.object({
   id: z.string(),
   driverId: z.string().nullable().optional(),
   driverName: z.string().nullable().optional(),
+  siteInchargeId: z.string().nullable().optional(),
+  siteInchargeName: z.string().nullable().optional(),
   plateNumber: z.string(),
   make: z.string().nullable().optional(),
   model: z.string().nullable().optional(),

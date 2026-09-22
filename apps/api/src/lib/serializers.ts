@@ -90,9 +90,12 @@ export function toDriverListItem(driver: Driver & { user: User }): DriverListIte
 export function toVehiclePublic(
   vehicle: Vehicle & {
     driver?: (Driver & { user?: User }) | null;
+    siteIncharge?: User | null;
   },
 ): VehiclePublic {
   const v = vehicle as Vehicle & {
+    siteInchargeId?: string | null;
+    siteIncharge?: User | null;
     modelNumber?: string | null;
     registrationDate?: Date | null;
     chassisNumber?: string | null;
@@ -103,11 +106,16 @@ export function toVehiclePublic(
   const driverName = v.driver?.user
     ? `${v.driver.user.firstName} ${v.driver.user.lastName}`.trim()
     : null;
+  const siteInchargeName = v.siteIncharge
+    ? `${v.siteIncharge.firstName} ${v.siteIncharge.lastName}`.trim()
+    : null;
 
   return {
     id: vehicle.id,
     driverId: vehicle.driverId ?? null,
     driverName,
+    siteInchargeId: v.siteInchargeId ?? null,
+    siteInchargeName,
     plateNumber: vehicle.plateNumber,
     make: vehicle.make ?? null,
     model: vehicle.model ?? null,
