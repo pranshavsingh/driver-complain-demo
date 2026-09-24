@@ -508,11 +508,14 @@ export function VehiclesPage(): ReactElement {
       const q = searchQuery.toLowerCase();
       const plateMatch = v.plateNumber.toLowerCase().includes(q);
       const modelMatch = v.model ? v.model.toLowerCase().includes(q) : false;
+      const makeMatch = v.make ? v.make.toLowerCase().includes(q) : false;
       const modelNoMatch = v.modelNumber ? v.modelNumber.toLowerCase().includes(q) : false;
       const chassisMatch = v.chassisNumber ? v.chassisNumber.toLowerCase().includes(q) : false;
       const vinMatch = v.vin ? v.vin.toLowerCase().includes(q) : false;
       const driverMatch = v.driverName ? v.driverName.toLowerCase().includes(q) : false;
-      return plateMatch || modelMatch || modelNoMatch || chassisMatch || vinMatch || driverMatch;
+      const siteInchargeMatch = v.siteInchargeName ? v.siteInchargeName.toLowerCase().includes(q) : false;
+      const yearMatch = v.year ? v.year.toString().includes(q) : false;
+      return plateMatch || modelMatch || makeMatch || modelNoMatch || chassisMatch || vinMatch || driverMatch || siteInchargeMatch || yearMatch;
     });
   }, [vehiclesList, statusFilter, wheelFilter, assignmentFilter, searchQuery]);
 
@@ -937,14 +940,15 @@ export function VehiclesPage(): ReactElement {
                 <thead>
                   <tr>
                     <th>Vehicle Number</th>
-                    <th>Site In-charge</th>
-                    <th>Vehicle Model & Make</th>
+                    <th>Vehicle Model</th>
                     <th>Model No</th>
                     <th>Registration Date</th>
-                    <th>Chassis No</th>
+                    <th>Chassis No (VIN)</th>
                     <th>Wheel</th>
+                    <th>Site In-charge</th>
                     <th>Status of Agreements</th>
-                    <th>Assigned Driver (Click to Change)</th>
+                    <th>Assigned Driver</th>
+                    <th>Make & Year</th>
                     <th style={{ textAlign: 'right' }}>Actions</th>
                   </tr>
                 </thead>
@@ -964,6 +968,7 @@ export function VehiclesPage(): ReactElement {
                               color: 'var(--text)',
                               border: '1px solid var(--border)',
                               borderRadius: 6,
+                              whiteSpace: 'nowrap',
                             }}
                           >
                             {vehicle.plateNumber}
@@ -971,40 +976,17 @@ export function VehiclesPage(): ReactElement {
                         </div>
                       </td>
                       <td>
-                        {vehicle.siteInchargeName ? (
-                          <span
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 5,
-                              fontSize: 12,
-                              fontWeight: 700,
-                              padding: '3px 8px',
-                              borderRadius: 6,
-                              background: 'rgba(59, 130, 246, 0.12)',
-                              color: '#60a5fa',
-                              border: '1px solid rgba(59, 130, 246, 0.3)',
-                            }}
-                          >
-                            👤 {vehicle.siteInchargeName}
-                          </span>
-                        ) : (
-                          <span style={{ fontSize: 12, color: 'var(--muted)' }}>—</span>
-                        )}
-                      </td>
-                      <td>
-                        <div style={{ fontWeight: 700, color: 'var(--text)' }}>
-                          {vehicle.model || 'Standard Truck'}
+                        <div style={{ fontWeight: 700, color: 'var(--text)', fontSize: 13 }}>
+                          {vehicle.model || '—'}
                         </div>
-                        {vehicle.make && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{vehicle.make}</div>}
                       </td>
                       <td>
-                        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap' }}>
                           {vehicle.modelNumber || '—'}
                         </span>
                       </td>
                       <td>
-                        <span style={{ fontSize: 13, color: 'var(--muted)' }}>
+                        <span style={{ fontSize: 13, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
                           {vehicle.registrationDate
                             ? new Date(vehicle.registrationDate).toLocaleDateString(undefined, {
                                 year: 'numeric',
@@ -1024,6 +1006,7 @@ export function VehiclesPage(): ReactElement {
                             color: 'var(--muted)',
                             border: '1px solid var(--border)',
                             borderRadius: 4,
+                            whiteSpace: 'nowrap',
                           }}
                         >
                           {vehicle.chassisNumber || vehicle.vin || '—'}
@@ -1040,10 +1023,34 @@ export function VehiclesPage(): ReactElement {
                             background: 'rgba(59, 130, 246, 0.15)',
                             color: 'var(--accent)',
                             border: '1px solid rgba(59, 130, 246, 0.3)',
+                            whiteSpace: 'nowrap',
                           }}
                         >
                           {vehicle.wheels || '10 Wheeler'}
                         </span>
+                      </td>
+                      <td>
+                        {vehicle.siteInchargeName ? (
+                          <span
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 5,
+                              fontSize: 12,
+                              fontWeight: 700,
+                              padding: '3px 8px',
+                              borderRadius: 6,
+                              background: 'rgba(59, 130, 246, 0.12)',
+                              color: 'var(--accent)',
+                              border: '1px solid rgba(59, 130, 246, 0.3)',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            👤 {vehicle.siteInchargeName}
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: 12, color: 'var(--muted)' }}>—</span>
+                        )}
                       </td>
                       <td>{getAgreementBadge(vehicle.agreementStatus)}</td>
                       <td>
@@ -1056,7 +1063,18 @@ export function VehiclesPage(): ReactElement {
                           isUpdating={updatingDriverVehicleId === vehicle.id}
                         />
                       </td>
-                      <td style={{ textAlign: 'right' }}>
+                      <td>
+                        <div style={{ fontSize: 13, color: 'var(--text)', whiteSpace: 'nowrap' }}>
+                          {vehicle.make ? <span style={{ fontWeight: 600 }}>{vehicle.make}</span> : null}
+                          {vehicle.year ? (
+                            <span style={{ color: 'var(--muted)', fontSize: 12, marginLeft: vehicle.make ? 4 : 0 }}>
+                              {vehicle.make ? `(${vehicle.year})` : vehicle.year}
+                            </span>
+                          ) : null}
+                          {!vehicle.make && !vehicle.year && <span style={{ color: 'var(--muted)' }}>—</span>}
+                        </div>
+                      </td>
+                      <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
                           <button
                             type="button"
