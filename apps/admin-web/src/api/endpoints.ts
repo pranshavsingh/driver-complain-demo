@@ -448,12 +448,12 @@ export const sites = {
   create: (input: CreateOperatingSite): Promise<OperatingSitePublic> =>
     request(OperatingSitePublicSchema, '/sites', {
       method: 'POST',
-      body: JSON.stringify(input),
+      body: input,
     }),
   update: (id: string, input: UpdateOperatingSite): Promise<OperatingSitePublic> =>
     request(OperatingSitePublicSchema, `/sites/${id}`, {
       method: 'PATCH',
-      body: JSON.stringify(input),
+      body: input,
     }),
   remove: (id: string): Promise<void> =>
     requestNoContent(`/sites/${id}`, {

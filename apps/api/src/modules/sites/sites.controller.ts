@@ -20,7 +20,7 @@ export async function getById(req: Request, res: Response): Promise<void> {
 export async function create(req: Request, res: Response): Promise<void> {
   const parsed = CreateOperatingSiteSchema.safeParse(req.body);
   if (!parsed.success) {
-    throw ApiError.badRequest(parsed.error.issues.map((i) => i.message).join('; '));
+    throw ApiError.badRequest('Invalid site data', parsed.error.flatten());
   }
   const result = await sitesService.create(parsed.data);
   sendSuccess(res, result, 201);
@@ -31,7 +31,7 @@ export async function update(req: Request, res: Response): Promise<void> {
   if (!id) throw ApiError.badRequest('Site ID is required');
   const parsed = UpdateOperatingSiteSchema.safeParse(req.body);
   if (!parsed.success) {
-    throw ApiError.badRequest(parsed.error.issues.map((i) => i.message).join('; '));
+    throw ApiError.badRequest('Invalid site data', parsed.error.flatten());
   }
   const result = await sitesService.update(id, parsed.data);
   sendSuccess(res, result);
