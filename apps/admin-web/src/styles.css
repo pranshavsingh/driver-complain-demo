@@ -5,10 +5,17 @@
 :root {
   --bg: #f8fafc;
   --surface: #ffffff;
+  --card-bg: #ffffff;
+  --input-bg: #ffffff;
+  --table-header-bg: #f8fafc;
   --border: #e2e8f0;
+  --border-color: #e2e8f0;
   --text: #0f172a;
+  --text-main: #0f172a;
   --muted: #64748b;
+  --text-muted: #64748b;
   --accent: #1d4ed8;
+  --primary: #1d4ed8;
   --accent-hover: #1e40af;
   --accent-text: #ffffff;
   --sidebar-bg: #0f172a;
@@ -32,10 +39,17 @@
 [data-theme="dark"] {
   --bg: #0b0f19;
   --surface: #151c2c;
+  --card-bg: #151c2c;
+  --input-bg: #151c2c;
+  --table-header-bg: #0f1523;
   --border: #232d42;
+  --border-color: #232d42;
   --text: #f1f5f9;
+  --text-main: #f1f5f9;
   --muted: #94a3b8;
+  --text-muted: #94a3b8;
   --accent: #3b82f6;
+  --primary: #3b82f6;
   --accent-hover: #2563eb;
   --accent-text: #ffffff;
   --sidebar-bg: #090d16;

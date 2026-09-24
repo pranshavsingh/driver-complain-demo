@@ -211,12 +211,12 @@ export function DashboardPage(): ReactElement {
       {/* 1. Mission Control Header & Context Bar */}
       <div
         style={{
-          backgroundColor: 'var(--card-bg, #ffffff)',
-          border: '1px solid var(--border-color, #e2e8f0)',
+          backgroundColor: 'var(--surface)',
+          border: '1px solid var(--border)',
           borderRadius: 16,
           padding: '20px 24px',
           marginBottom: 24,
-          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
+          boxShadow: 'var(--shadow-sm)',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
@@ -226,7 +226,7 @@ export function DashboardPage(): ReactElement {
       >
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0, color: 'var(--text-main, #0f172a)' }}>
+            <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0, color: 'var(--text)' }}>
               {greeting}, {user?.firstName || 'Fleet Leader'}! 👋
             </h1>
             {user?.role ? (
@@ -239,16 +239,16 @@ export function DashboardPage(): ReactElement {
                   borderRadius: 20,
                   backgroundColor:
                     user.role === 'SUPER_ADMIN'
-                      ? 'rgba(168, 85, 247, 0.12)'
+                      ? 'rgba(168, 85, 247, 0.15)'
                       : user.role === 'ADMIN'
-                      ? 'rgba(59, 130, 246, 0.12)'
-                      : 'rgba(249, 115, 22, 0.12)',
+                      ? 'rgba(59, 130, 246, 0.15)'
+                      : 'rgba(249, 115, 22, 0.15)',
                   color:
                     user.role === 'SUPER_ADMIN'
-                      ? '#9333ea'
+                      ? '#c084fc'
                       : user.role === 'ADMIN'
-                      ? '#2563eb'
-                      : '#ea580c',
+                      ? '#60a5fa'
+                      : '#fb923c',
                   border: '1px solid currentColor',
                 }}
               >
@@ -267,10 +267,11 @@ export function DashboardPage(): ReactElement {
                 gap: 6,
                 fontSize: 12,
                 fontWeight: 600,
-                color: connected ? '#16a34a' : '#ea580c',
+                color: connected ? 'var(--success-text)' : 'var(--warning-text)',
                 padding: '2px 8px',
                 borderRadius: 12,
-                backgroundColor: connected ? 'rgba(34, 197, 94, 0.1)' : 'rgba(234, 88, 12, 0.1)',
+                backgroundColor: connected ? 'var(--success-bg)' : 'var(--warning-bg)',
+                border: `1px solid ${connected ? 'var(--success-border)' : 'var(--warning-border)'}`,
               }}
               title={connected ? 'Connected to live WebSocket updates' : 'Reconnecting to live server...'}
             >
@@ -279,14 +280,14 @@ export function DashboardPage(): ReactElement {
                   width: 7,
                   height: 7,
                   borderRadius: '50%',
-                  backgroundColor: connected ? '#16a34a' : '#ea580c',
+                  backgroundColor: connected ? 'var(--success-text)' : 'var(--warning-text)',
                   display: 'inline-block',
                 }}
               />
               {connected ? 'Live Sync Active' : 'Connecting...'}
             </div>
           </div>
-          <p style={{ margin: '4px 0 0 0', fontSize: 13, color: 'var(--text-muted, #64748b)' }}>
+          <p style={{ margin: '4px 0 0 0', fontSize: 13, color: 'var(--muted)' }}>
             Fleet operations, active driver complaints, loading turnaround times, and logistics telemetry.
           </p>
         </div>
@@ -295,7 +296,7 @@ export function DashboardPage(): ReactElement {
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           <button
             type="button"
-            className="btn btn-secondary"
+            className="btn-secondary"
             onClick={reloadAll}
             disabled={isAnyLoading}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
@@ -306,7 +307,7 @@ export function DashboardPage(): ReactElement {
 
           <Link
             to="/complaints"
-            className="btn btn-primary"
+            className="btn-primary"
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600, textDecoration: 'none' }}
           >
             <ClipboardList size={16} />
@@ -315,7 +316,7 @@ export function DashboardPage(): ReactElement {
 
           <Link
             to="/loading"
-            className="btn btn-secondary"
+            className="btn-secondary"
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600, textDecoration: 'none' }}
           >
             <Truck size={16} />
@@ -332,8 +333,8 @@ export function DashboardPage(): ReactElement {
       {isSuperAdmin(user) && pendingUserApprovals.length > 0 ? (
         <div
           style={{
-            backgroundColor: 'rgba(239, 68, 68, 0.08)',
-            border: '1px solid rgba(239, 68, 68, 0.35)',
+            backgroundColor: 'var(--danger-bg)',
+            border: '1px solid var(--danger-border)',
             borderRadius: 12,
             padding: '16px 20px',
             marginBottom: 20,
@@ -350,20 +351,20 @@ export function DashboardPage(): ReactElement {
                 width: 40,
                 height: 40,
                 borderRadius: '50%',
-                backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                backgroundColor: 'rgba(239, 68, 68, 0.2)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                color: '#ef4444',
+                color: 'var(--danger-text)',
               }}
             >
               <Users size={20} />
             </div>
             <div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: '#dc2626' }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--danger-text)' }}>
                 {pendingUserApprovals.length} User Registration{pendingUserApprovals.length > 1 ? 's' : ''} Awaiting SuperAdmin Approval
               </div>
-              <div style={{ fontSize: 13, color: 'var(--text-muted, #64748b)', marginTop: 2 }}>
+              <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 2 }}>
                 {pendingUserApprovals.map((u) => `${fullName(u)} (${u.employeeId})`).slice(0, 4).join(', ')}
                 {pendingUserApprovals.length > 4 ? ` and ${pendingUserApprovals.length - 4} more...` : ''}
               </div>
@@ -371,10 +372,10 @@ export function DashboardPage(): ReactElement {
           </div>
           <Link
             to="/users"
-            className="btn btn-primary"
+            className="btn-primary"
             style={{
-              backgroundColor: '#dc2626',
-              borderColor: '#dc2626',
+              backgroundColor: 'var(--danger-text)',
+              borderColor: 'var(--danger-text)',
               color: '#ffffff',
               fontWeight: 700,
               fontSize: 13,
@@ -390,8 +391,8 @@ export function DashboardPage(): ReactElement {
       {pendingAssignmentComplaints.length > 0 ? (
         <div
           style={{
-            backgroundColor: 'rgba(245, 158, 11, 0.08)',
-            border: '1px solid rgba(245, 158, 11, 0.35)',
+            backgroundColor: 'var(--warning-bg)',
+            border: '1px solid var(--warning-border)',
             borderRadius: 12,
             padding: '16px 20px',
             marginBottom: 20,
@@ -408,20 +409,20 @@ export function DashboardPage(): ReactElement {
                 width: 40,
                 height: 40,
                 borderRadius: '50%',
-                backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                backgroundColor: 'rgba(245, 158, 11, 0.2)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                color: '#d97706',
+                color: 'var(--warning-text)',
               }}
             >
               <Clock size={20} />
             </div>
             <div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: '#b45309' }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--warning-text)' }}>
                 {pendingAssignmentComplaints.length} Complaint Assignment Request{pendingAssignmentComplaints.length > 1 ? 's' : ''} Pending Review
               </div>
-              <div style={{ fontSize: 13, color: 'var(--text-muted, #64748b)', marginTop: 2 }}>
+              <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 2 }}>
                 Complaints assigned awaiting confirmation: {pendingAssignmentComplaints.map((c) => c.complaintNo).join(', ')}
               </div>
             </div>
@@ -431,7 +432,7 @@ export function DashboardPage(): ReactElement {
               <Link
                 key={p.id}
                 to={`/complaints/${p.id}`}
-                className="btn btn-secondary"
+                className="btn-secondary"
                 style={{ fontSize: 12, fontWeight: 700, textDecoration: 'none' }}
               >
                 Review {p.complaintNo}
@@ -445,8 +446,8 @@ export function DashboardPage(): ReactElement {
       {detainedTrips.length > 0 ? (
         <div
           style={{
-            backgroundColor: 'rgba(239, 68, 68, 0.06)',
-            border: '1px solid rgba(239, 68, 68, 0.25)',
+            backgroundColor: 'var(--danger-bg)',
+            border: '1px solid var(--danger-border)',
             borderRadius: 12,
             padding: '14px 20px',
             marginBottom: 20,
@@ -458,14 +459,14 @@ export function DashboardPage(): ReactElement {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <ShieldAlert size={20} color="#ef4444" />
-            <span style={{ fontSize: 14, fontWeight: 600, color: '#ef4444' }}>
+            <ShieldAlert size={20} color="var(--danger-text)" />
+            <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--danger-text)' }}>
               <strong>Detention Alert:</strong> {detainedTrips.length} vehicle(s) waiting over 4 hours at loading/unloading points.
             </span>
           </div>
           <Link
             to="/loading"
-            style={{ fontSize: 13, fontWeight: 700, color: '#ef4444', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}
+            style={{ fontSize: 13, fontWeight: 700, color: 'var(--danger-text)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}
           >
             Open Detention Radar <ArrowRight size={14} />
           </Link>
@@ -484,30 +485,30 @@ export function DashboardPage(): ReactElement {
           }}
           style={{
             padding: 18,
-            backgroundColor: 'var(--card-bg, #ffffff)',
-            border: selectedStat === 'ALL' && activeTab === 'complaints' ? '2px solid #3b82f6' : '1px solid var(--border-color, #e2e8f0)',
+            backgroundColor: 'var(--surface)',
+            border: selectedStat === 'ALL' && activeTab === 'complaints' ? '2px solid var(--accent)' : '1px solid var(--border)',
             borderRadius: 14,
             textAlign: 'left',
             cursor: 'pointer',
-            boxShadow: '0 2px 6px rgba(0, 0, 0, 0.03)',
+            boxShadow: 'var(--shadow-sm)',
             transition: 'all 0.15s ease',
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted, #64748b)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
               Total Complaints
             </span>
-            <div style={{ width: 34, height: 34, borderRadius: 8, backgroundColor: 'rgba(59, 130, 246, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#3b82f6' }}>
+            <div style={{ width: 34, height: 34, borderRadius: 8, backgroundColor: 'rgba(59, 130, 246, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#60a5fa' }}>
               <ClipboardList size={18} />
             </div>
           </div>
-          <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-main, #0f172a)', marginTop: 8 }}>
+          <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text)', marginTop: 8 }}>
             {totalComplaints}
           </div>
           <div style={{ display: 'flex', gap: 12, marginTop: 10, fontSize: 12, fontWeight: 600 }}>
-            <span style={{ color: '#0284c7' }}>{newComplaints} New</span>
-            <span style={{ color: '#d97706' }}>{inProgressComplaints} In Progress</span>
-            <span style={{ color: '#16a34a' }}>{resolvedComplaints} Resolved</span>
+            <span style={{ color: '#38bdf8' }}>{newComplaints} New</span>
+            <span style={{ color: '#fbbf24' }}>{inProgressComplaints} In Progress</span>
+            <span style={{ color: 'var(--success-text)' }}>{resolvedComplaints} Resolved</span>
           </div>
         </button>
 
@@ -521,27 +522,27 @@ export function DashboardPage(): ReactElement {
           }}
           style={{
             padding: 18,
-            backgroundColor: 'var(--card-bg, #ffffff)',
-            border: selectedStat === 'URGENT' && activeTab === 'complaints' ? '2px solid #ef4444' : '1px solid var(--border-color, #e2e8f0)',
+            backgroundColor: 'var(--surface)',
+            border: selectedStat === 'URGENT' && activeTab === 'complaints' ? '2px solid var(--danger-border)' : '1px solid var(--border)',
             borderRadius: 14,
             textAlign: 'left',
             cursor: 'pointer',
-            boxShadow: '0 2px 6px rgba(0, 0, 0, 0.03)',
+            boxShadow: 'var(--shadow-sm)',
             transition: 'all 0.15s ease',
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted, #64748b)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
               Urgent & High Priority
             </span>
-            <div style={{ width: 34, height: 34, borderRadius: 8, backgroundColor: 'rgba(239, 68, 68, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ef4444' }}>
+            <div style={{ width: 34, height: 34, borderRadius: 8, backgroundColor: 'rgba(239, 68, 68, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--danger-text)' }}>
               <Zap size={18} />
             </div>
           </div>
-          <div style={{ fontSize: 28, fontWeight: 800, color: urgentComplaints.length > 0 ? '#ef4444' : 'var(--text-main, #0f172a)', marginTop: 8 }}>
+          <div style={{ fontSize: 28, fontWeight: 800, color: urgentComplaints.length > 0 ? 'var(--danger-text)' : 'var(--text)', marginTop: 8 }}>
             {urgentComplaints.length}
           </div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted, #64748b)', marginTop: 10 }}>
+          <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 10 }}>
             Breakdowns, tyre immobilizations & safety escalations
           </div>
         </button>
@@ -554,29 +555,29 @@ export function DashboardPage(): ReactElement {
           }}
           style={{
             padding: 18,
-            backgroundColor: 'var(--card-bg, #ffffff)',
-            border: activeTab === 'fleet' ? '2px solid #10b981' : '1px solid var(--border-color, #e2e8f0)',
+            backgroundColor: 'var(--surface)',
+            border: activeTab === 'fleet' ? '2px solid var(--success-border)' : '1px solid var(--border)',
             borderRadius: 14,
             textAlign: 'left',
             cursor: 'pointer',
-            boxShadow: '0 2px 6px rgba(0, 0, 0, 0.03)',
+            boxShadow: 'var(--shadow-sm)',
             transition: 'all 0.15s ease',
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted, #64748b)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
               Fleet Vehicles
             </span>
-            <div style={{ width: 34, height: 34, borderRadius: 8, backgroundColor: 'rgba(16, 185, 129, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#10b981' }}>
+            <div style={{ width: 34, height: 34, borderRadius: 8, backgroundColor: 'rgba(16, 185, 129, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--success-text)' }}>
               <Truck size={18} />
             </div>
           </div>
-          <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-main, #0f172a)', marginTop: 8 }}>
+          <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text)', marginTop: 8 }}>
             {totalVehicles}
           </div>
           <div style={{ display: 'flex', gap: 12, marginTop: 10, fontSize: 12, fontWeight: 600 }}>
-            <span style={{ color: '#10b981' }}>{totalVehicles} Registered Vehicles</span>
-            <span style={{ color: 'var(--text-muted, #64748b)' }}>{sitesList.length} Operating Hubs</span>
+            <span style={{ color: 'var(--success-text)' }}>{totalVehicles} Registered Vehicles</span>
+            <span style={{ color: 'var(--muted)' }}>{sitesList.length} Operating Hubs</span>
           </div>
         </button>
 
@@ -588,29 +589,29 @@ export function DashboardPage(): ReactElement {
           }}
           style={{
             padding: 18,
-            backgroundColor: 'var(--card-bg, #ffffff)',
-            border: activeTab === 'loading' ? '2px solid #f59e0b' : '1px solid var(--border-color, #e2e8f0)',
+            backgroundColor: 'var(--surface)',
+            border: activeTab === 'loading' ? '2px solid var(--warning-border)' : '1px solid var(--border)',
             borderRadius: 14,
             textAlign: 'left',
             cursor: 'pointer',
-            boxShadow: '0 2px 6px rgba(0, 0, 0, 0.03)',
+            boxShadow: 'var(--shadow-sm)',
             transition: 'all 0.15s ease',
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted, #64748b)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
               Loading & Trips
             </span>
-            <div style={{ width: 34, height: 34, borderRadius: 8, backgroundColor: 'rgba(245, 158, 11, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#d97706' }}>
+            <div style={{ width: 34, height: 34, borderRadius: 8, backgroundColor: 'rgba(245, 158, 11, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--warning-text)' }}>
               <Clock size={18} />
             </div>
           </div>
-          <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-main, #0f172a)', marginTop: 8 }}>
+          <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text)', marginTop: 8 }}>
             {activeTrips.length}
           </div>
           <div style={{ display: 'flex', gap: 12, marginTop: 10, fontSize: 12, fontWeight: 600 }}>
-            <span style={{ color: '#d97706' }}>{activeTrips.length} Active / In-Transit</span>
-            <span style={{ color: '#16a34a' }}>{completedTrips} Trips Done</span>
+            <span style={{ color: 'var(--warning-text)' }}>{activeTrips.length} Active / In-Transit</span>
+            <span style={{ color: 'var(--success-text)' }}>{completedTrips} Trips Done</span>
           </div>
         </button>
       </div>
@@ -618,27 +619,27 @@ export function DashboardPage(): ReactElement {
       {/* 4. Department & Category Matrix (6 Mobile App Categories) */}
       <div
         style={{
-          backgroundColor: 'var(--card-bg, #ffffff)',
-          border: '1px solid var(--border-color, #e2e8f0)',
+          backgroundColor: 'var(--surface)',
+          border: '1px solid var(--border)',
           borderRadius: 16,
           padding: '20px 24px',
           marginBottom: 24,
-          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.03)',
+          boxShadow: 'var(--shadow-sm)',
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
           <div>
-            <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: 'var(--text-main, #0f172a)' }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: 'var(--text)' }}>
               Department & Category Workload Distribution
             </h3>
-            <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--text-muted, #64748b)' }}>
+            <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--muted)' }}>
               Click any department category to filter complaints and view assigned team tasks.
             </p>
           </div>
           {selectedCategory !== 'ALL' && (
             <button
               type="button"
-              className="btn btn-secondary"
+              className="btn-secondary"
               onClick={() => setSelectedCategory('ALL')}
               style={{ fontSize: 12, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 4 }}
             >
@@ -665,8 +666,8 @@ export function DashboardPage(): ReactElement {
                 style={{
                   padding: '12px 14px',
                   borderRadius: 10,
-                  border: isSelected ? '2px solid #3b82f6' : '1px solid var(--border-color, #e2e8f0)',
-                  backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.08)' : 'var(--bg, #f8fafc)',
+                  border: isSelected ? '2px solid var(--accent)' : '1px solid var(--border)',
+                  backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.15)' : 'var(--bg)',
                   textAlign: 'left',
                   cursor: 'pointer',
                   transition: 'all 0.15s ease',
@@ -678,7 +679,7 @@ export function DashboardPage(): ReactElement {
                     style={{
                       fontSize: 14,
                       fontWeight: 800,
-                      color: count > 0 ? 'var(--text-main, #0f172a)' : 'var(--text-muted, #94a3b8)',
+                      color: count > 0 ? 'var(--text)' : 'var(--muted)',
                     }}
                   >
                     {count}
@@ -689,7 +690,7 @@ export function DashboardPage(): ReactElement {
                     fontSize: 12,
                     fontWeight: 700,
                     marginTop: 6,
-                    color: isSelected ? '#2563eb' : 'var(--text-main, #334155)',
+                    color: isSelected ? 'var(--accent)' : 'var(--text)',
                     whiteSpace: 'nowrap',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
@@ -703,7 +704,7 @@ export function DashboardPage(): ReactElement {
                   style={{
                     width: '100%',
                     height: 4,
-                    backgroundColor: 'var(--border-color, #e2e8f0)',
+                    backgroundColor: 'var(--border)',
                     borderRadius: 2,
                     marginTop: 8,
                     overflow: 'hidden',
@@ -713,7 +714,7 @@ export function DashboardPage(): ReactElement {
                     style={{
                       width: `${pct}%`,
                       height: '100%',
-                      backgroundColor: isSelected ? '#3b82f6' : '#94a3b8',
+                      backgroundColor: isSelected ? 'var(--accent)' : 'var(--muted)',
                       borderRadius: 2,
                     }}
                   />
@@ -727,24 +728,24 @@ export function DashboardPage(): ReactElement {
       {/* 5. Main Multi-Tab Operations Console */}
       <div
         style={{
-          backgroundColor: 'var(--card-bg, #ffffff)',
-          border: '1px solid var(--border-color, #e2e8f0)',
+          backgroundColor: 'var(--surface)',
+          border: '1px solid var(--border)',
           borderRadius: 16,
           overflow: 'hidden',
-          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.03)',
+          boxShadow: 'var(--shadow-sm)',
         }}
       >
         {/* Navigation Tabs Bar */}
         <div
           style={{
             padding: '12px 20px',
-            borderBottom: '1px solid var(--border-color, #e2e8f0)',
+            borderBottom: '1px solid var(--border)',
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
             flexWrap: 'wrap',
             gap: 12,
-            backgroundColor: 'var(--table-header-bg, #f8fafc)',
+            backgroundColor: 'var(--bg)',
           }}
         >
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -761,8 +762,8 @@ export function DashboardPage(): ReactElement {
                 fontSize: 13,
                 fontWeight: activeTab === 'complaints' ? 700 : 500,
                 cursor: 'pointer',
-                backgroundColor: activeTab === 'complaints' ? 'var(--primary, #3b82f6)' : 'transparent',
-                color: activeTab === 'complaints' ? '#ffffff' : 'var(--text-main, #475569)',
+                backgroundColor: activeTab === 'complaints' ? 'var(--accent)' : 'transparent',
+                color: activeTab === 'complaints' ? '#ffffff' : 'var(--text)',
                 display: 'flex',
                 alignItems: 'center',
                 gap: 8,
@@ -776,7 +777,7 @@ export function DashboardPage(): ReactElement {
                   borderRadius: 10,
                   fontSize: 11,
                   fontWeight: 800,
-                  backgroundColor: activeTab === 'complaints' ? 'rgba(255, 255, 255, 0.25)' : 'rgba(0,0,0,0.06)',
+                  backgroundColor: activeTab === 'complaints' ? 'rgba(255, 255, 255, 0.25)' : 'rgba(128,128,128,0.15)',
                   color: activeTab === 'complaints' ? '#ffffff' : 'inherit',
                 }}
               >
@@ -794,8 +795,8 @@ export function DashboardPage(): ReactElement {
                 fontSize: 13,
                 fontWeight: activeTab === 'loading' ? 700 : 500,
                 cursor: 'pointer',
-                backgroundColor: activeTab === 'loading' ? 'var(--primary, #3b82f6)' : 'transparent',
-                color: activeTab === 'loading' ? '#ffffff' : 'var(--text-main, #475569)',
+                backgroundColor: activeTab === 'loading' ? 'var(--accent)' : 'transparent',
+                color: activeTab === 'loading' ? '#ffffff' : 'var(--text)',
                 display: 'flex',
                 alignItems: 'center',
                 gap: 8,
@@ -809,7 +810,7 @@ export function DashboardPage(): ReactElement {
                   borderRadius: 10,
                   fontSize: 11,
                   fontWeight: 800,
-                  backgroundColor: activeTab === 'loading' ? 'rgba(255, 255, 255, 0.25)' : 'rgba(0,0,0,0.06)',
+                  backgroundColor: activeTab === 'loading' ? 'rgba(255, 255, 255, 0.25)' : 'rgba(128,128,128,0.15)',
                   color: activeTab === 'loading' ? '#ffffff' : 'inherit',
                 }}
               >
@@ -827,8 +828,8 @@ export function DashboardPage(): ReactElement {
                 fontSize: 13,
                 fontWeight: activeTab === 'spare-parts' ? 700 : 500,
                 cursor: 'pointer',
-                backgroundColor: activeTab === 'spare-parts' ? 'var(--primary, #3b82f6)' : 'transparent',
-                color: activeTab === 'spare-parts' ? '#ffffff' : 'var(--text-main, #475569)',
+                backgroundColor: activeTab === 'spare-parts' ? 'var(--accent)' : 'transparent',
+                color: activeTab === 'spare-parts' ? '#ffffff' : 'var(--text)',
                 display: 'flex',
                 alignItems: 'center',
                 gap: 8,
@@ -843,7 +844,7 @@ export function DashboardPage(): ReactElement {
                     borderRadius: 10,
                     fontSize: 11,
                     fontWeight: 800,
-                    backgroundColor: '#ef4444',
+                    backgroundColor: 'var(--danger-text)',
                     color: '#ffffff',
                   }}
                 >
@@ -862,8 +863,8 @@ export function DashboardPage(): ReactElement {
                 fontSize: 13,
                 fontWeight: activeTab === 'fleet' ? 700 : 500,
                 cursor: 'pointer',
-                backgroundColor: activeTab === 'fleet' ? 'var(--primary, #3b82f6)' : 'transparent',
-                color: activeTab === 'fleet' ? '#ffffff' : 'var(--text-main, #475569)',
+                backgroundColor: activeTab === 'fleet' ? 'var(--accent)' : 'transparent',
+                color: activeTab === 'fleet' ? '#ffffff' : 'var(--text)',
                 display: 'flex',
                 alignItems: 'center',
                 gap: 8,
@@ -877,7 +878,7 @@ export function DashboardPage(): ReactElement {
                   borderRadius: 10,
                   fontSize: 11,
                   fontWeight: 800,
-                  backgroundColor: activeTab === 'fleet' ? 'rgba(255, 255, 255, 0.25)' : 'rgba(0,0,0,0.06)',
+                  backgroundColor: activeTab === 'fleet' ? 'rgba(255, 255, 255, 0.25)' : 'rgba(128,128,128,0.15)',
                   color: activeTab === 'fleet' ? '#ffffff' : 'inherit',
                 }}
               >
@@ -899,7 +900,7 @@ export function DashboardPage(): ReactElement {
             style={{
               fontSize: 13,
               fontWeight: 600,
-              color: 'var(--primary, #3b82f6)',
+              color: 'var(--accent)',
               textDecoration: 'none',
               display: 'flex',
               alignItems: 'center',
@@ -917,7 +918,7 @@ export function DashboardPage(): ReactElement {
             <div
               style={{
                 padding: '14px 20px',
-                borderBottom: '1px solid var(--border-color, #e2e8f0)',
+                borderBottom: '1px solid var(--border)',
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
@@ -934,7 +935,7 @@ export function DashboardPage(): ReactElement {
                       left: 12,
                       top: '50%',
                       transform: 'translateY(-50%)',
-                      color: 'var(--text-muted, #94a3b8)',
+                      color: 'var(--muted)',
                     }}
                   />
                   <input
@@ -946,8 +947,9 @@ export function DashboardPage(): ReactElement {
                       width: '100%',
                       padding: '8px 12px 8px 34px',
                       borderRadius: 8,
-                      border: '1px solid var(--border-color, #cbd5e1)',
-                      backgroundColor: 'var(--input-bg, #ffffff)',
+                      border: '1px solid var(--border)',
+                      backgroundColor: 'var(--bg)',
+                      color: 'var(--text)',
                       fontSize: 13,
                       outline: 'none',
                     }}
@@ -964,7 +966,7 @@ export function DashboardPage(): ReactElement {
                         background: 'none',
                         border: 'none',
                         cursor: 'pointer',
-                        color: 'var(--text-muted, #94a3b8)',
+                        color: 'var(--muted)',
                       }}
                     >
                       <X size={14} />
@@ -989,9 +991,9 @@ export function DashboardPage(): ReactElement {
                       fontSize: 12,
                       fontWeight: 600,
                       cursor: 'pointer',
-                      border: selectedStat === stat ? '1px solid #3b82f6' : '1px solid var(--border-color, #e2e8f0)',
-                      backgroundColor: selectedStat === stat ? 'rgba(59, 130, 246, 0.12)' : 'transparent',
-                      color: selectedStat === stat ? '#2563eb' : 'var(--text-main, #475569)',
+                      border: selectedStat === stat ? '1px solid var(--accent)' : '1px solid var(--border)',
+                      backgroundColor: selectedStat === stat ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
+                      color: selectedStat === stat ? 'var(--accent)' : 'var(--text)',
                     }}
                   >
                     {stat === 'ALL'
@@ -1012,29 +1014,29 @@ export function DashboardPage(): ReactElement {
             <div style={{ overflowX: 'auto' }}>
               <table className="table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
                 <thead>
-                  <tr style={{ backgroundColor: 'var(--table-header-bg, #f8fafc)', borderBottom: '1px solid var(--border-color, #e2e8f0)' }}>
-                    <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--text-muted, #64748b)', textTransform: 'uppercase' }}>
+                  <tr style={{ backgroundColor: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
+                    <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase' }}>
                       Complaint ID
                     </th>
-                    <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--text-muted, #64748b)', textTransform: 'uppercase' }}>
+                    <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase' }}>
                       Category / Dept
                     </th>
-                    <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--text-muted, #64748b)', textTransform: 'uppercase' }}>
+                    <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase' }}>
                       Title & Details
                     </th>
-                    <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--text-muted, #64748b)', textTransform: 'uppercase' }}>
+                    <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase' }}>
                       Vehicle / Driver
                     </th>
-                    <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--text-muted, #64748b)', textTransform: 'uppercase' }}>
+                    <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase' }}>
                       Priority
                     </th>
-                    <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--text-muted, #64748b)', textTransform: 'uppercase' }}>
+                    <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase' }}>
                       Status
                     </th>
-                    <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--text-muted, #64748b)', textTransform: 'uppercase' }}>
+                    <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase' }}>
                       Created
                     </th>
-                    <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--text-muted, #64748b)', textTransform: 'uppercase', textAlign: 'right' }}>
+                    <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', textAlign: 'right' }}>
                       Action
                     </th>
                   </tr>
@@ -1042,16 +1044,16 @@ export function DashboardPage(): ReactElement {
                 <tbody>
                   {complaintsResource.loading && complaintsList.length === 0 ? (
                     <tr>
-                      <td colSpan={8} style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-muted, #64748b)' }}>
+                      <td colSpan={8} style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--muted)' }}>
                         <RotateCw size={24} className="spin" style={{ margin: '0 auto 8px' }} />
                         <div>Loading driver complaints...</div>
                       </td>
                     </tr>
                   ) : filteredComplaints.length === 0 ? (
                     <tr>
-                      <td colSpan={8} style={{ padding: '48px 20px', textAlign: 'center', color: 'var(--text-muted, #64748b)' }}>
+                      <td colSpan={8} style={{ padding: '48px 20px', textAlign: 'center', color: 'var(--muted)' }}>
                         <ClipboardList size={36} style={{ margin: '0 auto 12px', opacity: 0.4 }} />
-                        <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-main, #1e293b)' }}>
+                        <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)' }}>
                           No complaints match the current filter
                         </div>
                         <div style={{ fontSize: 13, marginTop: 4 }}>
@@ -1068,12 +1070,12 @@ export function DashboardPage(): ReactElement {
                         <tr
                           key={c.id}
                           style={{
-                            borderBottom: '1px solid var(--border-color, #e2e8f0)',
+                            borderBottom: '1px solid var(--border)',
                             transition: 'background-color 0.15s ease',
                           }}
                         >
-                          <td style={{ padding: '14px 20px', fontWeight: 700, fontFamily: 'monospace', color: '#2563eb' }}>
-                            <Link to={`/complaints/${c.id}`} style={{ color: '#2563eb', textDecoration: 'none' }}>
+                          <td style={{ padding: '14px 20px', fontWeight: 700, fontFamily: 'monospace', color: 'var(--accent)' }}>
+                            <Link to={`/complaints/${c.id}`} style={{ color: 'var(--accent)', textDecoration: 'none' }}>
                               {c.complaintNo}
                             </Link>
                           </td>
@@ -1087,21 +1089,21 @@ export function DashboardPage(): ReactElement {
                                 borderRadius: 6,
                                 fontSize: 12,
                                 fontWeight: 600,
-                                backgroundColor: 'rgba(59, 130, 246, 0.08)',
-                                color: '#1d4ed8',
+                                backgroundColor: 'rgba(59, 130, 246, 0.12)',
+                                color: 'var(--accent)',
                               }}
                             >
                               {getCategoryLabel(c.category)}
                             </span>
                           </td>
                           <td style={{ padding: '14px 20px', maxWidth: 280 }}>
-                            <div style={{ fontWeight: 600, color: 'var(--text-main, #0f172a)', fontSize: 13 }}>
+                            <div style={{ fontWeight: 600, color: 'var(--text)', fontSize: 13 }}>
                               {c.title}
                             </div>
                             <div
                               style={{
                                 fontSize: 12,
-                                color: 'var(--text-muted, #64748b)',
+                                color: 'var(--muted)',
                                 overflow: 'hidden',
                                 textOverflow: 'ellipsis',
                                 whiteSpace: 'nowrap',
@@ -1112,10 +1114,10 @@ export function DashboardPage(): ReactElement {
                             </div>
                           </td>
                           <td style={{ padding: '14px 20px' }}>
-                            <div style={{ fontWeight: 600, fontSize: 13 }}>
+                            <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>
                               {veh ? describeVehicle(veh) : c.vehiclePlateNumber || 'Vehicle #—'}
                             </div>
-                            <div style={{ fontSize: 12, color: 'var(--text-muted, #64748b)' }}>
+                            <div style={{ fontSize: 12, color: 'var(--muted)' }}>
                               {c.driverName || 'Unassigned driver'}
                             </div>
                           </td>
@@ -1125,13 +1127,13 @@ export function DashboardPage(): ReactElement {
                           <td style={{ padding: '14px 20px' }}>
                             <StatusBadge status={c.status} />
                           </td>
-                          <td style={{ padding: '14px 20px', fontSize: 12, color: 'var(--text-muted, #64748b)', whiteSpace: 'nowrap' }}>
+                          <td style={{ padding: '14px 20px', fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
                             {formatDateTime(c.createdAt)}
                           </td>
                           <td style={{ padding: '14px 20px', textAlign: 'right' }}>
                             <Link
                               to={`/complaints/${c.id}`}
-                              className="btn btn-secondary"
+                              className="btn-secondary"
                               style={{
                                 padding: '4px 12px',
                                 fontSize: 12,
@@ -1155,7 +1157,7 @@ export function DashboardPage(): ReactElement {
 
             {/* Pagination Controls */}
             {filteredComplaints.length > pageSize && (
-              <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border-color, #e2e8f0)' }}>
+              <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)' }}>
                 <Pagination
                   meta={{
                     page,
@@ -1177,16 +1179,16 @@ export function DashboardPage(): ReactElement {
           <div style={{ padding: 20 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <div>
-                <h4 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--text-main, #0f172a)' }}>
+                <h4 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--text)' }}>
                   Active Loading & Unloading Trips
                 </h4>
-                <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--text-muted, #64748b)' }}>
+                <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--muted)' }}>
                   Live tracking of vehicle waiting times at warehouse docks and plant yards.
                 </p>
               </div>
               <Link
                 to="/loading"
-                className="btn btn-secondary"
+                className="btn-secondary"
                 style={{ fontSize: 12, fontWeight: 600, textDecoration: 'none' }}
               >
                 Open Full Loading Tracker →
@@ -1194,7 +1196,7 @@ export function DashboardPage(): ReactElement {
             </div>
 
             {loadingList.length === 0 ? (
-              <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-muted, #64748b)' }}>
+              <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--muted)' }}>
                 <Truck size={36} style={{ margin: '0 auto 12px', opacity: 0.4 }} />
                 <div style={{ fontSize: 15, fontWeight: 600 }}>No active loading records logged today</div>
               </div>
@@ -1207,13 +1209,13 @@ export function DashboardPage(): ReactElement {
                       key={trip.id}
                       style={{
                         padding: 16,
-                        backgroundColor: 'var(--bg, #f8fafc)',
-                        border: isDetained ? '1px solid rgba(239, 68, 68, 0.4)' : '1px solid var(--border-color, #e2e8f0)',
+                        backgroundColor: 'var(--bg)',
+                        border: isDetained ? '1px solid var(--danger-border)' : '1px solid var(--border)',
                         borderRadius: 12,
                       }}
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-main, #0f172a)' }}>
+                        <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--text)' }}>
                           {trip.driverName || 'Driver'}
                         </span>
                         <span
@@ -1222,22 +1224,22 @@ export function DashboardPage(): ReactElement {
                             fontWeight: 700,
                             padding: '2px 8px',
                             borderRadius: 6,
-                            backgroundColor: isDetained ? 'rgba(239, 68, 68, 0.15)' : 'rgba(59, 130, 246, 0.15)',
-                            color: isDetained ? '#ef4444' : '#2563eb',
+                            backgroundColor: isDetained ? 'var(--danger-bg)' : 'rgba(59, 130, 246, 0.15)',
+                            color: isDetained ? 'var(--danger-text)' : 'var(--accent)',
                           }}
                         >
                           {trip.status}
                         </span>
                       </div>
-                      <div style={{ fontSize: 12, color: 'var(--text-muted, #64748b)', marginTop: 6 }}>
+                      <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>
                         📍 Reached: {trip.reachedAddress || 'Loading Point'} ({formatDateTime(trip.reachedAt)})
                       </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, paddingTop: 8, borderTop: '1px dashed var(--border-color, #cbd5e1)' }}>
-                        <span style={{ fontSize: 12, fontWeight: 600 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, paddingTop: 8, borderTop: '1px dashed var(--border)' }}>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>
                           Waiting Time: <strong>{trip.waitingTimeMinutes != null ? `${trip.waitingTimeMinutes} mins` : 'In Progress'}</strong>
                         </span>
                         {isDetained && (
-                          <span style={{ fontSize: 11, fontWeight: 800, color: '#ef4444' }}>
+                          <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--danger-text)' }}>
                             ⚠️ OVERDUE (&gt;4h)
                           </span>
                         )}
@@ -1255,16 +1257,16 @@ export function DashboardPage(): ReactElement {
           <div style={{ padding: 20 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <div>
-                <h4 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--text-main, #0f172a)' }}>
+                <h4 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--text)' }}>
                   Recent Spare Part Requisitions
                 </h4>
-                <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--text-muted, #64748b)' }}>
+                <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--muted)' }}>
                   Driver part requests from warehouse inventory for vehicle maintenance.
                 </p>
               </div>
               <Link
                 to="/spare-parts"
-                className="btn btn-secondary"
+                className="btn-secondary"
                 style={{ fontSize: 12, fontWeight: 600, textDecoration: 'none' }}
               >
                 Manage Inventory & Requisitions →
@@ -1272,7 +1274,7 @@ export function DashboardPage(): ReactElement {
             </div>
 
             {sparePartsList.length === 0 ? (
-              <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-muted, #64748b)' }}>
+              <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--muted)' }}>
                 <Package size={36} style={{ margin: '0 auto 12px', opacity: 0.4 }} />
                 <div style={{ fontSize: 15, fontWeight: 600 }}>No spare part requests logged yet</div>
               </div>
@@ -1283,13 +1285,13 @@ export function DashboardPage(): ReactElement {
                     key={req.id}
                     style={{
                       padding: 16,
-                      backgroundColor: 'var(--bg, #f8fafc)',
-                      border: '1px solid var(--border-color, #e2e8f0)',
+                      backgroundColor: 'var(--bg)',
+                      border: '1px solid var(--border)',
                       borderRadius: 12,
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-main, #0f172a)' }}>
+                      <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--text)' }}>
                         {req.partName || req.requestNo} ({req.quantity} pcs)
                       </span>
                       <span
@@ -1300,27 +1302,27 @@ export function DashboardPage(): ReactElement {
                           borderRadius: 6,
                           backgroundColor:
                             req.status === 'ISSUED'
-                              ? 'rgba(34, 197, 94, 0.15)'
+                              ? 'var(--success-bg)'
                               : req.status === 'PENDING_APPROVAL'
-                              ? 'rgba(245, 158, 11, 0.15)'
-                              : 'rgba(239, 68, 68, 0.15)',
+                              ? 'var(--warning-bg)'
+                              : 'var(--danger-bg)',
                           color:
                             req.status === 'ISSUED'
-                              ? '#16a34a'
+                              ? 'var(--success-text)'
                               : req.status === 'PENDING_APPROVAL'
-                              ? '#d97706'
-                              : '#ef4444',
+                              ? 'var(--warning-text)'
+                              : 'var(--danger-text)',
                         }}
                       >
                         {req.status}
                       </span>
                     </div>
-                    <div style={{ fontSize: 12, color: 'var(--text-muted, #64748b)', marginTop: 6 }}>
+                    <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>
                       🚗 Vehicle: {req.vehicle?.plateNumber || 'Vehicle'} • Driver:{' '}
                       {req.driver?.user ? fullName(req.driver.user) : 'Driver'}
                     </div>
                     {req.description && (
-                      <div style={{ fontSize: 12, color: 'var(--text-main, #475569)', marginTop: 4, fontStyle: 'italic' }}>
+                      <div style={{ fontSize: 12, color: 'var(--text)', marginTop: 4, fontStyle: 'italic' }}>
                         "{req.description}"
                       </div>
                     )}
@@ -1336,24 +1338,24 @@ export function DashboardPage(): ReactElement {
           <div style={{ padding: 20 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
               <div>
-                <h4 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--text-main, #0f172a)' }}>
+                <h4 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--text)' }}>
                   Fleet Summary & Operating Hubs
                 </h4>
-                <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--text-muted, #64748b)' }}>
+                <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--muted)' }}>
                   Total {totalVehicles} registered vehicles across {sitesList.length} operational hub locations.
                 </p>
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <Link
                   to="/settings"
-                  className="btn btn-secondary"
+                  className="btn-secondary"
                   style={{ fontSize: 12, fontWeight: 600, textDecoration: 'none' }}
                 >
                   <Settings size={13} style={{ marginRight: 4 }} /> Manage Sites
                 </Link>
                 <Link
                   to="/vehicles"
-                  className="btn btn-primary"
+                  className="btn-primary"
                   style={{ fontSize: 12, fontWeight: 600, textDecoration: 'none' }}
                 >
                   <Truck size={13} style={{ marginRight: 4 }} /> Vehicle Directory
@@ -1372,26 +1374,26 @@ export function DashboardPage(): ReactElement {
                     key={site.id}
                     style={{
                       padding: 14,
-                      backgroundColor: 'var(--bg, #f8fafc)',
-                      border: '1px solid var(--border-color, #e2e8f0)',
+                      backgroundColor: 'var(--bg)',
+                      border: '1px solid var(--border)',
                       borderRadius: 12,
                     }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <MapPin size={16} color={site.isActive ? '#3b82f6' : '#94a3b8'} />
-                      <strong style={{ fontSize: 14, color: 'var(--text-main, #0f172a)' }}>{site.name}</strong>
+                      <MapPin size={16} color={site.isActive ? 'var(--accent)' : 'var(--muted)'} />
+                      <strong style={{ fontSize: 14, color: 'var(--text)' }}>{site.name}</strong>
                       {site.code && (
-                        <span style={{ fontSize: 11, fontWeight: 700, color: '#6366f1', backgroundColor: 'rgba(99, 102, 241, 0.1)', padding: '1px 6px', borderRadius: 4 }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', backgroundColor: 'rgba(99, 102, 241, 0.15)', padding: '1px 6px', borderRadius: 4 }}>
                           {site.code}
                         </span>
                       )}
                     </div>
                     {site.address && (
-                      <div style={{ fontSize: 12, color: 'var(--text-muted, #64748b)', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {site.address}
                       </div>
                     )}
-                    <div style={{ marginTop: 8, fontSize: 12, fontWeight: 600, color: '#0284c7' }}>
+                    <div style={{ marginTop: 8, fontSize: 12, fontWeight: 600, color: 'var(--accent)' }}>
                       🚗 {siteVehicles.length} Vehicles Stationed
                     </div>
                   </div>
@@ -1403,25 +1405,25 @@ export function DashboardPage(): ReactElement {
             <div style={{ overflowX: 'auto' }}>
               <table className="table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
                 <thead>
-                  <tr style={{ backgroundColor: 'var(--table-header-bg, #f8fafc)', borderBottom: '1px solid var(--border-color, #e2e8f0)' }}>
-                    <th style={{ padding: '10px 16px', fontSize: 12, fontWeight: 600, color: 'var(--text-muted, #64748b)' }}>Plate Number</th>
-                    <th style={{ padding: '10px 16px', fontSize: 12, fontWeight: 600, color: 'var(--text-muted, #64748b)' }}>Make & Model</th>
-                    <th style={{ padding: '10px 16px', fontSize: 12, fontWeight: 600, color: 'var(--text-muted, #64748b)' }}>Wheels</th>
-                    <th style={{ padding: '10px 16px', fontSize: 12, fontWeight: 600, color: 'var(--text-muted, #64748b)' }}>Driver</th>
-                    <th style={{ padding: '10px 16px', fontSize: 12, fontWeight: 600, color: 'var(--text-muted, #64748b)' }}>Supervising Incharge</th>
-                    <th style={{ padding: '10px 16px', fontSize: 12, fontWeight: 600, color: 'var(--text-muted, #64748b)' }}>Agreement</th>
+                  <tr style={{ backgroundColor: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
+                    <th style={{ padding: '10px 16px', fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>Plate Number</th>
+                    <th style={{ padding: '10px 16px', fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>Make & Model</th>
+                    <th style={{ padding: '10px 16px', fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>Wheels</th>
+                    <th style={{ padding: '10px 16px', fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>Driver</th>
+                    <th style={{ padding: '10px 16px', fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>Supervising Incharge</th>
+                    <th style={{ padding: '10px 16px', fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>Agreement</th>
                   </tr>
                 </thead>
                 <tbody>
                   {vehicleList.slice(0, 5).map((v) => (
-                    <tr key={v.id} style={{ borderBottom: '1px solid var(--border-color, #e2e8f0)' }}>
-                      <td style={{ padding: '10px 16px', fontWeight: 700, fontFamily: 'monospace' }}>{v.plateNumber}</td>
-                      <td style={{ padding: '10px 16px' }}>{[v.make, v.model].filter(Boolean).join(' ') || '—'}</td>
-                      <td style={{ padding: '10px 16px' }}>{v.wheels || '—'}</td>
-                      <td style={{ padding: '10px 16px' }}>{v.driverName || '—'}</td>
-                      <td style={{ padding: '10px 16px' }}>{v.siteInchargeName || '—'}</td>
+                    <tr key={v.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                      <td style={{ padding: '10px 16px', fontWeight: 700, fontFamily: 'monospace', color: 'var(--accent)' }}>{v.plateNumber}</td>
+                      <td style={{ padding: '10px 16px', color: 'var(--text)' }}>{[v.make, v.model].filter(Boolean).join(' ') || '—'}</td>
+                      <td style={{ padding: '10px 16px', color: 'var(--text)' }}>{v.wheels || '—'}</td>
+                      <td style={{ padding: '10px 16px', color: 'var(--text)' }}>{v.driverName || '—'}</td>
+                      <td style={{ padding: '10px 16px', color: 'var(--text)' }}>{v.siteInchargeName || '—'}</td>
                       <td style={{ padding: '10px 16px' }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: '#3b82f6' }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)' }}>
                           {v.agreementStatus || 'Active'}
                         </span>
                       </td>

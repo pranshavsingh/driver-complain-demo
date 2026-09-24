@@ -166,19 +166,19 @@ export function SettingsPage(): ReactElement {
               width: 36,
               height: 36,
               borderRadius: 8,
-              backgroundColor: 'rgba(59, 130, 246, 0.1)',
+              backgroundColor: 'rgba(59, 130, 246, 0.15)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              color: 'var(--primary, #3b82f6)'
+              color: 'var(--accent)'
             }}>
               <Settings size={22} />
             </div>
-            <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, color: 'var(--text-main, #0f172a)' }}>
+            <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, color: 'var(--text)' }}>
               Settings & Hub Management
             </h1>
           </div>
-          <p style={{ margin: '4px 0 0 46px', fontSize: 13, color: 'var(--text-muted, #64748b)' }}>
+          <p style={{ margin: '4px 0 0 46px', fontSize: 13, color: 'var(--muted)' }}>
             Configure operating sites, hub locations, and platform properties for Executive user assignment.
           </p>
         </div>
@@ -186,7 +186,7 @@ export function SettingsPage(): ReactElement {
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <button
             type="button"
-            className="btn btn-secondary"
+            className="btn-secondary"
             onClick={() => void sitesResource.reload()}
             disabled={loading}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
@@ -197,7 +197,7 @@ export function SettingsPage(): ReactElement {
           {canManage ? (
             <button
               type="button"
-              className="btn btn-primary"
+              className="btn-primary"
               onClick={openCreateModal}
               style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600 }}
             >
@@ -211,9 +211,9 @@ export function SettingsPage(): ReactElement {
       {actionSuccess ? (
         <div style={{
           padding: '12px 16px',
-          backgroundColor: 'rgba(34, 197, 94, 0.12)',
-          border: '1px solid rgba(34, 197, 94, 0.3)',
-          color: '#16a34a',
+          backgroundColor: 'var(--success-bg)',
+          border: '1px solid var(--success-border)',
+          color: 'var(--success-text)',
           borderRadius: 8,
           marginBottom: 16,
           display: 'flex',
@@ -233,8 +233,8 @@ export function SettingsPage(): ReactElement {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 24 }}>
         <div style={{
           padding: 16,
-          backgroundColor: 'var(--card-bg, #ffffff)',
-          border: '1px solid var(--border-color, #e2e8f0)',
+          backgroundColor: 'var(--surface)',
+          border: '1px solid var(--border)',
           borderRadius: 12,
           display: 'flex',
           alignItems: 'center',
@@ -244,19 +244,19 @@ export function SettingsPage(): ReactElement {
             width: 44,
             height: 44,
             borderRadius: 10,
-            backgroundColor: 'rgba(59, 130, 246, 0.12)',
+            backgroundColor: 'rgba(59, 130, 246, 0.15)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: '#3b82f6',
+            color: 'var(--accent)',
           }}>
             <MapPin size={22} />
           </div>
           <div>
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted, #64748b)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
               Total Sites
             </div>
-            <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--text-main, #0f172a)', marginTop: 2 }}>
+            <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--text)', marginTop: 2 }}>
               {stats.total}
             </div>
           </div>
@@ -264,8 +264,8 @@ export function SettingsPage(): ReactElement {
 
         <div style={{
           padding: 16,
-          backgroundColor: 'var(--card-bg, #ffffff)',
-          border: '1px solid var(--border-color, #e2e8f0)',
+          backgroundColor: 'var(--surface)',
+          border: '1px solid var(--border)',
           borderRadius: 12,
           display: 'flex',
           alignItems: 'center',
@@ -275,19 +275,19 @@ export function SettingsPage(): ReactElement {
             width: 44,
             height: 44,
             borderRadius: 10,
-            backgroundColor: 'rgba(34, 197, 94, 0.12)',
+            backgroundColor: 'var(--success-bg)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: '#16a34a',
+            color: 'var(--success-text)',
           }}>
             <Warehouse size={22} />
           </div>
           <div>
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted, #64748b)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
               Active Sites
             </div>
-            <div style={{ fontSize: 24, fontWeight: 800, color: '#16a34a', marginTop: 2 }}>
+            <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--success-text)', marginTop: 2 }}>
               {stats.active}
             </div>
           </div>
@@ -295,8 +295,8 @@ export function SettingsPage(): ReactElement {
 
         <div style={{
           padding: 16,
-          backgroundColor: 'var(--card-bg, #ffffff)',
-          border: '1px solid var(--border-color, #e2e8f0)',
+          backgroundColor: 'var(--surface)',
+          border: '1px solid var(--border)',
           borderRadius: 12,
           display: 'flex',
           alignItems: 'center',
@@ -306,19 +306,19 @@ export function SettingsPage(): ReactElement {
             width: 44,
             height: 44,
             borderRadius: 10,
-            backgroundColor: 'rgba(239, 68, 68, 0.12)',
+            backgroundColor: 'var(--danger-bg)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: '#ef4444',
+            color: 'var(--danger-text)',
           }}>
             <AlertCircle size={22} />
           </div>
           <div>
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted, #64748b)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
               Inactive Sites
             </div>
-            <div style={{ fontSize: 24, fontWeight: 800, color: '#ef4444', marginTop: 2 }}>
+            <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--danger-text)', marginTop: 2 }}>
               {stats.inactive}
             </div>
           </div>
@@ -327,20 +327,21 @@ export function SettingsPage(): ReactElement {
 
       {/* Main Table Card */}
       <div style={{
-        backgroundColor: 'var(--card-bg, #ffffff)',
-        border: '1px solid var(--border-color, #e2e8f0)',
+        backgroundColor: 'var(--surface)',
+        border: '1px solid var(--border)',
         borderRadius: 12,
         overflow: 'hidden',
       }}>
         {/* Controls Toolbar */}
         <div style={{
           padding: '16px 20px',
-          borderBottom: '1px solid var(--border-color, #e2e8f0)',
+          borderBottom: '1px solid var(--border)',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
           gap: 16,
           flexWrap: 'wrap',
+          backgroundColor: 'var(--bg)',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 260, maxWidth: 440 }}>
             <div style={{ position: 'relative', width: '100%' }}>
@@ -351,7 +352,7 @@ export function SettingsPage(): ReactElement {
                   left: 12,
                   top: '50%',
                   transform: 'translateY(-50%)',
-                  color: 'var(--text-muted, #94a3b8)',
+                  color: 'var(--muted)',
                 }}
               />
               <input
@@ -363,8 +364,9 @@ export function SettingsPage(): ReactElement {
                   width: '100%',
                   padding: '8px 12px 8px 36px',
                   borderRadius: 8,
-                  border: '1px solid var(--border-color, #cbd5e1)',
-                  backgroundColor: 'var(--input-bg, #ffffff)',
+                  border: '1px solid var(--border)',
+                  backgroundColor: 'var(--surface)',
+                  color: 'var(--text)',
                   fontSize: 13,
                   outline: 'none',
                 }}
@@ -381,7 +383,7 @@ export function SettingsPage(): ReactElement {
                     background: 'none',
                     border: 'none',
                     cursor: 'pointer',
-                    color: 'var(--text-muted, #94a3b8)',
+                    color: 'var(--muted)',
                   }}
                 >
                   <X size={14} />
@@ -391,7 +393,7 @@ export function SettingsPage(): ReactElement {
           </div>
 
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-muted, #64748b)', marginRight: 4 }}>
+            <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--muted)', marginRight: 4 }}>
               Status:
             </div>
             {(['ALL', 'ACTIVE', 'INACTIVE'] as const).map((filter) => (
@@ -405,9 +407,9 @@ export function SettingsPage(): ReactElement {
                   fontSize: 12,
                   fontWeight: 600,
                   cursor: 'pointer',
-                  border: statusFilter === filter ? '1px solid #3b82f6' : '1px solid var(--border-color, #e2e8f0)',
-                  backgroundColor: statusFilter === filter ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
-                  color: statusFilter === filter ? '#3b82f6' : 'var(--text-main, #475569)',
+                  border: statusFilter === filter ? '1px solid var(--accent)' : '1px solid var(--border)',
+                  backgroundColor: statusFilter === filter ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
+                  color: statusFilter === filter ? 'var(--accent)' : 'var(--text)',
                   transition: 'all 0.15s ease',
                 }}
               >
@@ -421,23 +423,23 @@ export function SettingsPage(): ReactElement {
         <div style={{ overflowX: 'auto' }}>
           <table className="table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
             <thead>
-              <tr style={{ backgroundColor: 'var(--table-header-bg, #f8fafc)', borderBottom: '1px solid var(--border-color, #e2e8f0)' }}>
-                <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--text-muted, #64748b)', textTransform: 'uppercase' }}>
+              <tr style={{ backgroundColor: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
+                <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase' }}>
                   Site Name
                 </th>
-                <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--text-muted, #64748b)', textTransform: 'uppercase' }}>
+                <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase' }}>
                   Code / Short ID
                 </th>
-                <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--text-muted, #64748b)', textTransform: 'uppercase' }}>
+                <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase' }}>
                   Address / Hub Location
                 </th>
-                <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--text-muted, #64748b)', textTransform: 'uppercase' }}>
+                <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase' }}>
                   Status
                 </th>
-                <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--text-muted, #64748b)', textTransform: 'uppercase' }}>
+                <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase' }}>
                   Created At
                 </th>
-                <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--text-muted, #64748b)', textTransform: 'uppercase', textAlign: 'right' }}>
+                <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', textAlign: 'right' }}>
                   Actions
                 </th>
               </tr>
@@ -445,25 +447,25 @@ export function SettingsPage(): ReactElement {
             <tbody>
               {loading && sites.length === 0 ? (
                 <tr>
-                  <td colSpan={6} style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-muted, #64748b)' }}>
+                  <td colSpan={6} style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--muted)' }}>
                     <RotateCw size={24} className="spin" style={{ margin: '0 auto 8px' }} />
                     <div>Loading operating sites...</div>
                   </td>
                 </tr>
               ) : filteredSites.length === 0 ? (
                 <tr>
-                  <td colSpan={6} style={{ padding: '48px 20px', textAlign: 'center', color: 'var(--text-muted, #64748b)' }}>
+                  <td colSpan={6} style={{ padding: '48px 20px', textAlign: 'center', color: 'var(--muted)' }}>
                     <MapPin size={36} style={{ margin: '0 auto 12px', opacity: 0.4 }} />
-                    <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-main, #1e293b)' }}>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)' }}>
                       No operating sites found
                     </div>
-                    <div style={{ fontSize: 13, marginTop: 4 }}>
+                    <div style={{ fontSize: 13, marginTop: 4, color: 'var(--muted)' }}>
                       {search ? 'Try adjusting your search criteria.' : 'Click "Add Operating Site" to create your first site.'}
                     </div>
                     {!search && canManage ? (
                       <button
                         type="button"
-                        className="btn btn-primary"
+                        className="btn-primary"
                         onClick={openCreateModal}
                         style={{ marginTop: 16, display: 'inline-flex', alignItems: 'center', gap: 6 }}
                       >
@@ -478,13 +480,13 @@ export function SettingsPage(): ReactElement {
                   <tr
                     key={site.id}
                     style={{
-                      borderBottom: '1px solid var(--border-color, #e2e8f0)',
+                      borderBottom: '1px solid var(--border)',
                       transition: 'background-color 0.15s ease',
                     }}
                   >
-                    <td style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--text-main, #0f172a)' }}>
+                    <td style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--text)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <MapPin size={16} style={{ color: site.isActive ? '#3b82f6' : '#94a3b8' }} />
+                        <MapPin size={16} style={{ color: site.isActive ? 'var(--accent)' : 'var(--muted)' }} />
                         <span>{site.name}</span>
                       </div>
                     </td>
@@ -495,19 +497,19 @@ export function SettingsPage(): ReactElement {
                           borderRadius: 4,
                           fontSize: 12,
                           fontWeight: 700,
-                          backgroundColor: 'rgba(99, 102, 241, 0.1)',
-                          color: '#4f46e5',
-                          border: '1px solid rgba(99, 102, 241, 0.2)',
+                          backgroundColor: 'rgba(99, 102, 241, 0.15)',
+                          color: 'var(--accent)',
+                          border: '1px solid var(--border)',
                           letterSpacing: '0.05em',
                         }}>
                           {site.code}
                         </span>
                       ) : (
-                        <span style={{ color: 'var(--text-muted, #94a3b8)', fontSize: 13 }}>—</span>
+                        <span style={{ color: 'var(--muted)', fontSize: 13 }}>—</span>
                       )}
                     </td>
-                    <td style={{ padding: '14px 20px', color: 'var(--text-main, #334155)', fontSize: 13, maxWidth: 300 }}>
-                      {site.address || <span style={{ color: 'var(--text-muted, #94a3b8)' }}>No address specified</span>}
+                    <td style={{ padding: '14px 20px', color: 'var(--text)', fontSize: 13, maxWidth: 300 }}>
+                      {site.address || <span style={{ color: 'var(--muted)' }}>No address specified</span>}
                     </td>
                     <td style={{ padding: '14px 20px' }}>
                       <button
@@ -524,21 +526,21 @@ export function SettingsPage(): ReactElement {
                           fontSize: 12,
                           fontWeight: 600,
                           cursor: canManage ? 'pointer' : 'default',
-                          border: site.isActive ? '1px solid rgba(34, 197, 94, 0.3)' : '1px solid rgba(239, 68, 68, 0.3)',
-                          backgroundColor: site.isActive ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-                          color: site.isActive ? '#16a34a' : '#ef4444',
+                          border: site.isActive ? '1px solid var(--success-border)' : '1px solid var(--danger-border)',
+                          backgroundColor: site.isActive ? 'var(--success-bg)' : 'var(--danger-bg)',
+                          color: site.isActive ? 'var(--success-text)' : 'var(--danger-text)',
                         }}
                       >
                         <span style={{
                           width: 6,
                           height: 6,
                           borderRadius: '50%',
-                          backgroundColor: site.isActive ? '#16a34a' : '#ef4444',
+                          backgroundColor: site.isActive ? 'var(--success-text)' : 'var(--danger-text)',
                         }} />
                         {site.isActive ? 'Active' : 'Inactive'}
                       </button>
                     </td>
-                    <td style={{ padding: '14px 20px', color: 'var(--text-muted, #64748b)', fontSize: 13 }}>
+                    <td style={{ padding: '14px 20px', color: 'var(--muted)', fontSize: 13 }}>
                       {new Date(site.createdAt).toLocaleDateString(undefined, {
                         year: 'numeric',
                         month: 'short',
@@ -550,39 +552,37 @@ export function SettingsPage(): ReactElement {
                         <div style={{ display: 'inline-flex', gap: 6 }}>
                           <button
                             type="button"
-                            className="btn btn-icon"
                             onClick={() => openEditModal(site)}
                             title="Edit site"
                             style={{
                               padding: 6,
                               borderRadius: 6,
-                              border: '1px solid var(--border-color, #e2e8f0)',
+                              border: '1px solid var(--border)',
                               backgroundColor: 'transparent',
                               cursor: 'pointer',
-                              color: 'var(--text-main, #334155)',
+                              color: 'var(--text)',
                             }}
                           >
                             <Edit2 size={15} />
                           </button>
                           <button
                             type="button"
-                            className="btn btn-icon text-danger"
                             onClick={() => setDeletingSite(site)}
                             title="Delete site"
                             style={{
                               padding: 6,
                               borderRadius: 6,
-                              border: '1px solid rgba(239, 68, 68, 0.2)',
-                              backgroundColor: 'rgba(239, 68, 68, 0.05)',
+                              border: '1px solid var(--danger-border)',
+                              backgroundColor: 'var(--danger-bg)',
                               cursor: 'pointer',
-                              color: '#ef4444',
+                              color: 'var(--danger-text)',
                             }}
                           >
                             <Trash2 size={15} />
                           </button>
                         </div>
                       ) : (
-                        <span style={{ color: 'var(--text-muted, #94a3b8)', fontSize: 12 }}>View only</span>
+                        <span style={{ color: 'var(--muted)', fontSize: 12 }}>View only</span>
                       )}
                     </td>
                   </tr>
@@ -598,7 +598,7 @@ export function SettingsPage(): ReactElement {
         <div className="modal-backdrop" style={{
           position: 'fixed',
           inset: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          backgroundColor: 'rgba(0, 0, 0, 0.7)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -606,22 +606,23 @@ export function SettingsPage(): ReactElement {
           padding: 16,
         }}>
           <div className="modal-content" style={{
-            backgroundColor: 'var(--card-bg, #ffffff)',
+            backgroundColor: 'var(--surface)',
             borderRadius: 12,
             width: '100%',
             maxWidth: 520,
-            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)',
+            boxShadow: 'var(--shadow-md)',
             overflow: 'hidden',
+            border: '1px solid var(--border)',
           }}>
             <div style={{
               padding: '16px 20px',
-              borderBottom: '1px solid var(--border-color, #e2e8f0)',
+              borderBottom: '1px solid var(--border)',
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
             }}>
-              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: 'var(--text-main, #0f172a)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <MapPin size={20} color="#3b82f6" />
+              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <MapPin size={20} color="var(--accent)" />
                 {editingSite ? 'Edit Operating Site' : 'Add New Operating Site'}
               </h3>
               <button
@@ -630,7 +631,7 @@ export function SettingsPage(): ReactElement {
                   setIsCreateOpen(false);
                   setEditingSite(null);
                 }}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted, #64748b)' }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)' }}
               >
                 <X size={18} />
               </button>
@@ -640,9 +641,9 @@ export function SettingsPage(): ReactElement {
               {formError ? (
                 <div style={{
                   padding: '10px 14px',
-                  backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                  border: '1px solid rgba(239, 68, 68, 0.3)',
-                  color: '#ef4444',
+                  backgroundColor: 'var(--danger-bg)',
+                  border: '1px solid var(--danger-border)',
+                  color: 'var(--danger-text)',
                   borderRadius: 6,
                   marginBottom: 16,
                   fontSize: 13,
@@ -652,8 +653,8 @@ export function SettingsPage(): ReactElement {
               ) : null}
 
               <div className="form-group" style={{ marginBottom: 16 }}>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main, #334155)' }}>
-                  Site Name <span style={{ color: '#ef4444' }}>*</span>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text)' }}>
+                  Site Name <span style={{ color: 'var(--danger-text)' }}>*</span>
                 </label>
                 <input
                   type="text"
@@ -665,8 +666,9 @@ export function SettingsPage(): ReactElement {
                     width: '100%',
                     padding: '9px 12px',
                     borderRadius: 6,
-                    border: '1px solid var(--border-color, #cbd5e1)',
-                    backgroundColor: 'var(--input-bg, #ffffff)',
+                    border: '1px solid var(--border)',
+                    backgroundColor: 'var(--bg)',
+                    color: 'var(--text)',
                     fontSize: 14,
                     outline: 'none',
                   }}
@@ -674,7 +676,7 @@ export function SettingsPage(): ReactElement {
               </div>
 
               <div className="form-group" style={{ marginBottom: 16 }}>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main, #334155)' }}>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text)' }}>
                   Site Code / Short ID (Optional)
                 </label>
                 <input
@@ -686,8 +688,9 @@ export function SettingsPage(): ReactElement {
                     width: '100%',
                     padding: '9px 12px',
                     borderRadius: 6,
-                    border: '1px solid var(--border-color, #cbd5e1)',
-                    backgroundColor: 'var(--input-bg, #ffffff)',
+                    border: '1px solid var(--border)',
+                    backgroundColor: 'var(--bg)',
+                    color: 'var(--text)',
                     fontSize: 14,
                     outline: 'none',
                     textTransform: 'uppercase',
@@ -696,7 +699,7 @@ export function SettingsPage(): ReactElement {
               </div>
 
               <div className="form-group" style={{ marginBottom: 16 }}>
-                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main, #334155)' }}>
+                <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text)' }}>
                   Full Address / Location Details (Optional)
                 </label>
                 <textarea
@@ -708,8 +711,9 @@ export function SettingsPage(): ReactElement {
                     width: '100%',
                     padding: '9px 12px',
                     borderRadius: 6,
-                    border: '1px solid var(--border-color, #cbd5e1)',
-                    backgroundColor: 'var(--input-bg, #ffffff)',
+                    border: '1px solid var(--border)',
+                    backgroundColor: 'var(--bg)',
+                    color: 'var(--text)',
                     fontSize: 14,
                     outline: 'none',
                     resize: 'vertical',
@@ -718,7 +722,7 @@ export function SettingsPage(): ReactElement {
               </div>
 
               <div className="form-group" style={{ marginBottom: 20 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
                   <input
                     type="checkbox"
                     checked={formData.isActive}
@@ -729,10 +733,10 @@ export function SettingsPage(): ReactElement {
                 </label>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 12, borderTop: '1px solid var(--border-color, #e2e8f0)' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
                 <button
                   type="button"
-                  className="btn btn-secondary"
+                  className="btn-secondary"
                   onClick={() => {
                     setIsCreateOpen(false);
                     setEditingSite(null);
@@ -743,7 +747,7 @@ export function SettingsPage(): ReactElement {
                 </button>
                 <button
                   type="submit"
-                  className="btn btn-primary"
+                  className="btn-primary"
                   disabled={submitting}
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600 }}
                 >
@@ -761,7 +765,7 @@ export function SettingsPage(): ReactElement {
         <div className="modal-backdrop" style={{
           position: 'fixed',
           inset: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          backgroundColor: 'rgba(0, 0, 0, 0.7)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -769,39 +773,40 @@ export function SettingsPage(): ReactElement {
           padding: 16,
         }}>
           <div className="modal-content" style={{
-            backgroundColor: 'var(--card-bg, #ffffff)',
+            backgroundColor: 'var(--surface)',
             borderRadius: 12,
             width: '100%',
             maxWidth: 440,
             padding: 24,
-            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)',
+            boxShadow: 'var(--shadow-md)',
+            border: '1px solid var(--border)',
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
               <div style={{
                 width: 40,
                 height: 40,
                 borderRadius: '50%',
-                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                backgroundColor: 'var(--danger-bg)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                color: '#ef4444',
+                color: 'var(--danger-text)',
               }}>
                 <Trash2 size={20} />
               </div>
-              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: 'var(--text-main, #0f172a)' }}>
+              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: 'var(--text)' }}>
                 Delete Operating Site?
               </h3>
             </div>
-            <p style={{ margin: '0 0 20px', fontSize: 14, color: 'var(--text-muted, #64748b)', lineHeight: 1.5 }}>
+            <p style={{ margin: '0 0 20px', fontSize: 14, color: 'var(--muted)', lineHeight: 1.5 }}>
               Are you sure you want to delete <strong>{deletingSite.name}</strong>? This action cannot be undone. If users or vehicles are assigned to this site, consider making it <strong>Inactive</strong> instead.
             </p>
             {formError ? (
               <div style={{
                 padding: '10px 14px',
-                backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                border: '1px solid rgba(239, 68, 68, 0.3)',
-                color: '#ef4444',
+                backgroundColor: 'var(--danger-bg)',
+                border: '1px solid var(--danger-border)',
+                color: 'var(--danger-text)',
                 borderRadius: 6,
                 marginBottom: 16,
                 fontSize: 13,
@@ -812,7 +817,7 @@ export function SettingsPage(): ReactElement {
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
               <button
                 type="button"
-                className="btn btn-secondary"
+                className="btn-secondary"
                 onClick={() => setDeletingSite(null)}
                 disabled={submitting}
               >
@@ -820,10 +825,10 @@ export function SettingsPage(): ReactElement {
               </button>
               <button
                 type="button"
-                className="btn btn-danger"
+                className="btn-primary"
                 onClick={handleDelete}
                 disabled={submitting}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600, backgroundColor: '#ef4444', color: '#ffffff' }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600, backgroundColor: 'var(--danger-text)', borderColor: 'var(--danger-text)', color: '#ffffff' }}
               >
                 {submitting ? <RotateCw size={15} className="spin" /> : null}
                 Delete Site
