@@ -12,6 +12,7 @@ import { maintenanceRouter } from './modules/maintenance/maintenance.router';
 import { sparePartsRouter } from './modules/spare-parts/spare-parts.router';
 import { supportRouter } from './modules/support/support.router';
 import { reportsRouter } from './modules/reports/reports.router';
+import { sitesRouter } from './modules/sites/sites.router';
 
 /** All v1 routes, mounted by app.ts under /api/v1. */
 export const apiRouter = Router();
@@ -29,6 +30,7 @@ apiRouter.use('/maintenance', maintenanceRouter);
 apiRouter.use('/spare-parts', sparePartsRouter);
 apiRouter.use('/support', supportRouter);
 apiRouter.use('/reports', reportsRouter);
+apiRouter.use('/sites', sitesRouter);
 
 
 

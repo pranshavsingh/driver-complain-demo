@@ -2,6 +2,7 @@ import type {
   UserPublic,
   AdminSummary,
   Role,
+  ComplaintCategory,
   CreateUser,
   UpdateUser,
   ApprovalStatus,
@@ -94,11 +95,37 @@ export async function createUser(actor: Actor, input: CreateUser): Promise<UserP
     }
   }
 
-  const pinHash = await hashPin(input.pin.trim());
   const isSuperAdmin = actor.role === 'SUPER_ADMIN';
+  let targetCategory: ComplaintCategory | null = input.category ?? null;
+  let targetCreatedByAdminId = isSuperAdmin ? (input.createdByAdminId ?? null) : actor.id;
+
+  // 5. Hierarchy Role Validations
+  if (input.role === 'ADMIN') {
+    if (!input.category) {
+      throw ApiError.badRequest('Assigned department / complaint category is required for Department Admin.');
+    }
+    targetCategory = input.category;
+  } else if (input.role === 'EXECUTIVE') {
+    if (!targetCreatedByAdminId) {
+      throw ApiError.badRequest('Supervising Department Admin is required for Executive accounts.');
+    }
+    const supervisingAdmin = await prisma.user.findUnique({
+      where: { id: targetCreatedByAdminId },
+      select: { id: true, category: true, role: true },
+    });
+    if (!supervisingAdmin || supervisingAdmin.role !== 'ADMIN') {
+      throw ApiError.badRequest('Invalid supervising admin. Supervising admin must be an active Department Admin.');
+    }
+    if (!input.site?.trim()) {
+      throw ApiError.badRequest('Operating Site / Hub location is required for Executive accounts.');
+    }
+    // Executive automatically inherits category from supervising Department Admin
+    targetCategory = supervisingAdmin.category;
+  }
+
+  const pinHash = await hashPin(input.pin.trim());
   const approvalStatus: ApprovalStatus = isSuperAdmin ? 'APPROVED' : 'PENDING_APPROVAL';
   const isActive = isSuperAdmin;
-  const targetCreatedByAdminId = isSuperAdmin ? (input.createdByAdminId ?? null) : actor.id;
 
   const user = await prisma.$transaction(async (tx) => {
     const newUser = await tx.user.create({
@@ -107,7 +134,8 @@ export async function createUser(actor: Actor, input: CreateUser): Promise<UserP
         pinHash,
         role: input.role,
         approvalStatus,
-        category: input.category ?? null,
+        category: targetCategory,
+        site: input.site?.trim() || null,
         createdByAdminId: targetCreatedByAdminId,
         firstName: input.firstName.trim(),
         lastName: input.lastName.trim(),
@@ -466,6 +494,19 @@ export async function updateUser(userId: string, input: UpdateUser): Promise<Use
     if (dup) throw ApiError.badRequest(`Phone number "${normPhone}" is already registered.`);
   }
 
+  let targetCategory = input.category;
+  if (user.role === 'EXECUTIVE' && input.createdByAdminId !== undefined) {
+    if (input.createdByAdminId) {
+      const supAdmin = await prisma.user.findUnique({
+        where: { id: input.createdByAdminId },
+        select: { category: true },
+      });
+      targetCategory = supAdmin?.category ?? null;
+    } else {
+      targetCategory = null;
+    }
+  }
+
   const updated = await prisma.user.update({
     where: { id: userId },
     data: {
@@ -473,7 +514,9 @@ export async function updateUser(userId: string, input: UpdateUser): Promise<Use
       ...(input.lastName !== undefined && { lastName: input.lastName.trim() }),
       ...(input.email !== undefined && { email: input.email ? input.email.trim().toLowerCase() : null }),
       ...(input.phone !== undefined && { phone: input.phone ? input.phone.trim() : null }),
-      ...(input.category !== undefined && { category: input.category }),
+      ...(targetCategory !== undefined && { category: targetCategory }),
+      ...(input.site !== undefined && { site: input.site ? input.site.trim() : null }),
+      ...(input.createdByAdminId !== undefined && { createdByAdminId: input.createdByAdminId }),
       ...(input.isActive !== undefined && { isActive: input.isActive }),
     },
   });

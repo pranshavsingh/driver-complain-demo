@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, type ReactElement } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { Truck, LayoutDashboard, Users, ClipboardList, LogOut, Bell, Menu, X, Trash2, CheckCircle2, Wrench, FileSpreadsheet, Package, Headphones } from './Icons';
-
+import { Truck, LayoutDashboard, Users, ClipboardList, LogOut, Bell, Menu, X, Trash2, CheckCircle2, Wrench, FileSpreadsheet, Package, Headphones, Settings } from './Icons';
 
 import { isAdmin, isSuperAdmin, useAuth } from '../auth/AuthContext';
 import { useRealtime } from '../realtime/RealtimeProvider';
@@ -55,6 +54,7 @@ function getPageTitle(pathname: string): string {
   if (pathname.startsWith('/spare-parts')) return 'Spare Parts & Inventory Requisition';
   if (pathname.startsWith('/support')) return 'Helpline & Realtime Support';
   if (pathname.startsWith('/reports')) return 'Vehicle Reports & Analytics';
+  if (pathname.startsWith('/settings')) return 'Settings & Hub Management';
   return 'Fleet Administration';
 }
 
@@ -478,6 +478,16 @@ export function Layout(): ReactElement {
             <FileSpreadsheet size={18} className="nav-icon" />
             <span className="nav-label">Vehicle Reports</span>
           </NavLink>
+
+          {isSuperAdmin(user) || isAdmin(user) ? (
+            <NavLink
+              to="/settings"
+              className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
+            >
+              <Settings size={18} className="nav-icon" />
+              <span className="nav-label">Settings</span>
+            </NavLink>
+          ) : null}
         </nav>
 
 

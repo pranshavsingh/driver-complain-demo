@@ -1,6 +1,5 @@
 import { useState, useEffect, type ReactElement } from 'react';
 import type { UserPublic, Role, ComplaintCategory } from '@driver-complaint/shared-types';
-import { COMPLAINT_CATEGORIES } from '@driver-complaint/shared-types';
 import {
   Users,
   RotateCw,
@@ -14,12 +13,29 @@ import {
   UserX,
   CheckCircle2,
   Truck,
+  MapPin,
 } from '../components/Icons';
 import * as api from '../api/endpoints';
 import { useAuth } from '../auth/AuthContext';
 import { useRealtime } from '../realtime/RealtimeProvider';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { useApiResource } from '../hooks/useApiResource';
+
+export const APP_CATEGORY_OPTIONS: { value: ComplaintCategory; label: string; icon: string }[] = [
+  { value: 'LOADING', label: 'Loading / Unloading', icon: '🚛' },
+  { value: 'BREAKDOWN', label: 'Breakdown', icon: '🚨' },
+  { value: 'TYRE_ISSUE', label: 'Tyre issue', icon: '🛞' },
+  { value: 'FUEL_DEF', label: 'Fuel / DEF', icon: '⛽' },
+  { value: 'ACCOUNTS', label: 'Accounts', icon: '💼' },
+  { value: 'SUPPORT', label: 'Spare parts Requisition / Requirements', icon: '📦' },
+];
+
+export function getCategoryLabel(cat?: string | null): string {
+  if (!cat) return 'Unassigned';
+  const found = APP_CATEGORY_OPTIONS.find((o) => o.value === cat);
+  if (found) return `${found.icon} ${found.label}`;
+  return cat;
+}
 
 export function UsersPage(): ReactElement {
   const { user: currentUser } = useAuth();
@@ -41,6 +57,7 @@ export function UsersPage(): ReactElement {
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [category, setCategory] = useState<ComplaintCategory | ''>('');
+  const [site, setSite] = useState('');
   const [selectedAdminId, setSelectedAdminId] = useState('');
   const [licenseNumber, setLicenseNumber] = useState('');
   const [modalError, setModalError] = useState<string | null>(null);
@@ -54,6 +71,9 @@ export function UsersPage(): ReactElement {
 
   const usersResource = useApiResource('users:list', () => api.users.list());
   const usersList: UserPublic[] = usersResource.data ?? [];
+
+  const sitesResource = useApiResource('sites:list', () => api.sites.list());
+  const sitesList = sitesResource.data ?? [];
 
   // Realtime live update on any user creation / approval / rejection
   // Realtime live update on any user creation / approval / rejection / deletion
@@ -186,6 +206,7 @@ export function UsersPage(): ReactElement {
     setEmail('');
     setPhone('');
     setCategory('');
+    setSite('');
     setSelectedAdminId('');
     setLicenseNumber('');
     setModalError(null);
@@ -231,9 +252,20 @@ export function UsersPage(): ReactElement {
       return;
     }
 
-    if ((selectedRole === 'ADMIN' || selectedRole === 'EXECUTIVE') && !category) {
-      setModalError('Please select a category / executive function.');
+    if (selectedRole === 'ADMIN' && !category) {
+      setModalError('Please select an assigned Department / Category for Department Head (Admin).');
       return;
+    }
+
+    if (selectedRole === 'EXECUTIVE') {
+      if (isSuperAdmin && !selectedAdminId) {
+        setModalError('Please select a Supervising Department Admin for this Executive.');
+        return;
+      }
+      if (!site.trim()) {
+        setModalError('Operating Site / Hub location is required for Executive accounts.');
+        return;
+      }
     }
 
     // Availability validation check
@@ -267,9 +299,10 @@ export function UsersPage(): ReactElement {
         lastName: lastName.trim(),
         email: email.trim() || null,
         phone: phone.trim(),
-        category: category ? (category as ComplaintCategory) : null,
+        category: selectedRole === 'ADMIN' && category ? (category as ComplaintCategory) : null,
+        site: selectedRole === 'EXECUTIVE' ? site.trim() : null,
         licenseNumber: selectedRole === 'DRIVER' ? (licenseNumber.trim() || undefined) : undefined,
-        createdByAdminId: isSuperAdmin && selectedAdminId ? selectedAdminId : undefined,
+        createdByAdminId: isSuperAdmin && selectedRole === 'EXECUTIVE' && selectedAdminId ? selectedAdminId : undefined,
       });
 
       setShowCreateModal(false);
@@ -365,6 +398,8 @@ export function UsersPage(): ReactElement {
         email: editingUser.email?.trim() || null,
         phone: editingUser.phone?.trim() || null,
         category: editingUser.category ?? null,
+        site: editingUser.site?.trim() || null,
+        createdByAdminId: editingUser.createdByAdminId ?? null,
       });
       setEditingUser(null);
       void usersResource.reload();
@@ -698,62 +733,120 @@ export function UsersPage(): ReactElement {
                   <th>Employee ID</th>
                   <th>Name</th>
                   <th>Role</th>
-                  <th>Assigned Category</th>
+                  <th>Department / Category</th>
+                  <th>Supervision & Site</th>
                   <th>Approval State</th>
                   <th>Account Status</th>
                   <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredUsers.map((u) => (
-                  <tr key={u.id}>
-                    <td>
-                      <span
-                        style={{
-                          fontFamily: 'monospace',
-                          fontWeight: 800,
-                          fontSize: 13,
-                          letterSpacing: '0.04em',
-                          padding: '4px 8px',
-                          background: 'var(--bg)',
-                          color: 'var(--text)',
-                          border: '1px solid var(--border)',
-                          borderRadius: 6,
-                        }}
-                      >
-                        {u.employeeId}
-                      </span>
-                    </td>
-                    <td>
-                      <div>
-                        <div style={{ fontWeight: 700, color: 'var(--text)', fontSize: 13 }}>
-                          {u.firstName} {u.lastName}
-                        </div>
-                        {u.email && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{u.email}</div>}
-                      </div>
-                    </td>
-                    <td>{getRoleBadge(u.role)}</td>
-                    <td>
-                      {u.category ? (
+                {filteredUsers.map((u) => {
+                  const supervisingAdmin = u.createdByAdminId ? usersList.find((a) => a.id === u.createdByAdminId) : null;
+                  return (
+                    <tr key={u.id}>
+                      <td>
                         <span
                           style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            padding: '3px 10px',
+                            fontFamily: 'monospace',
+                            fontWeight: 800,
+                            fontSize: 13,
+                            letterSpacing: '0.04em',
+                            padding: '4px 8px',
+                            background: 'var(--bg)',
+                            color: 'var(--text)',
+                            border: '1px solid var(--border)',
                             borderRadius: 6,
-                            backgroundColor: 'rgba(6, 182, 212, 0.15)',
-                            color: '#22d3ee',
-                            border: '1px solid rgba(6, 182, 212, 0.35)',
-                            fontSize: 11,
-                            fontWeight: 700,
                           }}
                         >
-                          {u.category}
+                          {u.employeeId}
                         </span>
-                      ) : (
-                        <span style={{ color: 'var(--muted)', fontSize: 12 }}>Unassigned</span>
-                      )}
-                    </td>
+                      </td>
+                      <td>
+                        <div>
+                          <div style={{ fontWeight: 700, color: 'var(--text)', fontSize: 13 }}>
+                            {u.firstName} {u.lastName}
+                          </div>
+                          {u.email && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{u.email}</div>}
+                        </div>
+                      </td>
+                      <td>{getRoleBadge(u.role)}</td>
+                      <td>
+                        {u.role === 'ADMIN' && u.category && (
+                          <div>
+                            <span
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                padding: '3px 10px',
+                                borderRadius: 6,
+                                backgroundColor: 'rgba(6, 182, 212, 0.15)',
+                                color: '#22d3ee',
+                                border: '1px solid rgba(6, 182, 212, 0.35)',
+                                fontSize: 11,
+                                fontWeight: 700,
+                              }}
+                            >
+                              {getCategoryLabel(u.category)}
+                            </span>
+                            <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>Department Head</div>
+                          </div>
+                        )}
+                        {u.role === 'EXECUTIVE' && (
+                          <div>
+                            {u.category ? (
+                              <span
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  padding: '3px 10px',
+                                  borderRadius: 6,
+                                  backgroundColor: 'rgba(249, 115, 22, 0.15)',
+                                  color: '#fb923c',
+                                  border: '1px solid rgba(249, 115, 22, 0.35)',
+                                  fontSize: 11,
+                                  fontWeight: 700,
+                                }}
+                              >
+                                {getCategoryLabel(u.category)}
+                              </span>
+                            ) : (
+                              <span style={{ color: 'var(--muted)', fontSize: 12 }}>Unassigned</span>
+                            )}
+                            <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>Inherited Dept</div>
+                          </div>
+                        )}
+                        {u.role === 'SUPER_ADMIN' && (
+                          <span style={{ color: 'var(--muted)', fontSize: 12 }}>All Fleet</span>
+                        )}
+                        {u.role === 'DRIVER' && (
+                          <span style={{ color: 'var(--muted)', fontSize: 12 }}>—</span>
+                        )}
+                      </td>
+                      <td>
+                        {u.role === 'EXECUTIVE' ? (
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>
+                              {supervisingAdmin ? `${supervisingAdmin.firstName} ${supervisingAdmin.lastName}` : 'SuperAdmin Direct'}
+                            </div>
+                            <div style={{ fontSize: 11, color: 'var(--accent)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <MapPin size={11} /> {u.site || 'No Site Assigned'}
+                            </div>
+                          </div>
+                        ) : u.role === 'ADMIN' ? (
+                          <span style={{ fontSize: 12, color: 'var(--muted)' }}>Fleet Management</span>
+                        ) : u.role === 'SUPER_ADMIN' ? (
+                          <span style={{ fontSize: 12, color: 'var(--muted)' }}>Global Authority</span>
+                        ) : (
+                          <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+                            {u.site ? (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                <MapPin size={11} /> {u.site}
+                              </span>
+                            ) : '—'}
+                          </span>
+                        )}
+                      </td>
                     <td>
                       {u.approvalStatus === 'APPROVED' && (
                         <span
@@ -921,7 +1014,8 @@ export function UsersPage(): ReactElement {
                       </div>
                     </td>
                   </tr>
-                ))}
+                );
+              })}
               </tbody>
             </table>
           </div>
@@ -1178,32 +1272,112 @@ export function UsersPage(): ReactElement {
                     )}
                   </div>
 
-                  {/* Supervising Department Admin Selection for Executive (SuperAdmin view) */}
-                  {isSuperAdmin && selectedRole === 'EXECUTIVE' && (
-                    <div>
-                      <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                        Supervising Department Admin (Optional)
-                      </label>
-                      <select
-                        className="filter-select"
-                        value={selectedAdminId}
-                        onChange={(e) => setSelectedAdminId(e.target.value)}
-                        style={{ width: '100%', padding: '9px 12px' }}
-                      >
-                        <option value="">-- Direct SuperAdmin Oversight --</option>
-                        {usersList
-                          .filter((u) => u.role === 'ADMIN' && u.isActive)
-                          .map((a) => (
-                            <option key={a.id} value={a.id}>
-                              {a.firstName} {a.lastName} ({a.employeeId}){a.category ? ` - ${a.category}` : ''}
-                            </option>
-                          ))}
-                      </select>
+                  {/* Supervising Department Admin & Site Selection for Executive */}
+                  {selectedRole === 'EXECUTIVE' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                      {isSuperAdmin ? (
+                        <div>
+                          <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
+                            Supervising Department Admin <span style={{ color: 'var(--danger-text)' }}>*</span>
+                          </label>
+                          <select
+                            className="filter-select"
+                            value={selectedAdminId}
+                            onChange={(e) => setSelectedAdminId(e.target.value)}
+                            style={{ width: '100%', padding: '9px 12px' }}
+                            required
+                          >
+                            <option value="">-- Select Supervising Admin --</option>
+                            {usersList
+                              .filter((u) => u.role === 'ADMIN' && u.isActive)
+                              .map((a) => (
+                                <option key={a.id} value={a.id}>
+                                  {a.firstName} {a.lastName} ({a.employeeId}){a.category ? ` - ${getCategoryLabel(a.category)}` : ' (No Category)'}
+                                </option>
+                              ))}
+                          </select>
+                          {selectedAdminId && (
+                            <div
+                              style={{
+                                marginTop: 8,
+                                padding: '8px 12px',
+                                background: 'rgba(6, 182, 212, 0.1)',
+                                border: '1px solid rgba(6, 182, 212, 0.3)',
+                                borderRadius: 8,
+                                fontSize: 12,
+                              }}
+                            >
+                              <span style={{ color: 'var(--muted)' }}>Inherited Department: </span>
+                              <strong style={{ color: '#22d3ee' }}>
+                                {getCategoryLabel(usersList.find((a) => a.id === selectedAdminId)?.category)}
+                              </strong>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div
+                          style={{
+                            padding: '10px 14px',
+                            background: 'rgba(59, 130, 246, 0.1)',
+                            border: '1px solid rgba(59, 130, 246, 0.3)',
+                            borderRadius: 8,
+                            fontSize: 13,
+                          }}
+                        >
+                          <div>
+                            <strong>Supervising Admin:</strong> {currentUser?.firstName} {currentUser?.lastName} ({currentUser?.employeeId})
+                          </div>
+                          <div style={{ marginTop: 4 }}>
+                            <strong>Inherited Department:</strong>{' '}
+                            <span style={{ color: '#60a5fa', fontWeight: 700 }}>
+                              {getCategoryLabel(currentUser?.category)}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Site location input for Executive */}
+                      <div>
+                        <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
+                          Operating Site / Hub Location <span style={{ color: 'var(--danger-text)' }}>*</span>
+                        </label>
+                        {sitesList.length > 0 ? (
+                          <select
+                            className="filter-select"
+                            value={site}
+                            onChange={(e) => setSite(e.target.value)}
+                            style={{ width: '100%', padding: '9px 12px' }}
+                            required
+                          >
+                            <option value="">-- Select Operating Site / Hub --</option>
+                            {sitesList
+                              .filter((s) => s.isActive)
+                              .map((s) => (
+                                <option key={s.id} value={s.name}>
+                                  {s.name} {s.code ? `(${s.code})` : ''} {s.address ? `• ${s.address}` : ''}
+                                </option>
+                              ))}
+                          </select>
+                        ) : (
+                          <input
+                            type="text"
+                            className="filter-select"
+                            placeholder="e.g. Kolkata Hub, Site A, Plant 1"
+                            value={site}
+                            onChange={(e) => setSite(e.target.value)}
+                            style={{ width: '100%', padding: '9px 12px' }}
+                            required
+                          />
+                        )}
+                        <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
+                          The operational site where this executive is stationed to resolve complaints.
+                        </p>
+                      </div>
                     </div>
                   )}
 
-                  {/* Category / Executive Function Picker */}
-                  {(selectedRole === 'ADMIN' || selectedRole === 'EXECUTIVE') && (
+                  {/* Category Assignment for Department Admin */}
+                  {selectedRole === 'ADMIN' && (
                     <div
                       style={{
                         backgroundColor: 'var(--bg)',
@@ -1213,12 +1387,10 @@ export function UsersPage(): ReactElement {
                       }}
                     >
                       <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 4 }}>
-                        {selectedRole === 'EXECUTIVE' ? 'Executive Function / Department' : 'Assigned Complaint Category'} <span style={{ color: 'var(--danger-text)' }}>*</span>
+                        Assigned Department / Complaint Category <span style={{ color: 'var(--danger-text)' }}>*</span>
                       </label>
                       <p style={{ fontSize: 12, color: 'var(--muted)', margin: '0 0 10px 0' }}>
-                        {selectedRole === 'EXECUTIVE'
-                          ? 'Select executive operational department (Spare Parts, Loading, Unloading, Fuel/DEF, Service).'
-                          : 'Driver complaints under this category auto-assign to this Department Admin.'}
+                        Driver complaints under this category will automatically route to this Department Admin and their site executives.
                       </p>
                       <select
                         className="filter-select"
@@ -1227,16 +1399,12 @@ export function UsersPage(): ReactElement {
                         style={{ width: '100%', padding: '9px 12px' }}
                         required
                       >
-                        <option value="">-- Select Executive Function / Category --</option>
-                        <option value="SUPPORT">📦 Spare Parts Executive (Inventory & Requisition)</option>
-                        <option value="LOADING">🏭 Loading Executive (Plant Loading & Detention)</option>
-                        <option value="UNLOADING">📦 Unloading Executive (Destination Unloading)</option>
-                        <option value="FUEL_DEF">⛽ Fuel / DEF Executive (Fueling & Logs)</option>
-                        <option value="VEHICLE_MAINTENANCE">🔧 Service Executive (Vehicle Servicing & Maintenance)</option>
-                        <option value="BREAKDOWN">🚨 Breakdown Support Executive</option>
-                        <option value="TYRE_ISSUE">🛞 Tyre Issue Executive</option>
-                        <option value="ACCOUNTS">💼 Accounts Executive</option>
-                        <option value="MEDICAL_EMERGENCY">🚑 Medical Emergency Executive</option>
+                        <option value="">-- Select Category / Department --</option>
+                        {APP_CATEGORY_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.icon} {opt.label}
+                          </option>
+                        ))}
                       </select>
                     </div>
                   )}
@@ -1589,7 +1757,8 @@ export function UsersPage(): ReactElement {
                 </div>
               </div>
 
-              {(editingUser.role === 'ADMIN' || editingUser.role === 'EXECUTIVE') && (
+              {/* Department Head Category Settings */}
+              {editingUser.role === 'ADMIN' && (
                 <div
                   style={{
                     backgroundColor: 'var(--bg)',
@@ -1599,10 +1768,10 @@ export function UsersPage(): ReactElement {
                   }}
                 >
                   <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 4 }}>
-                    Assigned Complaint Category (Auto-Routing)
+                    Assigned Department / Complaint Category <span style={{ color: 'var(--danger-text)' }}>*</span>
                   </label>
                   <p style={{ fontSize: 12, color: 'var(--muted)', margin: '0 0 10px 0' }}>
-                    Complaints filed in this category will automatically be routed to this user.
+                    Driver complaints under this category will auto-route to this Department Head and their site executives.
                   </p>
                   <select
                     className="filter-select"
@@ -1612,13 +1781,99 @@ export function UsersPage(): ReactElement {
                     }
                     style={{ width: '100%', padding: '9px 12px' }}
                   >
-                    <option value="">-- None --</option>
-                    {COMPLAINT_CATEGORIES.map((cat) => (
-                      <option key={cat} value={cat}>
-                        {cat}
+                    <option value="">-- Select Category / Department --</option>
+                    {APP_CATEGORY_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.icon} {opt.label}
                       </option>
                     ))}
                   </select>
+                </div>
+              )}
+
+              {/* Executive Supervision and Site Settings */}
+              {editingUser.role === 'EXECUTIVE' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  {isSuperAdmin && (
+                    <div>
+                      <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
+                        Supervising Department Admin
+                      </label>
+                      <select
+                        className="filter-select"
+                        value={editingUser.createdByAdminId ?? ''}
+                        onChange={(e) => {
+                          const newAdminId = e.target.value || null;
+                          const targetAdmin = usersList.find((a) => a.id === newAdminId);
+                          setEditingUser({
+                            ...editingUser,
+                            createdByAdminId: newAdminId,
+                            category: targetAdmin?.category ?? null,
+                          });
+                        }}
+                        style={{ width: '100%', padding: '9px 12px' }}
+                      >
+                        <option value="">-- Direct SuperAdmin Oversight --</option>
+                        {usersList
+                          .filter((u) => u.role === 'ADMIN' && u.isActive)
+                          .map((a) => (
+                            <option key={a.id} value={a.id}>
+                              {a.firstName} {a.lastName} ({a.employeeId}){a.category ? ` - ${getCategoryLabel(a.category)}` : ''}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <div
+                    style={{
+                      padding: '10px 14px',
+                      background: 'rgba(6, 182, 212, 0.08)',
+                      border: '1px solid rgba(6, 182, 212, 0.25)',
+                      borderRadius: 8,
+                      fontSize: 12,
+                    }}
+                  >
+                    <span style={{ color: 'var(--muted)' }}>Inherited Department: </span>
+                    <strong style={{ color: '#22d3ee' }}>
+                      {getCategoryLabel(editingUser.category)}
+                    </strong>
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
+                      Operating Site / Hub Location
+                    </label>
+                    {sitesList.length > 0 ? (
+                      <select
+                        className="filter-select"
+                        value={editingUser.site ?? ''}
+                        onChange={(e) => setEditingUser({ ...editingUser, site: e.target.value || null })}
+                        style={{ width: '100%', padding: '9px 12px' }}
+                      >
+                        <option value="">-- Select Operating Site / Hub --</option>
+                        {editingUser.site && !sitesList.some((s) => s.name === editingUser.site) && (
+                          <option value={editingUser.site}>{editingUser.site} (Current)</option>
+                        )}
+                        {sitesList
+                          .filter((s) => s.isActive || s.name === editingUser.site)
+                          .map((s) => (
+                            <option key={s.id} value={s.name}>
+                              {s.name} {s.code ? `(${s.code})` : ''} {!s.isActive ? '(Inactive)' : ''}
+                            </option>
+                          ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        className="filter-select"
+                        placeholder="e.g. Kolkata Hub, Site A, Plant 1"
+                        value={editingUser.site ?? ''}
+                        onChange={(e) => setEditingUser({ ...editingUser, site: e.target.value || null })}
+                        style={{ width: '100%', padding: '9px 12px' }}
+                      />
+                    )}
+                  </div>
                 </div>
               )}
 

@@ -41,6 +41,10 @@ import {
   type SupportConversationSummary,
   UserAvailabilityResponseSchema,
   type UserAvailabilityResponse,
+  OperatingSitePublicSchema,
+  type OperatingSitePublic,
+  type CreateOperatingSite,
+  type UpdateOperatingSite,
 } from '@driver-complaint/shared-types';
 import { download, request, requestNoContent, type QueryValue } from './client';
 import { clearTokens, getRefreshToken } from './tokens';
@@ -432,4 +436,27 @@ export const notifications = {
     request(z.any(), `/notifications/${id}/read`, { method: 'PATCH' }),
   markAllRead: (): Promise<{ updated: number }> =>
     request(z.any(), '/notifications/read-all', { method: 'POST' }),
+};
+
+export const sites = {
+  list: (onlyActive = false): Promise<OperatingSitePublic[]> =>
+    request(z.array(OperatingSitePublicSchema), '/sites', {
+      query: onlyActive ? { active: 'true' } : undefined,
+    }),
+  getById: (id: string): Promise<OperatingSitePublic> =>
+    request(OperatingSitePublicSchema, `/sites/${id}`),
+  create: (input: CreateOperatingSite): Promise<OperatingSitePublic> =>
+    request(OperatingSitePublicSchema, '/sites', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  update: (id: string, input: UpdateOperatingSite): Promise<OperatingSitePublic> =>
+    request(OperatingSitePublicSchema, `/sites/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
+  remove: (id: string): Promise<void> =>
+    requestNoContent(`/sites/${id}`, {
+      method: 'DELETE',
+    }),
 };

@@ -13,6 +13,7 @@ export const UserPublicSchema = z.object({
   isActive: z.boolean(),
   approvalStatus: ApprovalStatusSchema.optional(),
   category: ComplaintCategorySchema.nullable().optional(),
+  site: z.string().nullable().optional(),
   createdByAdminId: z.string().nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -28,6 +29,7 @@ export const CreateUserSchema = z.object({
   email: z.string().trim().email('Invalid email address').nullable().optional().or(z.literal('')),
   phone: z.string().trim().min(7, 'Phone number is required').max(20, 'Phone number is too long'),
   category: ComplaintCategorySchema.nullable().optional(),
+  site: z.string().trim().nullable().optional(),
   licenseNumber: z.string().trim().max(50).optional(),
   createdByAdminId: z.string().nullable().optional(),
 });
@@ -53,6 +55,8 @@ export const UpdateUserSchema = z.object({
   email: z.string().email().nullable().optional(),
   phone: z.string().nullable().optional(),
   category: ComplaintCategorySchema.nullable().optional(),
+  site: z.string().nullable().optional(),
+  createdByAdminId: z.string().nullable().optional(),
   isActive: z.boolean().optional(),
 });
 export type UpdateUser = z.infer<typeof UpdateUserSchema>;
@@ -68,5 +72,6 @@ export const AdminSummarySchema = z.object({
   lastName: z.string(),
   role: RoleSchema,
   category: ComplaintCategorySchema.nullable().optional(),
+  site: z.string().nullable().optional(),
 });
 export type AdminSummary = z.infer<typeof AdminSummarySchema>;

@@ -38,13 +38,14 @@ export function toPartySummary(user: User): PartySummary {
 
 /** An admin for the dashboard's assignee dropdown (role included so the UI can label it). */
 export function toAdminSummary(user: User): AdminSummary {
-  return { ...toPartySummary(user), role: user.role, category: user.category ?? null };
+  return { ...toPartySummary(user), role: user.role, category: user.category ?? null, site: user.site ?? null };
 }
 
 export function toUserPublic(user: User): UserPublic {
   const u = user as User & {
     approvalStatus?: ApprovalStatus;
     category?: string | null;
+    site?: string | null;
     createdByAdminId?: string | null;
   };
   return {
@@ -58,6 +59,7 @@ export function toUserPublic(user: User): UserPublic {
     isActive: user.isActive,
     approvalStatus: u.approvalStatus ?? 'APPROVED',
     category: (u.category as UserPublic['category']) ?? null,
+    site: u.site ?? null,
     createdByAdminId: u.createdByAdminId ?? null,
     createdAt: user.createdAt.toISOString(),
     updatedAt: user.updatedAt.toISOString(),

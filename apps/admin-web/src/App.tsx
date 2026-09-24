@@ -14,6 +14,7 @@ import { ReportsPage } from './pages/ReportsPage';
 import { UsersPage } from './pages/UsersPage';
 import { VehiclesPage } from './pages/VehiclesPage';
 import { SupportChatPage } from './pages/SupportChatPage';
+import { SettingsPage } from './pages/SettingsPage';
 
 import { ThemeProvider } from './context/ThemeContext';
 import { NotFoundPage } from './pages/NotFoundPage';
@@ -46,6 +47,7 @@ export function App(): ReactElement {
         <Route path="/spare-parts" element={<SparePartsPage />} />
         <Route path="/support" element={<SupportChatPage />} />
         <Route path="/reports" element={<ReportsPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
       </Routes>

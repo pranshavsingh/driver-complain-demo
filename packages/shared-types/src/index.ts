@@ -16,3 +16,4 @@ export * from './warehouse';
 export * from './spare-part';
 export * from './support-chat';
 export * from './upload';
+export * from './site';

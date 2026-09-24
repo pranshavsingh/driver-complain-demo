@@ -107,6 +107,7 @@ model User {
   role                Role              @default(DRIVER)
   approvalStatus      ApprovalStatus    @default(APPROVED)
   category            ComplaintCategory?
+  site                String?
   createdByAdminId    String?           @db.Uuid
   firstName           String
   lastName            String
@@ -555,6 +556,18 @@ model SupportMessage {
   @@index([senderId, receiverId])
   @@index([receiverId, isRead])
   @@index([createdAt])
+}
+
+model OperatingSite {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  name        String    @unique
+  code        String?   @unique
+  address     String?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([isActive])
 }
 
 
