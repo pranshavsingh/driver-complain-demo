@@ -479,12 +479,8 @@ export function VehiclesPage(): ReactElement {
 
   const siteInchargesList = useMemo(() => {
     return allUsers
-      .filter((u) => (u.role === 'EXECUTIVE' || u.role === 'ADMIN' || u.role === 'SUPER_ADMIN') && u.isActive)
-      .sort((a, b) => {
-        if (a.role === 'EXECUTIVE' && b.role !== 'EXECUTIVE') return -1;
-        if (a.role !== 'EXECUTIVE' && b.role === 'EXECUTIVE') return 1;
-        return a.firstName.localeCompare(b.firstName);
-      });
+      .filter((u) => u.role === 'EXECUTIVE' && u.isActive)
+      .sort((a, b) => a.firstName.localeCompare(b.firstName));
   }, [allUsers]);
 
   // Map of driverId -> assigned vehicle details (for 1:1 driver assignment enforcement)
@@ -1364,20 +1360,22 @@ export function VehiclesPage(): ReactElement {
                     style={{ width: '100%', fontWeight: 600 }}
                   >
                     <option value="">-- Select Site In-charge (Executive) --</option>
-                    {siteInchargesList.map((user) => {
-                      const isExec = user.role === 'EXECUTIVE';
-                      const supervisingAdmin = user.createdByAdminId ? adminMap.get(user.createdByAdminId) : null;
-                      const adminPart = supervisingAdmin
-                        ? ` • Under: ${supervisingAdmin.firstName} ${supervisingAdmin.lastName}${supervisingAdmin.category ? ` (${supervisingAdmin.category})` : ''}`
-                        : '';
-                      const sitePart = user.site ? ` • Site: ${user.site}` : '';
-                      const roleLabel = isExec ? 'Executive' : user.role === 'ADMIN' ? 'Admin' : 'SuperAdmin';
-                      return (
-                        <option key={user.id} value={user.id}>
-                          {user.firstName} {user.lastName} ({user.employeeId}) [{roleLabel}]{sitePart}{adminPart}
-                        </option>
-                      );
-                    })}
+                    {siteInchargesList.length === 0 ? (
+                      <option value="" disabled>No active Executives found</option>
+                    ) : (
+                      siteInchargesList.map((user) => {
+                        const supervisingAdmin = user.createdByAdminId ? adminMap.get(user.createdByAdminId) : null;
+                        const adminPart = supervisingAdmin
+                          ? ` • Under: ${supervisingAdmin.firstName} ${supervisingAdmin.lastName}${supervisingAdmin.category ? ` (${supervisingAdmin.category})` : ''}`
+                          : '';
+                        const sitePart = user.site ? ` • Site: ${user.site}` : ' • Site: Unassigned';
+                        return (
+                          <option key={user.id} value={user.id}>
+                            {user.firstName} {user.lastName} ({user.employeeId}){sitePart}{adminPart}
+                          </option>
+                        );
+                      })
+                    )}
                   </select>
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
                     Select the executive on-ground who oversees this vehicle and its operating hub.
