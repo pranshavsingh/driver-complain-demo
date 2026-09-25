@@ -25,6 +25,8 @@ export const VehiclePublicSchema = z.object({
   driverName: z.string().nullable().optional(),
   siteInchargeId: z.string().nullable().optional(),
   siteInchargeName: z.string().nullable().optional(),
+  siteInchargeSite: z.string().nullable().optional(),
+  siteInchargeAdminName: z.string().nullable().optional(),
   plateNumber: z.string(),
   make: z.string().nullable().optional(),
   model: z.string().nullable().optional(),

@@ -97,7 +97,7 @@ export function toVehiclePublic(
 ): VehiclePublic {
   const v = vehicle as Vehicle & {
     siteInchargeId?: string | null;
-    siteIncharge?: User | null;
+    siteIncharge?: (User & { createdByAdmin?: User | null }) | null;
     modelNumber?: string | null;
     registrationDate?: Date | null;
     chassisNumber?: string | null;
@@ -111,6 +111,10 @@ export function toVehiclePublic(
   const siteInchargeName = v.siteIncharge
     ? `${v.siteIncharge.firstName} ${v.siteIncharge.lastName}`.trim()
     : null;
+  const siteInchargeSite = v.siteIncharge?.site ?? null;
+  const siteInchargeAdminName = (v.siteIncharge as any)?.createdByAdmin
+    ? `${(v.siteIncharge as any).createdByAdmin.firstName} ${(v.siteIncharge as any).createdByAdmin.lastName}`.trim()
+    : null;
 
   return {
     id: vehicle.id,
@@ -118,6 +122,8 @@ export function toVehiclePublic(
     driverName,
     siteInchargeId: v.siteInchargeId ?? null,
     siteInchargeName,
+    siteInchargeSite,
+    siteInchargeAdminName,
     plateNumber: vehicle.plateNumber,
     make: vehicle.make ?? null,
     model: vehicle.model ?? null,

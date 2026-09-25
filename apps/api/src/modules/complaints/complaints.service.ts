@@ -66,6 +66,17 @@ async function findLeastLoadedAdmin(
       }
       if (bestExec) return bestExec;
     }
+
+    // 1b. If vehicle has a specific Site In-charge (Executive), assign directly to that on-ground Executive
+    if (siteInchargeId) {
+      const siteInchargeUser = await prisma.user.findUnique({
+        where: { id: siteInchargeId },
+        select: { id: true, isActive: true, approvalStatus: true },
+      });
+      if (siteInchargeUser && siteInchargeUser.isActive && siteInchargeUser.approvalStatus === 'APPROVED') {
+        return siteInchargeUser.id;
+      }
+    }
   }
 
   // 2. Route to any active Executive matching category
@@ -401,9 +412,17 @@ export async function create(
       },
     });
 
-    if (adminIds.length > 0) {
+    const notifyUserIds = Array.from(
+      new Set([
+        ...adminIds,
+        ...(autoAssignedToId ? [autoAssignedToId] : []),
+        ...(siteInchargeIdForVehicle ? [siteInchargeIdForVehicle] : []),
+      ]),
+    );
+
+    if (notifyUserIds.length > 0) {
       await tx.notification.createMany({
-        data: adminIds.map((id) => ({
+        data: notifyUserIds.map((id) => ({
           userId: id,
           type: 'COMPLAINT_CREATED' as const,
           title: `New complaint ${complaintNo}`,
@@ -422,8 +441,16 @@ export async function create(
 
   // Live + push delivery, post-commit and best-effort — the admins' Notification rows
   // (written in the transaction above) are the durable record if this fails.
+  const notifyUserIds = Array.from(
+    new Set([
+      ...adminIds,
+      ...(autoAssignedToId ? [autoAssignedToId] : []),
+      ...(siteInchargeIdForVehicle ? [siteInchargeIdForVehicle] : []),
+    ]),
+  );
+
   dispatchComplaintEvent({
-    userIds: adminIds,
+    userIds: notifyUserIds,
     event: REALTIME_EVENTS.complaintCreated,
     payload: {
       complaintId: created.id,

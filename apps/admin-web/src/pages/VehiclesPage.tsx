@@ -1,6 +1,6 @@
 import { useMemo, useState, useRef, useEffect, type ReactElement } from 'react';
 import { createPortal } from 'react-dom';
-import type { VehiclePublic, DriverListItem } from '@driver-complaint/shared-types';
+import type { VehiclePublic, DriverListItem, UserPublic } from '@driver-complaint/shared-types';
 import {
   Truck,
   RotateCw,
@@ -466,9 +466,26 @@ export function VehiclesPage(): ReactElement {
 
   const vehiclesList: VehiclePublic[] = vehiclesResource.data ?? [];
   const driversList: DriverListItem[] = driversResource.data ?? [];
-  const siteInchargesList = (usersResource.data ?? []).filter(
-    (u) => (u.role === 'ADMIN' || u.role === 'SUPER_ADMIN') && u.isActive,
-  );
+  const allUsers: UserPublic[] = usersResource.data ?? [];
+  const adminMap = useMemo(() => {
+    const map = new Map<string, UserPublic>();
+    for (const u of allUsers) {
+      if (u.role === 'ADMIN' || u.role === 'SUPER_ADMIN') {
+        map.set(u.id, u);
+      }
+    }
+    return map;
+  }, [allUsers]);
+
+  const siteInchargesList = useMemo(() => {
+    return allUsers
+      .filter((u) => (u.role === 'EXECUTIVE' || u.role === 'ADMIN' || u.role === 'SUPER_ADMIN') && u.isActive)
+      .sort((a, b) => {
+        if (a.role === 'EXECUTIVE' && b.role !== 'EXECUTIVE') return -1;
+        if (a.role !== 'EXECUTIVE' && b.role === 'EXECUTIVE') return 1;
+        return a.firstName.localeCompare(b.firstName);
+      });
+  }, [allUsers]);
 
   // Map of driverId -> assigned vehicle details (for 1:1 driver assignment enforcement)
   const driverAssignedVehicleMap = useMemo(() => {
@@ -1030,27 +1047,45 @@ export function VehiclesPage(): ReactElement {
                         </span>
                       </td>
                       <td>
-                        {vehicle.siteInchargeName ? (
-                          <span
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 5,
-                              fontSize: 12,
-                              fontWeight: 700,
-                              padding: '3px 8px',
-                              borderRadius: 6,
-                              background: 'rgba(59, 130, 246, 0.12)',
-                              color: 'var(--accent)',
-                              border: '1px solid rgba(59, 130, 246, 0.3)',
-                              whiteSpace: 'nowrap',
-                            }}
-                          >
-                            👤 {vehicle.siteInchargeName}
-                          </span>
-                        ) : (
-                          <span style={{ fontSize: 12, color: 'var(--muted)' }}>—</span>
-                        )}
+                        {(() => {
+                          const execUser = allUsers.find((u) => u.id === vehicle.siteInchargeId);
+                          const name = vehicle.siteInchargeName || (execUser ? `${execUser.firstName} ${execUser.lastName}` : null);
+                          const siteName = vehicle.siteInchargeSite || execUser?.site;
+                          if (!name) return <span style={{ fontSize: 12, color: 'var(--muted)' }}>—</span>;
+                          return (
+                            <span
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                fontSize: 12,
+                                fontWeight: 700,
+                                padding: '4px 8px',
+                                borderRadius: 6,
+                                background: 'rgba(59, 130, 246, 0.12)',
+                                color: 'var(--accent)',
+                                border: '1px solid rgba(59, 130, 246, 0.3)',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              <span>👤 {name}</span>
+                              {siteName && (
+                                <span
+                                  style={{
+                                    fontSize: 10,
+                                    fontWeight: 700,
+                                    padding: '1px 5px',
+                                    borderRadius: 4,
+                                    backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                                    color: 'var(--text)',
+                                  }}
+                                >
+                                  {siteName}
+                                </span>
+                              )}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td>{getAgreementBadge(vehicle.agreementStatus)}</td>
                       <td>
@@ -1320,21 +1355,33 @@ export function VehiclesPage(): ReactElement {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                 <div>
                   <label style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                    Select Under Site In-charge
+                    Select Under Site In-charge (Executive)
                   </label>
                   <select
                     className="filter-select"
                     value={siteInchargeId}
                     onChange={(e) => setSiteInchargeId(e.target.value)}
-                    style={{ width: '100%', fontWeight: 700 }}
+                    style={{ width: '100%', fontWeight: 600 }}
                   >
-                    <option value="">-- Select Site In-charge (Admin) --</option>
-                    {siteInchargesList.map((admin) => (
-                      <option key={admin.id} value={admin.id}>
-                        {admin.firstName} {admin.lastName} ({admin.employeeId}){admin.category ? ` - ${admin.category}` : ''}
-                      </option>
-                    ))}
+                    <option value="">-- Select Site In-charge (Executive) --</option>
+                    {siteInchargesList.map((user) => {
+                      const isExec = user.role === 'EXECUTIVE';
+                      const supervisingAdmin = user.createdByAdminId ? adminMap.get(user.createdByAdminId) : null;
+                      const adminPart = supervisingAdmin
+                        ? ` • Under: ${supervisingAdmin.firstName} ${supervisingAdmin.lastName}${supervisingAdmin.category ? ` (${supervisingAdmin.category})` : ''}`
+                        : '';
+                      const sitePart = user.site ? ` • Site: ${user.site}` : '';
+                      const roleLabel = isExec ? 'Executive' : user.role === 'ADMIN' ? 'Admin' : 'SuperAdmin';
+                      return (
+                        <option key={user.id} value={user.id}>
+                          {user.firstName} {user.lastName} ({user.employeeId}) [{roleLabel}]{sitePart}{adminPart}
+                        </option>
+                      );
+                    })}
                   </select>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+                    Select the executive on-ground who oversees this vehicle and its operating hub.
+                  </div>
                 </div>
 
                 <div>
