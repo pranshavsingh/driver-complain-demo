@@ -20,7 +20,7 @@ export interface Actor {
 }
 
 export async function getById(id: string): Promise<UserPublic> {
-  const user = await prisma.user.findUnique({ where: { id } });
+  const user = await prisma.user.findUnique({ where: { id }, include: { driver: true } });
   if (!user) throw ApiError.notFound('User not found');
   return toUserPublic(user);
 }
@@ -250,6 +250,7 @@ export async function listUsers(
 
   const users = await prisma.user.findMany({
     where,
+    include: { driver: true },
     orderBy: { createdAt: 'desc' },
   });
   return users.map(toUserPublic);

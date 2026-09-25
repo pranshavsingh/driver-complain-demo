@@ -114,7 +114,11 @@ export function UsersPage(): ReactElement {
     const nameMatch = `${u.firstName} ${u.lastName}`.toLowerCase().includes(q);
     const empMatch = u.employeeId.toLowerCase().includes(q);
     const emailMatch = u.email ? u.email.toLowerCase().includes(q) : false;
-    return nameMatch || empMatch || emailMatch;
+    const phoneMatch = u.phone ? u.phone.toLowerCase().includes(q) : false;
+    const siteMatch = u.site ? u.site.toLowerCase().includes(q) : false;
+    const categoryMatch = u.category ? u.category.toLowerCase().includes(q) : false;
+    const licenseMatch = u.licenseNumber ? u.licenseNumber.toLowerCase().includes(q) : false;
+    return nameMatch || empMatch || emailMatch || phoneMatch || siteMatch || categoryMatch || licenseMatch;
   });
 
   // Debounced Employee ID Check
@@ -731,9 +735,9 @@ export function UsersPage(): ReactElement {
               <thead>
                 <tr>
                   <th>Employee ID</th>
-                  <th>Name</th>
+                  <th>Name & Contact</th>
                   <th>Role</th>
-                  <th>Department / Category</th>
+                  <th>Department / Credentials</th>
                   <th>Supervision & Site</th>
                   <th>Approval State</th>
                   <th>Account Status</th>
@@ -757,6 +761,8 @@ export function UsersPage(): ReactElement {
                             color: 'var(--text)',
                             border: '1px solid var(--border)',
                             borderRadius: 6,
+                            display: 'inline-block',
+                            whiteSpace: 'nowrap',
                           }}
                         >
                           {u.employeeId}
@@ -767,7 +773,18 @@ export function UsersPage(): ReactElement {
                           <div style={{ fontWeight: 700, color: 'var(--text)', fontSize: 13 }}>
                             {u.firstName} {u.lastName}
                           </div>
-                          {u.email && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{u.email}</div>}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 3 }}>
+                            {u.phone && (
+                              <span style={{ fontSize: 11, color: 'var(--muted)', display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
+                                📞 {u.phone}
+                              </span>
+                            )}
+                            {u.email && (
+                              <span style={{ fontSize: 11, color: 'var(--muted)', display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
+                                ✉️ {u.email}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </td>
                       <td>{getRoleBadge(u.role)}</td>
@@ -785,6 +802,7 @@ export function UsersPage(): ReactElement {
                                 border: '1px solid rgba(6, 182, 212, 0.35)',
                                 fontSize: 11,
                                 fontWeight: 700,
+                                whiteSpace: 'nowrap',
                               }}
                             >
                               {getCategoryLabel(u.category)}
@@ -806,6 +824,7 @@ export function UsersPage(): ReactElement {
                                   border: '1px solid rgba(249, 115, 22, 0.35)',
                                   fontSize: 11,
                                   fontWeight: 700,
+                                  whiteSpace: 'nowrap',
                                 }}
                               >
                                 {getCategoryLabel(u.category)}
@@ -816,35 +835,73 @@ export function UsersPage(): ReactElement {
                             <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>Inherited Dept</div>
                           </div>
                         )}
-                        {u.role === 'SUPER_ADMIN' && (
-                          <span style={{ color: 'var(--muted)', fontSize: 12 }}>All Fleet</span>
-                        )}
                         {u.role === 'DRIVER' && (
-                          <span style={{ color: 'var(--muted)', fontSize: 12 }}>—</span>
+                          <div>
+                            {u.licenseNumber ? (
+                              <span
+                                style={{
+                                  fontFamily: 'monospace',
+                                  fontWeight: 700,
+                                  fontSize: 11,
+                                  padding: '2px 8px',
+                                  borderRadius: 6,
+                                  backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                                  color: 'var(--success-text)',
+                                  border: '1px solid var(--success-border)',
+                                  display: 'inline-block',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                🪪 {u.licenseNumber}
+                              </span>
+                            ) : (
+                              <span style={{ color: 'var(--muted)', fontSize: 12 }}>—</span>
+                            )}
+                            <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>Driving License</div>
+                          </div>
+                        )}
+                        {u.role === 'SUPER_ADMIN' && (
+                          <div>
+                            <span style={{ color: 'var(--muted)', fontSize: 12, fontWeight: 600 }}>All Fleet</span>
+                            <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>Full Oversight</div>
+                          </div>
                         )}
                       </td>
                       <td>
                         {u.role === 'EXECUTIVE' ? (
                           <div>
-                            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>
-                              {supervisingAdmin ? `${supervisingAdmin.firstName} ${supervisingAdmin.lastName}` : 'SuperAdmin Direct'}
+                            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                              👤 {supervisingAdmin ? `${supervisingAdmin.firstName} ${supervisingAdmin.lastName}` : 'SuperAdmin Direct'}
                             </div>
-                            <div style={{ fontSize: 11, color: 'var(--accent)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
-                              <MapPin size={11} /> {u.site || 'No Site Assigned'}
+                            <div style={{ fontSize: 11, color: 'var(--accent)', marginTop: 3, display: 'flex', alignItems: 'center', gap: 4, fontWeight: 600 }}>
+                              <MapPin size={11} /> {u.site || 'Unassigned Site'}
                             </div>
                           </div>
-                        ) : u.role === 'ADMIN' ? (
-                          <span style={{ fontSize: 12, color: 'var(--muted)' }}>Fleet Management</span>
-                        ) : u.role === 'SUPER_ADMIN' ? (
-                          <span style={{ fontSize: 12, color: 'var(--muted)' }}>Global Authority</span>
-                        ) : (
-                          <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+                        ) : u.role === 'DRIVER' ? (
+                          <div>
                             {u.site ? (
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              <div style={{ fontSize: 12, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 600 }}>
                                 <MapPin size={11} /> {u.site}
-                              </span>
-                            ) : '—'}
-                          </span>
+                              </div>
+                            ) : (
+                              <div style={{ fontSize: 12, color: 'var(--muted)' }}>—</div>
+                            )}
+                            {supervisingAdmin && (
+                              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+                                Under: {supervisingAdmin.firstName} {supervisingAdmin.lastName}
+                              </div>
+                            )}
+                          </div>
+                        ) : u.role === 'ADMIN' ? (
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>Fleet Management</div>
+                            <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>Multi-site Head</div>
+                          </div>
+                        ) : (
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>Global Authority</div>
+                            <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>All Systems</div>
+                          </div>
                         )}
                       </td>
                     <td>
@@ -857,9 +914,14 @@ export function UsersPage(): ReactElement {
                             display: 'inline-flex',
                             alignItems: 'center',
                             gap: 5,
+                            padding: '3px 8px',
+                            borderRadius: 6,
+                            background: 'rgba(16, 185, 129, 0.1)',
+                            border: '1px solid rgba(16, 185, 129, 0.2)',
+                            whiteSpace: 'nowrap',
                           }}
                         >
-                          <CheckCircle2 size={14} /> Approved
+                          <CheckCircle2 size={13} /> Approved
                         </span>
                       )}
                       {u.approvalStatus === 'PENDING_APPROVAL' && (
@@ -871,13 +933,29 @@ export function UsersPage(): ReactElement {
                             display: 'inline-flex',
                             alignItems: 'center',
                             gap: 5,
+                            padding: '3px 8px',
+                            borderRadius: 6,
+                            background: 'rgba(245, 158, 11, 0.1)',
+                            border: '1px solid rgba(245, 158, 11, 0.25)',
+                            whiteSpace: 'nowrap',
                           }}
                         >
-                          <ShieldAlert size={14} /> Pending Approval
+                          <ShieldAlert size={13} /> Pending Approval
                         </span>
                       )}
                       {u.approvalStatus === 'REJECTED' && (
-                        <span style={{ color: 'var(--danger-text)', fontWeight: 700, fontSize: 12 }}>
+                        <span
+                          style={{
+                            color: 'var(--danger-text)',
+                            fontWeight: 700,
+                            fontSize: 12,
+                            padding: '3px 8px',
+                            borderRadius: 6,
+                            background: 'var(--danger-bg)',
+                            border: '1px solid var(--danger-border)',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
                           Rejected
                         </span>
                       )}
@@ -892,6 +970,7 @@ export function UsersPage(): ReactElement {
                             fontSize: 12,
                             fontWeight: 700,
                             color: 'var(--success-text)',
+                            whiteSpace: 'nowrap',
                           }}
                         >
                           <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--success-text)' }} />
@@ -906,6 +985,7 @@ export function UsersPage(): ReactElement {
                             fontSize: 12,
                             fontWeight: 700,
                             color: 'var(--muted)',
+                            whiteSpace: 'nowrap',
                           }}
                         >
                           <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--muted)' }} />

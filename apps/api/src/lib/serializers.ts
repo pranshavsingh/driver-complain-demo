@@ -47,6 +47,7 @@ export function toUserPublic(user: User): UserPublic {
     category?: string | null;
     site?: string | null;
     createdByAdminId?: string | null;
+    driver?: Driver | null;
   };
   return {
     id: user.id,
@@ -56,6 +57,7 @@ export function toUserPublic(user: User): UserPublic {
     lastName: user.lastName,
     email: user.email ?? null,
     phone: user.phone ?? null,
+    licenseNumber: u.driver?.licenseNumber ?? null,
     isActive: user.isActive,
     approvalStatus: u.approvalStatus ?? 'APPROVED',
     category: (u.category as UserPublic['category']) ?? null,

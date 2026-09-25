@@ -10,6 +10,7 @@ export const UserPublicSchema = z.object({
   lastName: z.string(),
   email: z.string().nullable().optional(),
   phone: z.string().nullable().optional(),
+  licenseNumber: z.string().nullable().optional(),
   isActive: z.boolean(),
   approvalStatus: ApprovalStatusSchema.optional(),
   category: ComplaintCategorySchema.nullable().optional(),
