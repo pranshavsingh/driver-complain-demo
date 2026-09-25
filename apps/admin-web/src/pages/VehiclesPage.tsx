@@ -37,11 +37,6 @@ const AGREEMENT_STATUS_OPTIONS = [
   { value: 'FMS Pack 1', label: 'FMS Pack 1', colorVar: '#0284c7', bgVar: 'rgba(2, 132, 199, 0.12)', borderVar: 'rgba(2, 132, 199, 0.3)' },
   { value: 'Platinum Plus', label: 'Platinum Plus', colorVar: '#9333ea', bgVar: 'rgba(147, 51, 234, 0.12)', borderVar: 'rgba(147, 51, 234, 0.3)' },
   { value: 'Platinum:ComprehensiveCovrg', label: 'Platinum:ComprehensiveCovrg', colorVar: '#059669', bgVar: 'rgba(5, 150, 105, 0.12)', borderVar: 'rgba(5, 150, 105, 0.3)' },
-  { value: 'Active', label: 'Active', colorVar: 'var(--success-text)', bgVar: 'var(--success-bg)', borderVar: 'var(--success-border)' },
-  { value: 'Pending Renewal', label: 'Pending Renewal', colorVar: 'var(--warning-text)', bgVar: 'var(--warning-bg)', borderVar: 'var(--warning-border)' },
-  { value: 'Expired', label: 'Expired', colorVar: 'var(--danger-text)', bgVar: 'var(--danger-bg)', borderVar: 'var(--danger-border)' },
-  { value: 'Under Review', label: 'Under Review', colorVar: '#0284c7', bgVar: 'rgba(2, 132, 199, 0.12)', borderVar: 'rgba(2, 132, 199, 0.3)' },
-  { value: 'Terminated', label: 'Terminated', colorVar: 'var(--muted)', bgVar: 'rgba(148, 163, 184, 0.12)', borderVar: 'var(--border)' },
 ];
 
 /** Inline Searchable Driver Dropdown Selector Component */
