@@ -45,6 +45,7 @@ export const NotificationTypeSchema = z.enum([
   'USER_APPROVAL_REQUESTED',
   'USER_APPROVED',
   'USER_REJECTED',
+  'SLA_BREACH_ESCALATION',
 ]);
 export type NotificationType = z.infer<typeof NotificationTypeSchema>;
 export const NOTIFICATION_TYPES = NotificationTypeSchema.options;

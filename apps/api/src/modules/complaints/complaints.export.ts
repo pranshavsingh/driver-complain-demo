@@ -111,16 +111,23 @@ function formatDurationMs(ms: number): string {
  */
 function computeSlaMetrics(
   createdAt: Date,
-  priority: string = 'MEDIUM',
+  category?: string | null,
+  categorySlaMap?: Record<string, number>,
   resolvedAt?: Date | null,
   now = new Date(),
 ): { slaStatus: string; resolutionTime: string } {
-  const created = createdAt.getTime();
-  let slaHours = 12;
-  if (priority === 'URGENT') slaHours = 2;
-  else if (priority === 'HIGH') slaHours = 4;
-  else if (priority === 'LOW') slaHours = 24;
+  const cat = (category || '').toUpperCase();
+  if (cat === 'SUPPORT' || cat === 'COMPLAINT_STATUS') {
+    const elapsedMs = resolvedAt ? Math.max(0, resolvedAt.getTime() - createdAt.getTime()) : Math.max(0, now.getTime() - createdAt.getTime());
+    const durStr = formatDurationMs(elapsedMs);
+    return {
+      slaStatus: 'N/A (No SLA Target)',
+      resolutionTime: resolvedAt ? durStr : `Pending (${durStr} elapsed)`,
+    };
+  }
 
+  const created = createdAt.getTime();
+  const slaHours = categorySlaMap?.[cat] ?? 12;
   const slaMs = slaHours * 60 * 60 * 1000;
 
   if (resolvedAt) {
@@ -176,9 +183,9 @@ export function exportFilename(now = new Date()): string {
 }
 
 /** Flatten one complaint (plus relations) into the sheet's column shape. */
-function toCells(row: ComplaintExportRow): Record<string, string | number | Date | null> {
+function toCells(row: ComplaintExportRow, categorySlaMap?: Record<string, number>): Record<string, string | number | Date | null> {
   const { user } = row.driver;
-  const sla = computeSlaMetrics(row.createdAt, row.priority, row.resolvedAt);
+  const sla = computeSlaMetrics(row.createdAt, row.category, categorySlaMap, row.resolvedAt);
 
   return {
     complaintNo: row.complaintNo,

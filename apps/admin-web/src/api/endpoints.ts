@@ -45,6 +45,9 @@ import {
   type OperatingSitePublic,
   type CreateOperatingSite,
   type UpdateOperatingSite,
+  CategorySlaItemSchema,
+  type CategorySlaItem,
+  type UpdateCategorySla,
 } from '@driver-complaint/shared-types';
 import { download, request, requestNoContent, type QueryValue } from './client';
 import { clearTokens, getRefreshToken } from './tokens';
@@ -460,3 +463,15 @@ export const sites = {
       method: 'DELETE',
     }),
 };
+
+export const settings = {
+  getCategorySla: (): Promise<CategorySlaItem[]> =>
+    request(z.array(CategorySlaItemSchema), '/settings/sla'),
+
+  updateCategorySla: (input: UpdateCategorySla): Promise<CategorySlaItem[]> =>
+    request(z.array(CategorySlaItemSchema), '/settings/sla', {
+      method: 'PUT',
+      body: input,
+    }),
+};
+

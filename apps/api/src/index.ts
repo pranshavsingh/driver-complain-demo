@@ -13,6 +13,7 @@ import { initRealtime, closeRealtime } from './realtime/socket';
 import { closeRedis } from './lib/redis';
 import { startMediaWorkers } from './jobs/media.worker';
 import { startCleanupScheduler, stopCleanupScheduler } from './jobs/cleanup.worker';
+import { startSlaEscalationScheduler, stopSlaEscalationScheduler } from './jobs/sla-escalation.worker';
 import { closeQueues } from './jobs/queue';
 
 // Socket.IO needs the raw HTTP server, so the app is wrapped here rather than in
@@ -26,11 +27,13 @@ server.listen(env.PORT, () => {
   // Start background services after the server is listening.
   void startMediaWorkers();
   void startCleanupScheduler();
+  void startSlaEscalationScheduler();
 });
 
 async function shutdown(signal: string): Promise<void> {
   logger.info(`Received ${signal}, shutting down gracefully`);
   stopCleanupScheduler();
+  stopSlaEscalationScheduler();
   // Drop websockets first; otherwise their open connections keep server.close() waiting.
   await closeRealtime().catch((err: unknown) => {
     logger.error({ err }, 'Failed to close realtime cleanly');

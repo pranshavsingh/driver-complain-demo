@@ -95,6 +95,28 @@ export function PriorityBadge({ priority }: { priority: Priority }): ReactElemen
 
 /** Operational SLA Badge */
 export function SlaBadge({ sla }: { sla: SlaInfo }): ReactElement {
+  if (sla.status === 'NO_SLA' || sla.isNoSla) {
+    return (
+      <span
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 4,
+          padding: '2px 7px',
+          borderRadius: 6,
+          backgroundColor: 'rgba(148, 163, 184, 0.12)',
+          color: 'var(--muted)',
+          border: '1px solid var(--border)',
+          fontSize: 10,
+          fontWeight: 600,
+        }}
+        title="This category is excluded from SLA operational tracking"
+      >
+        ⚪ N/A (No SLA)
+      </span>
+    );
+  }
+
   if (sla.status === 'RESOLVED') {
     return (
       <span

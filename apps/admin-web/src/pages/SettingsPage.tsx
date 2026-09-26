@@ -1,5 +1,11 @@
-import { useState, useMemo, type ReactElement } from 'react';
-import type { OperatingSitePublic, CreateOperatingSite, UpdateOperatingSite } from '@driver-complaint/shared-types';
+import { useState, useMemo, useEffect, type ReactElement } from 'react';
+import {
+  COMPLAINT_CATEGORIES,
+  type ComplaintCategory,
+  type OperatingSitePublic,
+  type CreateOperatingSite,
+  type UpdateOperatingSite,
+} from '@driver-complaint/shared-types';
 import {
   Settings,
   MapPin,
@@ -12,16 +18,41 @@ import {
   CheckCircle2,
   AlertCircle,
   Warehouse,
+  Clock,
+  Check,
+  Lock,
 } from '../components/Icons';
 import * as api from '../api/endpoints';
 import { useAuth, isSuperAdmin, isAdmin } from '../auth/AuthContext';
 import { useApiResource } from '../hooks/useApiResource';
+import { useCategorySlaMap } from '../hooks/useCategorySlaMap';
 import { ErrorBanner } from '../components/ErrorBanner';
+import { CategoryBadge } from '../components/Badges';
+import { formatEnum, EXCLUDED_SLA_CATEGORIES, DEFAULT_CATEGORY_SLA_HOURS } from '../lib/format';
 
 export function SettingsPage(): ReactElement {
   const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState<'sla' | 'sites'>('sla');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
+
+  // Category SLA States
+  const slaResource = useCategorySlaMap();
+  const [slaInputs, setSlaInputs] = useState<Record<string, number>>({});
+  const [savingSla, setSavingSla] = useState(false);
+  const [slaFormError, setSlaFormError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (slaResource.slaList.length > 0) {
+      const initial: Record<string, number> = {};
+      for (const item of slaResource.slaList) {
+        initial[item.category] = item.slaHours;
+      }
+      setSlaInputs(initial);
+    } else {
+      setSlaInputs(DEFAULT_CATEGORY_SLA_HOURS);
+    }
+  }, [slaResource.slaList]);
 
   // Modal states
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -48,6 +79,29 @@ export function SettingsPage(): ReactElement {
   const showSuccessBanner = (msg: string) => {
     setActionSuccess(msg);
     setTimeout(() => setActionSuccess(null), 4000);
+  };
+
+  const handleSaveSla = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingSla(true);
+    setSlaFormError(null);
+
+    try {
+      const slasToUpdate = Object.entries(slaInputs)
+        .filter(([cat]) => !EXCLUDED_SLA_CATEGORIES.has(cat))
+        .map(([category, slaHours]) => ({
+          category: category as ComplaintCategory,
+          slaHours: Math.max(0.1, Math.min(720, Number(slaHours) || 1)),
+        }));
+
+      await api.settings.updateCategorySla({ slas: slasToUpdate });
+      showSuccessBanner('Complaint Category SLA durations updated successfully.');
+      void slaResource.reload();
+    } catch (err: any) {
+      setSlaFormError(err?.message || 'Failed to update SLA durations.');
+    } finally {
+      setSavingSla(false);
+    }
   };
 
   const openCreateModal = () => {
@@ -229,7 +283,171 @@ export function SettingsPage(): ReactElement {
 
       <ErrorBanner error={error} />
 
-      {/* KPI Stats Cards */}
+      {/* Tab Navigation */}
+      <div style={{ display: 'flex', gap: 12, borderBottom: '1px solid var(--border)', marginBottom: 24 }}>
+        <button
+          type="button"
+          onClick={() => setActiveTab('sla')}
+          style={{
+            padding: '10px 16px',
+            fontSize: 14,
+            fontWeight: 700,
+            cursor: 'pointer',
+            background: 'none',
+            border: 'none',
+            borderBottom: activeTab === 'sla' ? '2px solid var(--accent)' : '2px solid transparent',
+            color: activeTab === 'sla' ? 'var(--accent)' : 'var(--muted)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 8,
+            transition: 'all 0.15s ease',
+          }}
+        >
+          <Clock size={16} />
+          <span>Complaint Category SLA</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('sites')}
+          style={{
+            padding: '10px 16px',
+            fontSize: 14,
+            fontWeight: 700,
+            cursor: 'pointer',
+            background: 'none',
+            border: 'none',
+            borderBottom: activeTab === 'sites' ? '2px solid var(--accent)' : '2px solid transparent',
+            color: activeTab === 'sites' ? 'var(--accent)' : 'var(--muted)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 8,
+            transition: 'all 0.15s ease',
+          }}
+        >
+          <MapPin size={16} />
+          <span>Operating Sites & Hubs</span>
+        </button>
+      </div>
+
+      {/* TAB 1: Complaint Category SLA Settings */}
+      {activeTab === 'sla' && (
+        <div style={{
+          backgroundColor: 'var(--surface)',
+          border: '1px solid var(--border)',
+          borderRadius: 12,
+          overflow: 'hidden',
+          padding: 24,
+          marginBottom: 24,
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 16, marginBottom: 20 }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Clock size={20} color="var(--accent)" />
+                Complaint Category SLA Target Durations
+              </h3>
+              <p style={{ margin: '6px 0 0', fontSize: 13, color: 'var(--muted)', maxWidth: 850, lineHeight: 1.5 }}>
+                SuperAdmins can configure resolution target durations (in hours) per complaint category. Live timers, escalation alerts, and export reports calculate resolution compliance against these durations.
+              </p>
+            </div>
+            {isSuperAdmin(user) ? (
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={handleSaveSla}
+                disabled={savingSla}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600, padding: '9px 16px' }}
+              >
+                {savingSla ? <RotateCw size={15} className="spin" /> : <Check size={16} />}
+                Save Category SLA Settings
+              </button>
+            ) : (
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', padding: '6px 12px', borderRadius: 6, backgroundColor: 'var(--bg)', border: '1px solid var(--border)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <Lock size={13} /> SuperAdmin Access Required
+              </span>
+            )}
+          </div>
+
+          {slaFormError && (
+            <div style={{ padding: '10px 14px', backgroundColor: 'var(--danger-bg)', border: '1px solid var(--danger-border)', color: 'var(--danger-text)', borderRadius: 6, marginBottom: 16, fontSize: 13 }}>
+              {slaFormError}
+            </div>
+          )}
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 16 }}>
+            {COMPLAINT_CATEGORIES.map((cat) => {
+              const isExcluded = EXCLUDED_SLA_CATEGORIES.has(cat);
+              const hours = slaInputs[cat] ?? DEFAULT_CATEGORY_SLA_HOURS[cat] ?? 12;
+
+              return (
+                <div
+                  key={cat}
+                  style={{
+                    padding: 18,
+                    borderRadius: 10,
+                    border: isExcluded ? '1px dashed var(--border)' : '1px solid var(--border)',
+                    backgroundColor: isExcluded ? 'rgba(148, 163, 184, 0.05)' : 'var(--bg)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    gap: 14,
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>
+                      {formatEnum(cat)}
+                    </span>
+                    <CategoryBadge category={cat as any} />
+                  </div>
+
+                  {isExcluded ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--muted)', fontWeight: 600, padding: '10px 12px', backgroundColor: 'var(--surface)', borderRadius: 6, border: '1px solid var(--border)' }}>
+                      <span>⚪ Excluded from SLA tracking (No SLA Target)</span>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
+                        Target Resolution Time:
+                      </label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
+                        <input
+                          type="number"
+                          min="0.1"
+                          max="720"
+                          step="0.5"
+                          disabled={!isSuperAdmin(user) || savingSla}
+                          value={hours}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value);
+                            setSlaInputs((prev) => ({ ...prev, [cat]: isNaN(val) ? 0 : val }));
+                          }}
+                          style={{
+                            width: '100%',
+                            padding: '7px 12px',
+                            borderRadius: 6,
+                            border: '1px solid var(--border)',
+                            backgroundColor: 'var(--surface)',
+                            color: 'var(--text)',
+                            fontSize: 14,
+                            fontWeight: 700,
+                            outline: 'none',
+                          }}
+                        />
+                        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>Hours</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 2: Operating Sites & Hubs */}
+      {activeTab === 'sites' && (
+        <>
+          {/* KPI Stats Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 24 }}>
         <div style={{
           padding: 16,
@@ -592,6 +810,8 @@ export function SettingsPage(): ReactElement {
           </table>
         </div>
       </div>
+      </>
+      )}
 
       {/* Create / Edit Modal */}
       {(isCreateOpen || editingSite) && (

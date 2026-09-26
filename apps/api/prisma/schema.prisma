@@ -75,6 +75,7 @@ enum NotificationType {
   USER_APPROVAL_REQUESTED
   USER_APPROVED
   USER_REJECTED
+  SLA_BREACH_ESCALATION
 }
 
 // What kind of evidence an attachment is. Drives playback in the dashboard (an <img> and an
@@ -202,6 +203,7 @@ model Complaint {
   pendingAssignee   User?             @relation("PendingAssignee", fields: [pendingAssigneeId], references: [id])
   assignmentStatus  AssignmentStatus  @default(NONE)
   resolvedAt        DateTime?
+  lastSlaEscalatedAt DateTime?
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
@@ -569,6 +571,15 @@ model OperatingSite {
 
   @@index([isActive])
 }
+
+model CategorySla {
+  id        String            @id @default(uuid(7)) @db.Uuid
+  category  ComplaintCategory @unique
+  slaHours  Float             @default(12.0)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+}
+
 
 
 

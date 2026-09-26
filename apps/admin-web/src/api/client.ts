@@ -52,7 +52,7 @@ export class ApiClientError extends Error {
 export type QueryValue = string | number | boolean | undefined | null;
 
 export interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
   query?: Record<string, QueryValue>;
   /** Auth endpoints opt out: they carry no access token and must not trigger a refresh. */

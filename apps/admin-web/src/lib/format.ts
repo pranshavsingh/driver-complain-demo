@@ -48,32 +48,38 @@ export interface SlaInfo {
   elapsedText: string;
   slaText: string;
   isOverdue: boolean;
-  status: 'RESOLVED' | 'ON_TRACK' | 'WARNING' | 'OVERDUE';
+  status: 'RESOLVED' | 'ON_TRACK' | 'WARNING' | 'OVERDUE' | 'NO_SLA';
+  isNoSla?: boolean;
+  targetHours?: number;
 }
 
+export const EXCLUDED_SLA_CATEGORIES = new Set<string>(['SUPPORT', 'COMPLAINT_STATUS']);
+
+export const DEFAULT_CATEGORY_SLA_HOURS: Record<string, number> = {
+  BREAKDOWN: 2,
+  MEDICAL_EMERGENCY: 2,
+  TYRE_ISSUE: 4,
+  FUEL_DEF: 4,
+  LOADING: 12,
+  UNLOADING: 12,
+  VEHICLE_MAINTENANCE: 24,
+  ACCOUNTS: 24,
+};
+
 /**
- * Computes elapsed aging and operational SLA target for complaints based on priority:
- * - URGENT: 2 hours SLA
- * - HIGH: 4 hours SLA
- * - MEDIUM: 12 hours SLA
- * - LOW: 24 hours SLA
+ * Computes elapsed aging and operational SLA target dynamically based on category SLA configurations.
+ * Categories SUPPORT and COMPLAINT_STATUS are excluded from SLA requirements.
  */
 export function computeSlaInfo(
   createdAt: string,
-  priority: string = 'MEDIUM',
+  categoryOrPriority?: string | null,
   resolvedAt?: string | null,
+  categorySlaMap?: Record<string, number> | Map<string, number> | null,
+  priorityFallback?: string | null,
 ): SlaInfo {
   const created = new Date(createdAt).getTime();
   const now = resolvedAt ? new Date(resolvedAt).getTime() : Date.now();
   const elapsedMs = Math.max(0, now - created);
-
-  let slaHours = 12;
-  if (priority === 'URGENT') slaHours = 2;
-  else if (priority === 'HIGH') slaHours = 4;
-  else if (priority === 'LOW') slaHours = 24;
-
-  const slaMs = slaHours * 60 * 60 * 1000;
-  const remainingMs = slaMs - elapsedMs;
 
   const formatHrsMins = (ms: number) => {
     const totalMins = Math.floor(Math.abs(ms) / 60000);
@@ -83,15 +89,50 @@ export function computeSlaInfo(
     return `${mins}m`;
   };
 
-  const elapsedText = `${formatHrsMins(elapsedMs)} ago`;
+  const elapsedText = resolvedAt ? `Resolved in ${formatHrsMins(elapsedMs)}` : `${formatHrsMins(elapsedMs)} ago`;
+
+  // Check if category is excluded (SUPPORT or COMPLAINT_STATUS)
+  if (categoryOrPriority && EXCLUDED_SLA_CATEGORIES.has(categoryOrPriority)) {
+    return {
+      elapsedText,
+      slaText: 'N/A (No SLA Target)',
+      isOverdue: false,
+      status: 'NO_SLA',
+      isNoSla: true,
+    };
+  }
+
+  let slaHours = 12;
+
+  if (categoryOrPriority) {
+    let mapVal: number | undefined;
+    if (categorySlaMap) {
+      mapVal = categorySlaMap instanceof Map ? categorySlaMap.get(categoryOrPriority) : categorySlaMap[categoryOrPriority];
+    }
+
+    if (mapVal !== undefined && mapVal > 0) {
+      slaHours = mapVal;
+    } else if (DEFAULT_CATEGORY_SLA_HOURS[categoryOrPriority] !== undefined) {
+      slaHours = DEFAULT_CATEGORY_SLA_HOURS[categoryOrPriority];
+    } else if (categoryOrPriority === 'URGENT') slaHours = 2;
+    else if (categoryOrPriority === 'HIGH') slaHours = 4;
+    else if (categoryOrPriority === 'LOW') slaHours = 24;
+    else if (priorityFallback === 'URGENT') slaHours = 2;
+    else if (priorityFallback === 'HIGH') slaHours = 4;
+    else if (priorityFallback === 'LOW') slaHours = 24;
+  }
+
+  const slaMs = slaHours * 60 * 60 * 1000;
+  const remainingMs = slaMs - elapsedMs;
 
   if (resolvedAt) {
     const withinSla = elapsedMs <= slaMs;
     return {
-      elapsedText: `Resolved in ${formatHrsMins(elapsedMs)}`,
+      elapsedText,
       slaText: withinSla ? `SLA Met (${formatHrsMins(elapsedMs)})` : `SLA Breached (${formatHrsMins(elapsedMs)})`,
       isOverdue: !withinSla,
       status: 'RESOLVED',
+      targetHours: slaHours,
     };
   }
 
@@ -101,15 +142,18 @@ export function computeSlaInfo(
       slaText: `Overdue by ${formatHrsMins(remainingMs)}`,
       isOverdue: true,
       status: 'OVERDUE',
+      targetHours: slaHours,
     };
   }
 
   const isWarning = remainingMs < slaMs * 0.35;
   return {
     elapsedText,
-    slaText: `SLA: ${formatHrsMins(remainingMs)} left`,
+    slaText: `SLA: ${formatHrsMins(remainingMs)} left (${slaHours}h target)`,
     isOverdue: false,
     status: isWarning ? 'WARNING' : 'ON_TRACK',
+    targetHours: slaHours,
   };
 }
+
 

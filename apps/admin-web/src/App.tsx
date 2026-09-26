@@ -41,6 +41,7 @@ export function App(): ReactElement {
         <Route path="/complaints" element={<ComplaintsListPage />} />
         <Route path="/complaints/:id" element={<ComplaintDetailPage />} />
         <Route path="/loading" element={<LoadingTrackerPage />} />
+        <Route path="/loading-tracker" element={<Navigate to="/loading" replace />} />
         <Route path="/trips" element={<TripDetailsPage />} />
         <Route path="/fuel-logs" element={<Navigate to="/maintenance?tab=fuel" replace />} />
         <Route path="/maintenance" element={<MaintenancePage />} />

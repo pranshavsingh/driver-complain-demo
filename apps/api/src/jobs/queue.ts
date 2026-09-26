@@ -9,6 +9,7 @@ export const QUEUES = {
   COMPLAINT_MEDIA: 'complaint-media',
   LOADING_PHOTO: 'loading-photo',
   TOKEN_CLEANUP: 'token-cleanup',
+  SLA_ESCALATION: 'sla-escalation',
 } as const;
 
 export interface GenericQueue {

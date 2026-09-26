@@ -30,6 +30,7 @@ import * as api from '../api/endpoints';
 import { EMPTY_FILTER, type ComplaintFilterInput } from '../api/endpoints';
 import { useApiResource } from '../hooks/useApiResource';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
+import { useCategorySlaMap } from '../hooks/useCategorySlaMap';
 import { useRealtime } from '../realtime/RealtimeProvider';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { PriorityBadge, StatusBadge, SlaBadge } from '../components/Badges';
@@ -430,6 +431,7 @@ export function ComplaintsListPage(): ReactElement {
   const listRes = useApiResource(`complaints?${key}`, () =>
     api.complaints.list(filter, page, PAGE_SIZE),
   );
+  const { slaMap } = useCategorySlaMap();
 
   const { subscribe } = useRealtime();
   const [pending, setPending] = useState(0);
@@ -871,7 +873,7 @@ export function ComplaintsListPage(): ReactElement {
                 </tr>
               ) : (
                 displayedRows.map((c) => {
-                  const sla = computeSlaInfo(c.createdAt, c.priority, c.resolvedAt);
+                  const sla = computeSlaInfo(c.createdAt, c.category, c.resolvedAt, slaMap, c.priority);
                   const isUntouched = c.status === 'NEW' && (!c.assignedToId || (c.updatesCount ?? 0) <= 1);
 
                   return (

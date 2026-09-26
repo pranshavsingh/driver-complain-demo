@@ -30,6 +30,7 @@ import {
 import * as api from '../api/endpoints';
 import { useAuth } from '../auth/AuthContext';
 import { useApiResource } from '../hooks/useApiResource';
+import { useCategorySlaMap } from '../hooks/useCategorySlaMap';
 import { useRealtime } from '../realtime/RealtimeProvider';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { PriorityBadge, StatusBadge, SlaBadge, CategoryBadge } from '../components/Badges';
@@ -84,6 +85,7 @@ export function ComplaintDetailPage(): ReactElement {
   );
 
   const complaint = detailRes.data;
+  const { slaMap } = useCategorySlaMap();
 
   const [status, setStatus] = useState<ComplaintStatus | ''>('');
   const [note, setNote] = useState('');
@@ -294,7 +296,7 @@ export function ComplaintDetailPage(): ReactElement {
   const isNeedsAction =
     complaint.status === 'NEW' &&
     (!complaint.assignedToId || (complaint.updates?.length ?? 0) <= 1);
-  const sla = computeSlaInfo(complaint.createdAt, complaint.priority, complaint.resolvedAt);
+  const sla = computeSlaInfo(complaint.createdAt, complaint.category, complaint.resolvedAt, slaMap, complaint.priority);
 
   // Driver Initials
   const driverInitials = `${complaint.driver.firstName?.[0] || ''}${complaint.driver.lastName?.[0] || ''}`.toUpperCase() || 'D';
@@ -371,7 +373,7 @@ export function ComplaintDetailPage(): ReactElement {
 
                 {complaint.loadingRecordId && (
                   <Link
-                    to="/loading-tracker"
+                    to="/loading"
                     style={{
                       display: 'inline-flex',
                       alignItems: 'center',
@@ -598,18 +600,23 @@ export function ComplaintDetailPage(): ReactElement {
                 </div>
 
                 <div className="profile-data-row">
-                  <span className="profile-data-label">Make & Model</span>
+                  <span className="profile-data-label">Chassis No (VIN)</span>
                   <span className="profile-data-val">
-                    {complaint.vehicle?.make || complaint.vehicle?.model
-                      ? `${complaint.vehicle.make || ''} ${complaint.vehicle.model || ''}`.trim()
-                      : complaint.vehicleModel || 'Standard Fleet Truck'}
+                    {complaint.vehicle?.chassisNumber || complaint.vehicle?.vin || 'N/A'}
                   </span>
                 </div>
 
                 <div className="profile-data-row">
-                  <span className="profile-data-label">Configuration</span>
+                  <span className="profile-data-label">Wheel</span>
                   <span className="profile-data-val">
-                    {complaint.vehicle?.wheels ? `${complaint.vehicle.wheels} Wheeler` : 'Commercial Haulage'}
+                    {complaint.vehicle?.wheels ? `${complaint.vehicle.wheels} Wheeler` : 'N/A'}
+                  </span>
+                </div>
+
+                <div className="profile-data-row">
+                  <span className="profile-data-label">Status of Agreements</span>
+                  <span className="profile-data-val">
+                    {complaint.vehicle?.agreementStatus || 'ACTIVE'}
                   </span>
                 </div>
               </div>
@@ -652,13 +659,11 @@ export function ComplaintDetailPage(): ReactElement {
                   Resolution Target SLA
                 </div>
                 <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>
-                  {complaint.priority === 'URGENT'
-                    ? '2 Hours Target'
-                    : complaint.priority === 'HIGH'
-                      ? '4 Hours Target'
-                      : complaint.priority === 'LOW'
-                        ? '24 Hours Target'
-                        : '12 Hours Target'}
+                  {sla.isNoSla || sla.status === 'NO_SLA'
+                    ? 'N/A (No SLA Target)'
+                    : sla.targetHours
+                      ? `${sla.targetHours} Hours Target (${formatEnum(complaint.category || '')})`
+                      : '12 Hours Target'}
                 </div>
               </div>
 
