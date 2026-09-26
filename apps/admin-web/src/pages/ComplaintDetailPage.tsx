@@ -93,6 +93,84 @@ export function ComplaintDetailPage(): ReactElement {
   const [savingStatus, setSavingStatus] = useState(false);
   const noteTextareaRef = useRef<HTMLTextAreaElement>(null);
   const [actionTab, setActionTab] = useState<'status' | 'assign'>('status');
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
+
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {
+          // ignore
+        }
+      }
+    };
+  }, []);
+
+  const toggleVoiceRecording = () => {
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      alert('Voice dictation is not supported by your browser. Please use Google Chrome, Microsoft Edge, or Safari.');
+      return;
+    }
+
+    if (isListening) {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch {
+          // ignore
+        }
+      }
+      setIsListening(false);
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+
+      let accumulated = note;
+
+      recognition.onstart = () => {
+        setIsListening(true);
+      };
+
+      recognition.onresult = (event: any) => {
+        let interim = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            accumulated += (accumulated && !accumulated.endsWith(' ') ? ' ' : '') + transcript.trim();
+          } else {
+            interim += transcript;
+          }
+        }
+        const full = accumulated + (interim ? (accumulated && !accumulated.endsWith(' ') ? ' ' : '') + interim : '');
+        setNote(full);
+      };
+
+      recognition.onerror = (event: any) => {
+        console.error('Speech recognition error:', event);
+        setIsListening(false);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (err) {
+      console.error('Failed to start speech recognition:', err);
+      setIsListening(false);
+    }
+  };
 
   const [assignee, setAssignee] = useState('');
   const [assignError, setAssignError] = useState<unknown>(null);
@@ -1018,19 +1096,63 @@ export function ComplaintDetailPage(): ReactElement {
 
                 {/* Note Textarea */}
                 <div className="form-group" style={{ gap: 4 }}>
-                  <label htmlFor="note" className="form-label" style={{ fontSize: 11 }}>
-                    Action Taken / Progress Note
-                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <label htmlFor="note" className="form-label" style={{ fontSize: 11, margin: 0 }}>
+                      Action Taken / Progress Note
+                    </label>
+                    <button
+                      type="button"
+                      onClick={toggleVoiceRecording}
+                      title={isListening ? 'Click to stop voice dictation' : 'Click to dictate note with microphone'}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5,
+                        padding: '3px 8px',
+                        borderRadius: 12,
+                        fontSize: 11,
+                        fontWeight: 700,
+                        border: isListening ? '1px solid #ef4444' : '1px solid var(--border)',
+                        backgroundColor: isListening ? 'rgba(239, 68, 68, 0.12)' : 'var(--surface-muted)',
+                        color: isListening ? '#ef4444' : 'var(--muted)',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease',
+                      }}
+                    >
+                      <Mic size={13} color={isListening ? '#ef4444' : 'var(--accent)'} />
+                      <span>{isListening ? 'Listening…' : 'Voice Dictate'}</span>
+                      {isListening && (
+                        <span
+                          style={{
+                            width: 6,
+                            height: 6,
+                            borderRadius: '50%',
+                            backgroundColor: '#ef4444',
+                            display: 'inline-block',
+                          }}
+                        />
+                      )}
+                    </button>
+                  </div>
                   <textarea
                     id="note"
                     ref={noteTextareaRef}
                     className="form-textarea"
                     rows={3}
                     maxLength={2000}
-                    placeholder="Type progress update, instructions for driver, or resolution details..."
+                    placeholder={
+                      isListening
+                        ? '🎙 Listening... Speak your progress note clearly...'
+                        : 'Type progress update, instructions for driver, or resolution details...'
+                    }
                     value={note}
                     onChange={(e) => setNote(e.target.value)}
-                    style={{ fontSize: 13, padding: '8px 10px' }}
+                    style={{
+                      fontSize: 13,
+                      padding: '8px 10px',
+                      borderColor: isListening ? '#ef4444' : undefined,
+                      boxShadow: isListening ? '0 0 0 2px rgba(239, 68, 68, 0.2)' : undefined,
+                    }}
                   />
                 </div>
 
