@@ -93,6 +93,8 @@ export function ComplaintDetailPage(): ReactElement {
   const [savingStatus, setSavingStatus] = useState(false);
   const noteTextareaRef = useRef<HTMLTextAreaElement>(null);
   const [actionTab, setActionTab] = useState<'status' | 'assign'>('status');
+
+  const [voiceLang, setVoiceLang] = useState<'en-IN' | 'hi-IN' | 'bn-IN'>('en-IN');
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<any>(null);
 
@@ -108,7 +110,8 @@ export function ComplaintDetailPage(): ReactElement {
     };
   }, []);
 
-  const toggleVoiceRecording = () => {
+  const toggleVoiceRecording = (langToUse?: 'en-IN' | 'hi-IN' | 'bn-IN') => {
+    const targetLang = langToUse || voiceLang;
     const SpeechRecognition =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
@@ -133,7 +136,7 @@ export function ComplaintDetailPage(): ReactElement {
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
-      recognition.lang = 'en-US';
+      recognition.lang = targetLang;
 
       let accumulated = note;
 
@@ -1096,44 +1099,85 @@ export function ComplaintDetailPage(): ReactElement {
 
                 {/* Note Textarea */}
                 <div className="form-group" style={{ gap: 4 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
                     <label htmlFor="note" className="form-label" style={{ fontSize: 11, margin: 0 }}>
                       Action Taken / Progress Note
                     </label>
-                    <button
-                      type="button"
-                      onClick={toggleVoiceRecording}
-                      title={isListening ? 'Click to stop voice dictation' : 'Click to dictate note with microphone'}
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 5,
-                        padding: '3px 8px',
-                        borderRadius: 12,
-                        fontSize: 11,
-                        fontWeight: 700,
-                        border: isListening ? '1px solid #ef4444' : '1px solid var(--border)',
-                        backgroundColor: isListening ? 'rgba(239, 68, 68, 0.12)' : 'var(--surface-muted)',
-                        color: isListening ? '#ef4444' : 'var(--muted)',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s ease',
-                      }}
-                    >
-                      <Mic size={13} color={isListening ? '#ef4444' : 'var(--accent)'} />
-                      <span>{isListening ? 'Listening…' : 'Voice Dictate'}</span>
-                      {isListening && (
-                        <span
-                          style={{
-                            width: 6,
-                            height: 6,
-                            borderRadius: '50%',
-                            backgroundColor: '#ef4444',
-                            display: 'inline-block',
-                          }}
-                        />
-                      )}
-                    </button>
+
+                    {/* Language Selector + Voice Dictate Button */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <div className="voice-lang-selector" style={{ display: 'inline-flex', background: 'var(--surface-muted)', borderRadius: 10, padding: 2, border: '1px solid var(--border)' }}>
+                        {(
+                          [
+                            { id: 'en-IN', label: 'EN' },
+                            { id: 'hi-IN', label: 'हिंदी' },
+                            { id: 'bn-IN', label: 'বাংলা' },
+                          ] as const
+                        ).map((l) => (
+                          <button
+                            key={l.id}
+                            type="button"
+                            onClick={() => setVoiceLang(l.id)}
+                            style={{
+                              padding: '2px 6px',
+                              borderRadius: 8,
+                              fontSize: 10,
+                              fontWeight: 800,
+                              border: 'none',
+                              background: voiceLang === l.id ? 'var(--surface)' : 'transparent',
+                              color: voiceLang === l.id ? 'var(--accent)' : 'var(--muted)',
+                              cursor: 'pointer',
+                              boxShadow: voiceLang === l.id ? '0 1px 2px rgba(0,0,0,0.1)' : 'none',
+                            }}
+                            title={`Set voice recognition language to ${l.label}`}
+                          >
+                            {l.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => toggleVoiceRecording()}
+                        title={
+                          isListening
+                            ? 'Click to stop voice dictation'
+                            : `Click to dictate note in ${
+                                voiceLang === 'hi-IN' ? 'Hindi (हिंदी)' : voiceLang === 'bn-IN' ? 'Bengali (বাংলা)' : 'English'
+                              }`
+                        }
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          padding: '3px 8px',
+                          borderRadius: 12,
+                          fontSize: 11,
+                          fontWeight: 700,
+                          border: isListening ? '1px solid #ef4444' : '1px solid var(--border)',
+                          backgroundColor: isListening ? 'rgba(239, 68, 68, 0.12)' : 'var(--surface-muted)',
+                          color: isListening ? '#ef4444' : 'var(--muted)',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s ease',
+                        }}
+                      >
+                        <Mic size={13} color={isListening ? '#ef4444' : 'var(--accent)'} />
+                        <span>{isListening ? 'Listening…' : 'Voice Dictate'}</span>
+                        {isListening && (
+                          <span
+                            style={{
+                              width: 6,
+                              height: 6,
+                              borderRadius: '50%',
+                              backgroundColor: '#ef4444',
+                              display: 'inline-block',
+                            }}
+                          />
+                        )}
+                      </button>
+                    </div>
                   </div>
+
                   <textarea
                     id="note"
                     ref={noteTextareaRef}
@@ -1142,7 +1186,9 @@ export function ComplaintDetailPage(): ReactElement {
                     maxLength={2000}
                     placeholder={
                       isListening
-                        ? '🎙 Listening... Speak your progress note clearly...'
+                        ? `🎙 Listening (${
+                            voiceLang === 'hi-IN' ? 'Hindi / हिंदी' : voiceLang === 'bn-IN' ? 'Bengali / বাংলা' : 'English'
+                          })... Speak clearly...`
                         : 'Type progress update, instructions for driver, or resolution details...'
                     }
                     value={note}
