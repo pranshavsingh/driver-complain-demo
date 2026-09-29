@@ -40,6 +40,8 @@ export function toSupportMessagePublic(row: any): SupportMessagePublic {
     attachmentDurationSec: row.attachmentDurationSec ?? null,
     isRead: row.isRead,
     readAt: row.readAt instanceof Date ? row.readAt.toISOString() : (row.readAt ?? null),
+    linkedComplaintId: row.linkedComplaintId ?? null,
+    linkedComplaintNo: row.linkedComplaintNo ?? null,
     createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt,
     updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : row.updatedAt,
   };
@@ -86,36 +88,33 @@ export async function getConversations(
       orderBy: { role: 'asc' },
     });
 
-    const summaries: SupportConversationSummary[] = [];
+    const [lastMessage, unreadCount] = await Promise.all([
+      prisma.supportMessage.findFirst({
+        where: {
+          OR: [
+            { senderId: currentUserId },
+            { receiverId: currentUserId },
+          ],
+        },
+        orderBy: { createdAt: 'desc' },
+        include: { sender: true, receiver: true },
+      }),
+      prisma.supportMessage.count({
+        where: {
+          receiverId: currentUserId,
+          isRead: false,
+        },
+      }),
+    ]);
 
-    for (const admin of supportAdmins) {
-      const [lastMessage, unreadCount] = await Promise.all([
-        prisma.supportMessage.findFirst({
-          where: {
-            OR: [
-              { senderId: currentUserId },
-              { receiverId: currentUserId },
-            ],
-          },
-          orderBy: { createdAt: 'desc' },
-          include: { sender: true, receiver: true },
-        }),
-        prisma.supportMessage.count({
-          where: {
-            receiverId: currentUserId,
-            isRead: false,
-          },
-        }),
-      ]);
+    const formattedLastMsg = lastMessage ? toSupportMessagePublic(lastMessage) : null;
 
-      summaries.push({
-        contactUser: toUserSummary(admin),
-        lastMessage: lastMessage ? toSupportMessagePublic(lastMessage) : null,
-        unreadCount,
-      });
-    }
+    const summaries: SupportConversationSummary[] = supportAdmins.map((admin) => ({
+      contactUser: toUserSummary(admin),
+      lastMessage: formattedLastMsg,
+      unreadCount,
+    }));
 
-    // Sort by latest message date
     return summaries.sort((a, b) => {
       const timeA = a.lastMessage ? new Date(a.lastMessage.createdAt).getTime() : 0;
       const timeB = b.lastMessage ? new Date(b.lastMessage.createdAt).getTime() : 0;
@@ -124,55 +123,68 @@ export async function getConversations(
   }
 
   // If currentUser is SUPER_ADMIN / ADMIN / EXECUTIVE:
-  // List all other users (Drivers, Admins, Executives) with conversation history & vehicle details
-  const allUsers = await prisma.user.findMany({
-    where: {
-      id: { not: currentUserId },
-      isActive: true,
-    },
-    include: {
-      driver: {
-        include: {
-          vehicles: {
-            orderBy: { updatedAt: 'desc' },
-            take: 1,
+  // List all active users with conversation history & vehicle details
+  const [allUsers, unreadGroups, rawLatest] = await Promise.all([
+    prisma.user.findMany({
+      where: {
+        id: { not: currentUserId },
+        isActive: true,
+      },
+      include: {
+        driver: {
+          include: {
+            vehicles: {
+              orderBy: { updatedAt: 'desc' },
+              take: 1,
+            },
           },
         },
       },
-    },
-    orderBy: { createdAt: 'desc' },
-  });
+      orderBy: { createdAt: 'desc' },
+    }),
+    prisma.supportMessage.groupBy({
+      by: ['senderId'],
+      where: { isRead: false },
+      _count: { id: true },
+    }),
+    prisma.$queryRaw<{ partner_id: string; id: string }[]>`
+      SELECT DISTINCT ON (partner_id) partner_id, id
+      FROM (
+        SELECT id, "senderId" AS partner_id, "createdAt" FROM "SupportMessage"
+        UNION ALL
+        SELECT id, "receiverId" AS partner_id, "createdAt" FROM "SupportMessage"
+      ) sub
+      ORDER BY partner_id, "createdAt" DESC
+    `,
+  ]);
 
-  const conversationPromises = allUsers.map(async (user) => {
-    const isDriver = user.role === 'DRIVER';
-    const msgWhere = isDriver
-      ? {
-          OR: [
-            { senderId: user.id },
-            { receiverId: user.id },
-          ],
-        }
-      : {
-          OR: [
-            { senderId: currentUserId, receiverId: user.id },
-            { senderId: user.id, receiverId: currentUserId },
-          ],
-        };
+  const unreadMap = new Map<string, number>();
+  for (const g of unreadGroups) {
+    unreadMap.set(g.senderId, g._count.id);
+  }
 
-    const unreadWhere = isDriver
-      ? { senderId: user.id, isRead: false }
-      : { senderId: user.id, receiverId: currentUserId, isRead: false };
+  const latestMsgIds = Array.from(new Set(rawLatest.map((r) => r.id)));
+  const latestMessages =
+    latestMsgIds.length > 0
+      ? await prisma.supportMessage.findMany({
+          where: { id: { in: latestMsgIds } },
+          include: { sender: true, receiver: true },
+        })
+      : [];
 
-    const [lastMessage, unreadCount] = await Promise.all([
-      prisma.supportMessage.findFirst({
-        where: msgWhere,
-        orderBy: { createdAt: 'desc' },
-        include: { sender: true, receiver: true },
-      }),
-      prisma.supportMessage.count({
-        where: unreadWhere,
-      }),
-    ]);
+  const messageById = new Map(latestMessages.map((m) => [m.id, m]));
+  const partnerToMessageMap = new Map<string, typeof latestMessages[0]>();
+
+  for (const r of rawLatest) {
+    const msg = messageById.get(r.id);
+    if (msg) {
+      partnerToMessageMap.set(r.partner_id, msg);
+    }
+  }
+
+  const results: SupportConversationSummary[] = allUsers.map((user) => {
+    const lastMsg = partnerToMessageMap.get(user.id) ?? null;
+    const unreadCount = unreadMap.get(user.id) ?? 0;
 
     const vehicle = user.driver?.vehicles?.[0]
       ? {
@@ -198,12 +210,10 @@ export async function getConversations(
     return {
       contactUser: toUserSummary(user),
       vehicle,
-      lastMessage: lastMessage ? toSupportMessagePublic(lastMessage) : null,
+      lastMessage: lastMsg ? toSupportMessagePublic(lastMsg) : null,
       unreadCount,
     };
   });
-
-  const results = await Promise.all(conversationPromises);
 
   // Sort contacts: users with messages sorted by latest message, then unread count, then alphabetically
   return results.sort((a, b) => {
@@ -485,6 +495,10 @@ export async function appendChatMessageToComplaint(
     throw ApiError.notFound('Chat message not found');
   }
 
+  if (message.linkedComplaintId) {
+    throw ApiError.badRequest(`This chat message is already linked to Complaint #${message.linkedComplaintNo ?? ''}`);
+  }
+
   const complaint = await prisma.complaint.findUnique({
     where: { id: complaintId },
     include: {
@@ -511,30 +525,19 @@ export async function appendChatMessageToComplaint(
     timeZone: 'Asia/Kolkata',
   });
 
-  const notePrefix = `[From Support Chat • ${dateStr}]`;
-  const noteText = message.content?.trim()
-    ? `${notePrefix}\n${message.content.trim()}`
-    : `${notePrefix} Attached media file from support chat`;
-
   await prisma.$transaction(async (tx) => {
-    await tx.complaintUpdate.create({
-      data: {
-        complaintId: complaint.id,
-        authorId: actorUserId,
-        fromStatus: complaint.status,
-        toStatus: complaint.status,
-        note: noteText,
-      },
-    });
+    let updatedDescription = complaint.description;
+    if (message.content?.trim()) {
+      const chatBlock = `\n\n[Linked Support Chat • ${dateStr}]:\n${message.content.trim()}`;
+      updatedDescription = `${complaint.description}${chatBlock}`;
+    }
 
     if (message.attachmentUrl) {
       const isAudio = message.type === 'AUDIO';
       const kind = isAudio ? 'VOICE' : 'PHOTO';
       const resourceType = isAudio ? 'video' : 'image';
       const format = isAudio ? 'm4a' : 'jpg';
-      const pubId = message.attachmentPublicId
-        ? `${message.attachmentPublicId}-c${complaint.id.slice(0, 8)}`
-        : `chat-${message.id}-c${complaint.id.slice(0, 8)}`;
+      const pubId = `chat-${message.id}-c${complaint.id.slice(0, 8)}`;
 
       await tx.complaintAttachment.create({
         data: {
@@ -553,7 +556,18 @@ export async function appendChatMessageToComplaint(
 
     await tx.complaint.update({
       where: { id: complaint.id },
-      data: { updatedAt: new Date() },
+      data: {
+        description: updatedDescription,
+        updatedAt: new Date(),
+      },
+    });
+
+    await tx.supportMessage.update({
+      where: { id: message.id },
+      data: {
+        linkedComplaintId: complaint.id,
+        linkedComplaintNo: complaint.complaintNo,
+      },
     });
   });
 
@@ -565,16 +579,18 @@ export async function appendChatMessageToComplaint(
       ]),
     );
 
-    emitEventToUsers(notifyUserIds, REALTIME_EVENTS.complaintUpdated, {
+    emitEventToUsers(notifyUserIds, REALTIME_EVENTS.complaintStatusChanged, {
       complaintId: complaint.id,
       complaintNo: complaint.complaintNo,
+      title: complaint.title,
       status: complaint.status,
       at: new Date().toISOString(),
     });
 
-    emitToRoles(['SUPER_ADMIN', 'ADMIN', 'EXECUTIVE'], REALTIME_EVENTS.complaintUpdated, {
+    emitToRoles(['SUPER_ADMIN', 'ADMIN', 'EXECUTIVE'], REALTIME_EVENTS.complaintStatusChanged, {
       complaintId: complaint.id,
       complaintNo: complaint.complaintNo,
+      title: complaint.title,
       status: complaint.status,
       at: new Date().toISOString(),
     });
@@ -583,6 +599,70 @@ export async function appendChatMessageToComplaint(
   }
 
   return { ok: true, complaintNo: complaint.complaintNo };
+}
+
+export async function detachChatMessageFromComplaint(
+  actorUserId: string,
+  messageId: string,
+): Promise<{ ok: boolean }> {
+  const actor = await prisma.user.findUnique({
+    where: { id: actorUserId },
+  });
+  if (!actor || !['SUPER_ADMIN', 'ADMIN'].includes(actor.role)) {
+    throw ApiError.forbidden('Only SuperAdmin or Admin can unlink chat messages from complaints');
+  }
+
+  const message = await prisma.supportMessage.findUnique({
+    where: { id: messageId },
+  });
+  if (!message) {
+    throw ApiError.notFound('Chat message not found');
+  }
+
+  if (!message.linkedComplaintId) {
+    throw ApiError.badRequest('Message is not linked to any complaint');
+  }
+
+  const complaintId = message.linkedComplaintId;
+  const pubIdPrefix = `chat-${message.id}-`;
+
+  await prisma.$transaction(async (tx) => {
+    // 1. Remove attachment created for this chat message (if any)
+    await tx.complaintAttachment.deleteMany({
+      where: {
+        complaintId,
+        publicId: { startsWith: pubIdPrefix },
+      },
+    });
+
+    // 2. Remove appended chat text from complaint description (if any)
+    if (message.content?.trim()) {
+      const complaint = await tx.complaint.findUnique({ where: { id: complaintId } });
+      if (complaint && complaint.description) {
+        const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const textToMatch = message.content.trim();
+        const pattern = new RegExp(`\\n\\n\\[Linked Support Chat • [^\\]]+\\]:\\n${escapeRegex(textToMatch)}`, 'g');
+        const updatedDesc = complaint.description.replace(pattern, '').trim();
+        if (updatedDesc !== complaint.description) {
+          await tx.complaint.update({
+            where: { id: complaintId },
+            data: { description: updatedDesc, updatedAt: new Date() },
+          });
+        }
+      }
+    }
+
+    // 3. Clear message link
+    await tx.supportMessage.update({
+      where: { id: messageId },
+      data: {
+        linkedComplaintId: null,
+        linkedComplaintNo: null,
+      },
+    });
+  });
+
+  return { ok: true };
 }
 
 

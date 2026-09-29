@@ -443,6 +443,11 @@ export const support = {
       method: 'POST',
       body: { messageId, complaintId },
     }),
+
+  detachFromComplaint: (messageId: string): Promise<{ ok: boolean }> =>
+    request(z.object({ ok: z.boolean() }), `/support/messages/${messageId}/detach-from-complaint`, {
+      method: 'POST',
+    }),
 };
 
 export const notifications = {

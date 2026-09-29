@@ -227,7 +227,6 @@ export const listInclude = {
   driver: { include: { user: true, vehicles: { orderBy: { updatedAt: 'desc' }, take: 1 } } },
   vehicle: true,
   assignedTo: true,
-  loadingRecords: { orderBy: { createdAt: 'desc' }, take: 1 },
   _count: { select: { updates: true } },
 } satisfies Prisma.ComplaintInclude;
 

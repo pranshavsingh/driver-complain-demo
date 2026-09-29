@@ -834,15 +834,30 @@ export function ComplaintDetailPage(): ReactElement {
             )}
 
             {/* Driver Statement Box */}
-            <div className="driver-statement-box" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)', marginTop: 12, borderRadius: 12 }}>
+            <div className="driver-statement-box" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)', marginTop: 12, borderRadius: 12, padding: 16 }}>
               {(() => {
+                const rawDesc = complaint.description || '';
+                const pattern = /\[Linked Support Chat • ([^\]]+)\]:\s*/g;
+                const parts = rawDesc.split(pattern);
+
+                const baseText = parts[0]?.trim() ?? '';
+                const linkedChats: { date: string; text: string }[] = [];
+
+                for (let i = 1; i < parts.length; i += 2) {
+                  const date = parts[i]?.trim();
+                  const text = parts[i + 1]?.trim();
+                  if (date && text) {
+                    linkedChats.push({ date, text });
+                  }
+                }
+
                 const isPlaceholder =
-                  !complaint.description ||
-                  complaint.description === 'Photo attached' ||
-                  complaint.description === 'Voice note attached';
-                const hasUserText = !isPlaceholder;
+                  !baseText ||
+                  baseText === 'Photo attached' ||
+                  baseText === 'Voice note attached';
+                const hasBaseText = !isPlaceholder;
                 const hasTranscription = Boolean(complaint.transcription);
-                const isPhotoOnly = complaint.description === 'Photo attached' && !hasTranscription;
+                const isPhotoOnly = baseText === 'Photo attached' && !hasTranscription && linkedChats.length === 0;
 
                 const getDisplayText = (
                   text: string,
@@ -853,47 +868,81 @@ export function ComplaintDetailPage(): ReactElement {
                   return cached ?? (translatingLang === selectedLang ? 'Translating…' : text);
                 };
 
-                if (isPhotoOnly) {
-                  return (
-                    <p className="statement-text" style={{ color: 'var(--muted)', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: 8 }}>
-                      📷 Photo attached with no written note.
-                    </p>
-                  );
-                }
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    {/* 1. Base Complaint Description */}
+                    {hasBaseText && (
+                      <p className="statement-text" style={{ margin: 0, fontSize: 14, lineHeight: 1.6, color: 'var(--text)' }}>
+                        {getDisplayText(baseText, 'description')}
+                      </p>
+                    )}
 
-                if (hasUserText && hasTranscription) {
-                  return (
-                    <>
-                      <p className="statement-text">{getDisplayText(complaint.description, 'description')}</p>
-                      <div style={{ borderTop: '1px dashed var(--border)', marginTop: 12, paddingTop: 12 }}>
+                    {/* 2. Photo-only placeholder */}
+                    {isPhotoOnly && (
+                      <p className="statement-text" style={{ margin: 0, color: 'var(--muted)', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: 8 }}>
+                        📷 Photo attached with no written note.
+                      </p>
+                    )}
+
+                    {/* 3. Voice Note Transcription */}
+                    {hasTranscription && (
+                      <div style={{ borderTop: hasBaseText ? '1px dashed var(--border)' : 'none', paddingTop: hasBaseText ? 12 : 0 }}>
                         <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 4, marginBottom: 6 }}>
                           <Mic size={13} color="var(--accent)" /> Voice Note AI Transcription:
                         </span>
-                        <p className="statement-text" style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>
+                        <p className="statement-text" style={{ margin: 0, fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>
                           {getDisplayText(complaint.transcription!, 'transcription')}
                         </p>
                       </div>
-                    </>
-                  );
-                }
+                    )}
 
-                if (hasTranscription) {
-                  return (
-                    <div>
-                      <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 4, marginBottom: 6 }}>
-                        <Mic size={13} color="var(--accent)" /> Voice Note Transcription:
-                      </span>
-                      <p className="statement-text" style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>
-                        {getDisplayText(complaint.transcription!, 'transcription')}
-                      </p>
-                    </div>
-                  );
-                }
+                    {/* 4. Linked Support Chat Timeline */}
+                    {linkedChats.length > 0 && (
+                      <div style={{ borderTop: hasBaseText || hasTranscription ? '1px dashed var(--border)' : 'none', paddingTop: hasBaseText || hasTranscription ? 14 : 0 }}>
+                        <div style={{
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: 'var(--accent)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          marginBottom: 10,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.5px'
+                        }}>
+                          <MessageSquare size={14} /> Linked Support Chat ({linkedChats.length})
+                        </div>
 
-                return (
-                  <p className="statement-text">
-                    {getDisplayText(complaint.description || 'No description provided', 'description')}
-                  </p>
+                        <div className="linked-chats-timeline" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                          {linkedChats.map((chat, idx) => (
+                            <div
+                              key={idx}
+                              style={{
+                                background: 'var(--card-bg, #ffffff)',
+                                border: '1px solid var(--border)',
+                                borderLeft: '4px solid var(--accent)',
+                                borderRadius: '8px',
+                                padding: '10px 14px',
+                                boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                  <Clock size={11} /> {chat.date}
+                                </span>
+                                <span style={{ fontSize: 10, fontWeight: 700, background: 'rgba(59, 130, 246, 0.1)', color: '#2563eb', padding: '1px 6px', borderRadius: '4px' }}>
+                                  Driver Chat
+                                </span>
+                              </div>
+                              <p style={{ margin: 0, fontSize: 13, color: 'var(--text)', lineHeight: 1.5, fontWeight: 400 }}>
+                                {chat.text}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 );
               })()}
             </div>

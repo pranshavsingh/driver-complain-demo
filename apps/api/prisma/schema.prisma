@@ -206,15 +206,18 @@ model Complaint {
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
-  attachments    ComplaintAttachment[]
-  updates        ComplaintUpdate[]
-  notifications  Notification[]
-  loadingRecords LoadingRecord[]
+  attachments           ComplaintAttachment[]
+  updates               ComplaintUpdate[]
+  notifications         Notification[]
+  loadingRecords        LoadingRecord[]
+  linkedSupportMessages SupportMessage[]      @relation("LinkedMessages")
 
   @@index([status])
   @@index([driverId])
   @@index([assignedToId])
   @@index([createdAt])
+  @@index([status, createdAt])
+  @@index([driverId, status])
 }
 
 model ComplaintAttachment {
@@ -557,11 +560,16 @@ model SupportMessage {
   isRead                Boolean            @default(false)
   readAt                DateTime?
 
+  linkedComplaintId     String?            @db.Uuid
+  linkedComplaint       Complaint?         @relation("LinkedMessages", fields: [linkedComplaintId], references: [id], onDelete: SetNull)
+  linkedComplaintNo     String?
+
   createdAt             DateTime           @default(now())
   updatedAt             DateTime           @updatedAt
 
   @@index([senderId, receiverId])
   @@index([receiverId, isRead])
+  @@index([senderId, isRead])
   @@index([createdAt])
 }
 

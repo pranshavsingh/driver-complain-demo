@@ -84,5 +84,24 @@ export async function attachToComplaint(
   sendSuccess(res, result);
 }
 
+export async function detachFromComplaint(
+  req: Request<{ messageId: string }>,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw ApiError.unauthorized();
+  if (!['SUPER_ADMIN', 'ADMIN'].includes(req.user.role)) {
+    throw ApiError.forbidden('Only SuperAdmin or Admin can unlink chat messages from complaints');
+  }
+  const targetMessageId = req.params.messageId;
+  if (!targetMessageId) {
+    throw ApiError.badRequest('messageId is required to detach chat message from complaint');
+  }
+  const result = await supportService.detachChatMessageFromComplaint(
+    req.user.id,
+    targetMessageId,
+  );
+  sendSuccess(res, result);
+}
+
 
 

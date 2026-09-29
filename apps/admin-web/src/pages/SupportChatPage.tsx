@@ -106,6 +106,13 @@ export function SupportChatPage(): ReactElement {
     try {
       const res = await api.support.attachToComplaint(linkingMessage.id, selectedComplaintId);
       alert(`✅ Chat message successfully linked to Complaint #${res.complaintNo}`);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === linkingMessage.id
+            ? { ...m, linkedComplaintId: selectedComplaintId, linkedComplaintNo: res.complaintNo }
+            : m,
+        ),
+      );
       setLinkModalOpen(false);
       setLinkingMessage(null);
       setSelectedComplaintId('');
@@ -113,6 +120,23 @@ export function SupportChatPage(): ReactElement {
       alert(err.message || 'Failed to attach message to complaint');
     } finally {
       setIsLinking(false);
+    }
+  };
+
+  const handleDetachFromComplaint = async (msg: SupportMessagePublic) => {
+    if (!confirm(`Are you sure you want to unlink message from Complaint #${msg.linkedComplaintNo}?`)) return;
+    try {
+      await api.support.detachFromComplaint(msg.id);
+      alert(`✅ Message unlinked from Complaint #${msg.linkedComplaintNo}`);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === msg.id
+            ? { ...m, linkedComplaintId: null, linkedComplaintNo: null }
+            : m,
+        ),
+      );
+    } catch (err: any) {
+      alert(err.message || 'Failed to unlink message from complaint');
     }
   };
 
@@ -679,15 +703,32 @@ export function SupportChatPage(): ReactElement {
                                 {msg.sender?.firstName || 'User'}
                               </span>
                               {(user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN') && (
-                                <button
-                                  type="button"
-                                  className="btn-chat-link-complaint"
-                                  title="Link message to an open complaint"
-                                  onClick={() => openLinkModal(msg)}
-                                >
-                                  <Link2 size={11} />
-                                  <span>Link</span>
-                                </button>
+                                msg.linkedComplaintNo ? (
+                                  <button
+                                    type="button"
+                                    className="btn-chat-link-complaint btn-chat-un-link-complaint"
+                                    title={`Linked to #${msg.linkedComplaintNo}. Click to unlink.`}
+                                    onClick={() => handleDetachFromComplaint(msg)}
+                                    style={{
+                                      background: 'rgba(239, 68, 68, 0.12)',
+                                      color: '#ef4444',
+                                      borderColor: 'rgba(239, 68, 68, 0.25)',
+                                    }}
+                                  >
+                                    <Link2 size={11} />
+                                    <span>#{msg.linkedComplaintNo} · Unlink</span>
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className="btn-chat-link-complaint"
+                                    title="Link message to an open complaint"
+                                    onClick={() => openLinkModal(msg)}
+                                  >
+                                    <Link2 size={11} />
+                                    <span>Link</span>
+                                  </button>
+                                )
                               )}
                             </div>
                           )}

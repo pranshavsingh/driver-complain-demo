@@ -48,6 +48,8 @@ export interface SupportMessagePublic {
   attachmentDurationSec: number | null;
   isRead: boolean;
   readAt: string | null;
+  linkedComplaintId?: string | null;
+  linkedComplaintNo?: string | null;
   createdAt: string;
   updatedAt: string;
 }
