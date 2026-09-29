@@ -15,7 +15,7 @@ export const CreateSparePartRequestSchema = z.object({
 
 export type CreateSparePartRequestInput = z.infer<typeof CreateSparePartRequestSchema>;
 
-export const IssueSparePartSchema = z.object({
+export const ProposeIssueSparePartSchema = z.object({
   warehouseId: z.string().uuid('Warehouse is required'),
   type: SparePartTypeSchema.default('NEW'),
   issuedPartName: z.string().trim().min(1, 'Issued part name is required').max(100),
@@ -26,7 +26,23 @@ export const IssueSparePartSchema = z.object({
   adminNotes: z.string().trim().max(1000).optional(),
 });
 
+export type ProposeIssueSparePartInput = z.infer<typeof ProposeIssueSparePartSchema>;
+
+export const IssueSparePartSchema = ProposeIssueSparePartSchema;
 export type IssueSparePartInput = z.infer<typeof IssueSparePartSchema>;
+
+export const ApproveSparePartSchema = z.object({
+  warehouseId: z.string().uuid().optional(),
+  type: SparePartTypeSchema.optional(),
+  issuedPartName: z.string().trim().max(100).optional(),
+  issuedPartNo: z.string().trim().max(100).optional(),
+  issuedQty: z.coerce.number().int().min(1).optional(),
+  returnedPartNo: z.string().trim().max(100).optional(),
+  returnedPartCondition: z.string().trim().max(100).optional(),
+  adminNotes: z.string().trim().max(1000).optional(),
+});
+
+export type ApproveSparePartInput = z.infer<typeof ApproveSparePartSchema>;
 
 export const RejectSparePartRequestSchema = z.object({
   rejectionReason: z.string().trim().min(1, 'Rejection reason is required').max(1000),
@@ -71,6 +87,9 @@ export interface SparePartRequestPublic {
   voicePublicId: string | null;
   status: z.infer<typeof SparePartRequestStatusSchema>;
   type: z.infer<typeof SparePartTypeSchema>;
+  issueProposedById: string | null;
+  issueProposedBy?: SparePartUserSummary | null;
+  issueProposedAt: string | null;
   approvedById: string | null;
   approvedBy?: SparePartUserSummary | null;
   approvedAt: string | null;
@@ -101,6 +120,7 @@ export interface SparePartRequestPublic {
 
 export interface SparePartStatsSummary {
   totalPending: number;
+  totalIssuePending: number;
   totalApproved: number;
   totalIssued: number;
   totalRejected: number;

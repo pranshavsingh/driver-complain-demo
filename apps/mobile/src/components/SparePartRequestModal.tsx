@@ -1,4 +1,4 @@
-import { useState, useMemo, type ReactElement } from 'react';
+import { useState, type ReactElement } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -14,7 +14,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import type { VehiclePublic, SparePartType } from '@driver-complaint/shared-types';
+import type { VehiclePublic } from '@driver-complaint/shared-types';
 import * as api from '../api/endpoints';
 import { describeVehicle } from '../lib/format';
 import { PHOTO_QUALITY, MAX_PHOTO_BYTES } from '../media/limits';
@@ -27,19 +27,6 @@ interface SparePartRequestModalProps {
   onSuccess?: () => void;
 }
 
-const COMMON_PARTS = [
-  'Brake Pad / Shoe',
-  'Fan Belt',
-  'Wiper Blade',
-  'Headlight Bulb',
-  'Side Mirror',
-  'Coolant / Oil',
-  'Air Filter',
-  'Clutch Plate',
-  'Horn',
-  'Other',
-];
-
 export function SparePartRequestModal({
   visible,
   onClose,
@@ -48,22 +35,14 @@ export function SparePartRequestModal({
 }: SparePartRequestModalProps): ReactElement {
   const insets = useSafeAreaInsets();
 
-  // Vehicle Selection
-  const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(
-    vehicles[0]?.id ?? null,
-  );
-  const [manualVehicle, setManualVehicle] = useState<string>(
-    vehicles[0] ? describeVehicle(vehicles[0]) : '',
-  );
-  const [showVehicleDropdown, setShowVehicleDropdown] = useState(false);
+  // Assigned Vehicle from driver profile
+  const assignedVehicle = vehicles[0] ?? null;
+  const vehicleLabel = assignedVehicle ? describeVehicle(assignedVehicle) : 'Assigned Vehicle';
 
-  // Form Fields
-  const [partName, setPartName] = useState('');
-  const [partType, setPartType] = useState<SparePartType>('NEW');
-  const [quantity, setQuantity] = useState('1');
-  const [description, setDescription] = useState('');
+  // Form Fields: Purely Voice Note + Photo + Optional Note
   const [photo, setPhoto] = useState<api.FileToUpload | null>(null);
   const [voiceNote, setVoiceNote] = useState<VoiceNote | null>(null);
+  const [optionalNote, setOptionalNote] = useState('');
 
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -80,20 +59,12 @@ export function SparePartRequestModal({
 
   const clearVoiceNote = () => setVoiceNote(null);
 
-  const selectedVehicle = useMemo(() => {
-    return vehicles.find((v) => v.id === selectedVehicleId) ?? vehicles[0];
-  }, [selectedVehicleId, vehicles]);
-
-  const activeVehicleName =
-    manualVehicle.trim() || (selectedVehicle ? describeVehicle(selectedVehicle) : '');
-
-  // Photo handlers
   const handleSafeClose = () => {
-    const isDirty = Boolean(partName.trim() || description.trim() || photo || voiceNote);
+    const isDirty = Boolean(photo || voiceNote || optionalNote.trim());
     if (isDirty) {
       Alert.alert(
         'Discard Request?',
-        'You have unsaved changes in this spare part request. Are you sure you want to discard them?',
+        'You have unsaved changes in your spare part request. Discard them?',
         [
           { text: 'Keep Editing', style: 'cancel' },
           {
@@ -101,8 +72,9 @@ export function SparePartRequestModal({
             style: 'destructive',
             onPress: () => {
               setPhoto(null);
-              setPartName('');
-              setDescription('');
+              clearVoiceNote();
+              setOptionalNote('');
+              setErrorMessage(null);
               onClose();
             },
           },
@@ -110,6 +82,7 @@ export function SparePartRequestModal({
       );
       return;
     }
+    setErrorMessage(null);
     onClose();
   };
 
@@ -132,11 +105,9 @@ export function SparePartRequestModal({
             Alert.alert('File too large', 'Photo exceeds 10 MB limit.');
             return;
           }
-          const uri = asset.uri;
-          const name = uri.split('/').pop() ?? 'spare-part-proof.jpg';
           setPhoto({
-            uri,
-            name,
+            uri: asset.uri,
+            name: asset.uri.split('/').pop() ?? 'spare-part-proof.jpg',
             type: asset.mimeType ?? 'image/jpeg',
           });
         }
@@ -165,11 +136,9 @@ export function SparePartRequestModal({
             Alert.alert('File too large', 'Photo exceeds 10 MB limit.');
             return;
           }
-          const uri = asset.uri;
-          const name = uri.split('/').pop() ?? 'spare-part-proof.jpg';
           setPhoto({
-            uri,
-            name,
+            uri: asset.uri,
+            name: asset.uri.split('/').pop() ?? 'spare-part-proof.jpg',
             type: asset.mimeType ?? 'image/jpeg',
           });
         }
@@ -182,24 +151,8 @@ export function SparePartRequestModal({
   const handleSubmit = async () => {
     setErrorMessage(null);
 
-    if (!activeVehicleName) {
-      setErrorMessage('Vehicle identification is required');
-      return;
-    }
-
-    if (!partName.trim() && !description.trim() && !voiceNote) {
-      setErrorMessage('Please provide a part name, text description, or voice recording.');
-      return;
-    }
-
-    const parsedQty = parseInt(quantity, 10);
-    if (isNaN(parsedQty) || parsedQty <= 0) {
-      setErrorMessage('Quantity must be at least 1.');
-      return;
-    }
-
-    if (parsedQty > 100) {
-      setErrorMessage('Quantity cannot exceed 100 units.');
+    if (!voiceNote && !photo && !optionalNote.trim()) {
+      setErrorMessage('Please record a voice note or attach a photo of the required part.');
       return;
     }
 
@@ -216,12 +169,11 @@ export function SparePartRequestModal({
 
       await api.spareParts.create(
         {
-          vehicleId: selectedVehicle?.id,
-          vehicleNumber: activeVehicleName,
-          partName: partName.trim() || undefined,
-          description: description.trim() || (voiceNote ? 'Voice note attached' : 'Spare part requested'),
-          quantity: parsedQty,
-          type: partType,
+          vehicleId: assignedVehicle?.id,
+          vehicleNumber: vehicleLabel,
+          description: optionalNote.trim() || (voiceNote ? 'Voice note attached' : 'Spare part photo request'),
+          quantity: 1,
+          type: 'NEW',
         },
         {
           photo: photo || undefined,
@@ -230,16 +182,13 @@ export function SparePartRequestModal({
       );
 
       // Reset form
-      setPartName('');
-      setDescription('');
-      setQuantity('1');
-      setPartType('NEW');
       setPhoto(null);
       clearVoiceNote();
+      setOptionalNote('');
 
       Alert.alert(
-        'Request Submitted',
-        'Your spare part requisition has been sent to Fleet Admin for warehouse issuance.',
+        'Request Sent Successfully',
+        'Your spare part request has been forwarded to the Executive and Fleet Admin for review.',
       );
 
       if (onSuccess) onSuccess();
@@ -269,7 +218,7 @@ export function SparePartRequestModal({
               </View>
               <View>
                 <Text style={styles.headerTitle}>Request Spare Part</Text>
-                <Text style={styles.headerSubtitle}>Submit via Voice, Photo, or Text</Text>
+                <Text style={styles.headerSubtitle}>Record voice note & attach part photo</Text>
               </View>
             </View>
             <Pressable
@@ -286,6 +235,18 @@ export function SparePartRequestModal({
             contentContainerStyle={styles.scrollContent}
             keyboardShouldPersistTaps="handled"
           >
+            {/* Assigned Vehicle Auto Badge */}
+            <View style={styles.vehicleBadge}>
+              <Ionicons name="car-sport" size={20} color="#2563eb" />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.vehicleBadgeLabel}>Assigned Vehicle</Text>
+                <Text style={styles.vehicleBadgeValue}>{vehicleLabel}</Text>
+              </View>
+              <View style={styles.autoTag}>
+                <Text style={styles.autoTagText}>Auto-Assigned</Text>
+              </View>
+            </View>
+
             {/* Error Banner */}
             {errorMessage ? (
               <View style={styles.errorBox}>
@@ -294,166 +255,23 @@ export function SparePartRequestModal({
               </View>
             ) : null}
 
-            {/* Vehicle Selector */}
+            {/* Step 1: Voice Recording Card */}
             <View style={styles.section}>
-              <Text style={styles.fieldLabel}>Assigned Vehicle *</Text>
-              <Pressable
-                onPress={() => setShowVehicleDropdown((prev) => !prev)}
-                style={styles.dropdownTrigger}
-              >
-                <Ionicons name="car-sport" size={18} color="#2563eb" />
-                <Text style={styles.dropdownTriggerText} numberOfLines={1}>
-                  {activeVehicleName || 'Select or type vehicle...'}
-                </Text>
-                <Ionicons
-                  name={showVehicleDropdown ? 'chevron-up' : 'chevron-down'}
-                  size={18}
-                  color="#64748b"
-                />
-              </Pressable>
-
-              {showVehicleDropdown && (
-                <View style={styles.dropdownList}>
-                  {vehicles.map((v) => (
-                    <Pressable
-                      key={v.id}
-                      style={[
-                        styles.dropdownItem,
-                        selectedVehicleId === v.id && styles.dropdownItemSelected,
-                      ]}
-                      onPress={() => {
-                        setSelectedVehicleId(v.id);
-                        setManualVehicle(describeVehicle(v));
-                        setShowVehicleDropdown(false);
-                      }}
-                    >
-                      <Text
-                        style={[
-                          styles.dropdownItemText,
-                          selectedVehicleId === v.id && styles.dropdownItemTextSelected,
-                        ]}
-                      >
-                        {describeVehicle(v)}
-                      </Text>
-                    </Pressable>
-                  ))}
-                  <View style={styles.manualVehicleRow}>
-                    <TextInput
-                      style={styles.manualVehicleInput}
-                      placeholder="Or enter plate number..."
-                      value={manualVehicle}
-                      onChangeText={(txt) => {
-                        setManualVehicle(txt);
-                        setSelectedVehicleId(null);
-                      }}
-                    />
-                  </View>
-                </View>
-              )}
-            </View>
-
-            {/* Request Type: New vs Exchange */}
-            <View style={styles.section}>
-              <Text style={styles.fieldLabel}>Requisition Type</Text>
-              <View style={styles.typeRow}>
-                <Pressable
-                  style={[styles.typeOption, partType === 'NEW' && styles.typeOptionActive]}
-                  onPress={() => setPartType('NEW')}
-                >
-                  <Ionicons
-                    name={partType === 'NEW' ? 'radio-button-on' : 'radio-button-off'}
-                    size={16}
-                    color={partType === 'NEW' ? '#2563eb' : '#64748b'}
-                  />
-                  <Text style={[styles.typeText, partType === 'NEW' && styles.typeTextActive]}>
-                    New Part Issue
-                  </Text>
-                </Pressable>
-
-                <Pressable
-                  style={[styles.typeOption, partType === 'EXCHANGE' && styles.typeOptionActive]}
-                  onPress={() => setPartType('EXCHANGE')}
-                >
-                  <Ionicons
-                    name={partType === 'EXCHANGE' ? 'radio-button-on' : 'radio-button-off'}
-                    size={16}
-                    color={partType === 'EXCHANGE' ? '#2563eb' : '#64748b'}
-                  />
-                  <Text style={[styles.typeText, partType === 'EXCHANGE' && styles.typeTextActive]}>
-                    Exchange (Return Old)
-                  </Text>
-                </Pressable>
+              <View style={styles.sectionTitleRow}>
+                <Ionicons name="mic-circle" size={20} color="#7c3aed" />
+                <Text style={styles.sectionTitle}>1. Voice Description (Recommended)</Text>
               </View>
-            </View>
+              <Text style={styles.sectionHelp}>
+                Explain what spare part you need, where it belongs, or what broke.
+              </Text>
 
-            {/* Quick Part Suggestions */}
-            <View style={styles.section}>
-              <Text style={styles.fieldLabel}>Part Name / Category</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsScroll}>
-                {COMMON_PARTS.map((item) => (
-                  <Pressable
-                    key={item}
-                    style={[styles.chip, partName === item && styles.chipActive]}
-                    onPress={() => setPartName(item === 'Other' ? '' : item)}
-                  >
-                    <Text style={[styles.chipText, partName === item && styles.chipTextActive]}>
-                      {item}
-                    </Text>
-                  </Pressable>
-                ))}
-              </ScrollView>
-
-              <TextInput
-                style={styles.textInput}
-                placeholder="Enter exact part name or requirement..."
-                maxLength={100}
-                value={partName}
-                onChangeText={setPartName}
-              />
-            </View>
-
-            {/* Quantity */}
-            <View style={styles.section}>
-              <Text style={styles.fieldLabel}>Quantity Required</Text>
-              <View style={styles.quantityRow}>
-                <Pressable
-                  style={styles.qtyBtn}
-                  onPress={() => {
-                    const q = Math.max(1, (parseInt(quantity, 10) || 1) - 1);
-                    setQuantity(String(q));
-                  }}
-                >
-                  <Ionicons name="remove" size={18} color="#1e293b" />
-                </Pressable>
-                <TextInput
-                  style={styles.qtyInput}
-                  keyboardType="numeric"
-                  maxLength={3}
-                  value={quantity}
-                  onChangeText={(txt) => setQuantity(txt.replace(/[^0-9]/g, ''))}
-                />
-                <Pressable
-                  style={styles.qtyBtn}
-                  onPress={() => {
-                    const q = Math.min(100, (parseInt(quantity, 10) || 1) + 1);
-                    setQuantity(String(q));
-                  }}
-                >
-                  <Ionicons name="add" size={18} color="#1e293b" />
-                </Pressable>
-              </View>
-            </View>
-
-            {/* Voice Recording Card */}
-            <View style={styles.section}>
-              <Text style={styles.fieldLabel}>Voice Description (Hold or Tap to Record)</Text>
               <View style={styles.voiceCard}>
                 {isRecording ? (
                   <View style={styles.recordingRow}>
                     <View style={styles.pulsingDot} />
                     <Text style={styles.recordingTime}>Recording... {formatSec(elapsedSec)}</Text>
                     <Pressable style={styles.stopBtn} onPress={stopRecording}>
-                      <Ionicons name="stop" size={18} color="#ffffff" />
+                      <Ionicons name="stop" size={16} color="#ffffff" />
                       <Text style={styles.stopBtnText}>Done</Text>
                     </Pressable>
                     <Pressable style={styles.cancelVoiceBtn} onPress={cancelRecording}>
@@ -462,10 +280,10 @@ export function SparePartRequestModal({
                   </View>
                 ) : voiceNote ? (
                   <View style={styles.recordedRow}>
-                    <Ionicons name="mic-circle" size={28} color="#7c3aed" />
+                    <Ionicons name="checkmark-circle" size={26} color="#16a34a" />
                     <View style={{ flex: 1, marginLeft: 8 }}>
-                      <Text style={styles.recordedTitle}>Voice Note Attached</Text>
-                      <Text style={styles.recordedDuration}>{formatSec(voiceNote.durationSec)}</Text>
+                      <Text style={styles.recordedTitle}>Voice Note Ready</Text>
+                      <Text style={styles.recordedDuration}>Duration: {formatSec(voiceNote.durationSec)}</Text>
                     </View>
                     <Pressable style={styles.deleteVoiceBtn} onPress={clearVoiceNote}>
                       <Ionicons name="trash-outline" size={18} color="#dc2626" />
@@ -473,49 +291,65 @@ export function SparePartRequestModal({
                   </View>
                 ) : (
                   <Pressable style={styles.recordStartBtn} onPress={startRecording}>
-                    <Ionicons name="mic" size={20} color="#2563eb" />
-                    <Text style={styles.recordStartText}>Record Voice Request</Text>
+                    <View style={styles.recordIconCircle}>
+                      <Ionicons name="mic" size={22} color="#ffffff" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.recordStartText}>Tap to Record Voice Note</Text>
+                      <Text style={styles.recordStartSub}>Speak clearly into your phone mic</Text>
+                    </View>
                   </Pressable>
                 )}
                 {voiceError ? <Text style={styles.voiceErrorText}>{voiceError}</Text> : null}
               </View>
             </View>
 
-            {/* Photo Proof */}
+            {/* Step 2: Photo Capture Card */}
             <View style={styles.section}>
-              <Text style={styles.fieldLabel}>Photo Evidence (Optional)</Text>
+              <View style={styles.sectionTitleRow}>
+                <Ionicons name="camera" size={20} color="#0284c7" />
+                <Text style={styles.sectionTitle}>2. Photo of Part / Damage</Text>
+              </View>
+              <Text style={styles.sectionHelp}>
+                Take a clear photo of the broken part or area needing replacement.
+              </Text>
+
               {photo ? (
                 <View style={styles.photoPreviewBox}>
                   <Image source={{ uri: photo.uri }} style={styles.photoPreview} />
                   <Pressable style={styles.removePhotoBtn} onPress={() => setPhoto(null)}>
-                    <Ionicons name="close-circle" size={24} color="#dc2626" />
+                    <Ionicons name="close-circle" size={26} color="#dc2626" />
                   </Pressable>
                 </View>
               ) : (
                 <View style={styles.photoActionsRow}>
                   <Pressable style={styles.photoBtn} onPress={takePhoto}>
-                    <Ionicons name="camera" size={20} color="#2563eb" />
+                    <Ionicons name="camera-outline" size={22} color="#2563eb" />
                     <Text style={styles.photoBtnText}>Take Photo</Text>
                   </Pressable>
                   <Pressable style={styles.photoBtn} onPress={pickFromGallery}>
-                    <Ionicons name="images" size={20} color="#475569" />
+                    <Ionicons name="images-outline" size={22} color="#475569" />
                     <Text style={styles.photoBtnText}>Choose Gallery</Text>
                   </Pressable>
                 </View>
               )}
             </View>
 
-            {/* Description Text */}
+            {/* Step 3: Optional Quick Note */}
             <View style={styles.section}>
-              <Text style={styles.fieldLabel}>Additional Notes / Reason</Text>
+              <View style={styles.sectionTitleRow}>
+                <Ionicons name="document-text-outline" size={18} color="#64748b" />
+                <Text style={styles.sectionTitle}>3. Additional Note (Optional)</Text>
+              </View>
               <TextInput
                 style={[styles.textInput, styles.textArea]}
-                placeholder="Describe why this part is needed, current issue, or location..."
+                placeholder="Any additional details for the fleet team (optional)..."
+                placeholderTextColor="#94a3b8"
                 multiline
-                numberOfLines={3}
-                maxLength={1000}
-                value={description}
-                onChangeText={setDescription}
+                numberOfLines={2}
+                maxLength={500}
+                value={optionalNote}
+                onChangeText={setOptionalNote}
               />
             </View>
           </ScrollView>
@@ -532,7 +366,7 @@ export function SparePartRequestModal({
               ) : (
                 <>
                   <Ionicons name="paper-plane" size={18} color="#ffffff" style={{ marginRight: 8 }} />
-                  <Text style={styles.submitButtonText}>Submit Requisition</Text>
+                  <Text style={styles.submitButtonText}>Submit Spare Part Request</Text>
                 </>
               )}
             </Pressable>
@@ -546,7 +380,7 @@ export function SparePartRequestModal({
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
     justifyContent: 'flex-end',
   },
   modalContent: {
@@ -554,7 +388,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     maxHeight: '92%',
-    minHeight: '60%',
+    minHeight: '65%',
   },
   header: {
     flexDirection: 'row',
@@ -571,9 +405,9 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   headerIconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: '#eff6ff',
     alignItems: 'center',
     justifyContent: 'center',
@@ -600,7 +434,41 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 20,
-    gap: 16,
+    gap: 18,
+  },
+  vehicleBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0fdf4',
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
+    borderRadius: 12,
+    padding: 12,
+    gap: 12,
+  },
+  vehicleBadgeLabel: {
+    fontSize: 11,
+    color: '#15803d',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  vehicleBadgeValue: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#14532d',
+    marginTop: 1,
+  },
+  autoTag: {
+    backgroundColor: '#dcfce7',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  autoTagText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#166534',
   },
   errorBox: {
     flexDirection: 'row',
@@ -620,118 +488,151 @@ const styles = StyleSheet.create({
   section: {
     gap: 6,
   },
-  fieldLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#334155',
-  },
-  dropdownTrigger: {
+  sectionTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    gap: 10,
+    gap: 6,
   },
-  dropdownTriggerText: {
-    flex: 1,
+  sectionTitle: {
     fontSize: 14,
-    color: '#0f172a',
-    fontWeight: '500',
+    fontWeight: '700',
+    color: '#1e293b',
   },
-  dropdownList: {
-    marginTop: 4,
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 10,
-    padding: 6,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  dropdownItem: {
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 6,
-  },
-  dropdownItemSelected: {
-    backgroundColor: '#eff6ff',
-  },
-  dropdownItemText: {
-    fontSize: 14,
-    color: '#334155',
-  },
-  dropdownItemTextSelected: {
-    color: '#2563eb',
-    fontWeight: '600',
-  },
-  manualVehicleRow: {
-    borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
-    marginTop: 4,
-    paddingTop: 6,
-  },
-  manualVehicleInput: {
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    fontSize: 13,
-    color: '#0f172a',
-  },
-  typeRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  typeOption: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    gap: 8,
-  },
-  typeOptionActive: {
-    borderColor: '#2563eb',
-    backgroundColor: '#eff6ff',
-  },
-  typeText: {
-    fontSize: 13,
-    color: '#475569',
-    fontWeight: '500',
-  },
-  typeTextActive: {
-    color: '#2563eb',
-    fontWeight: '600',
-  },
-  chipsScroll: {
-    marginBottom: 8,
-  },
-  chip: {
-    backgroundColor: '#f1f5f9',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    marginRight: 8,
-  },
-  chipActive: {
-    backgroundColor: '#2563eb',
-  },
-  chipText: {
+  sectionHelp: {
     fontSize: 12,
-    color: '#475569',
-    fontWeight: '500',
+    color: '#64748b',
+    marginBottom: 4,
   },
-  chipTextActive: {
-    color: '#ffffff',
+  voiceCard: {
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 14,
+    padding: 14,
+  },
+  recordStartBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    paddingVertical: 6,
+  },
+  recordIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#7c3aed',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recordStartText: {
+    color: '#0f172a',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  recordStartSub: {
+    color: '#64748b',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  recordingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 6,
+  },
+  pulsingDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#dc2626',
+  },
+  recordingTime: {
+    flex: 1,
+    fontSize: 14,
     fontWeight: '600',
+    color: '#dc2626',
+  },
+  stopBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#16a34a',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  stopBtnText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  cancelVoiceBtn: {
+    padding: 8,
+  },
+  recordedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  recordedTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#0f172a',
+  },
+  recordedDuration: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 1,
+  },
+  deleteVoiceBtn: {
+    padding: 8,
+  },
+  voiceErrorText: {
+    color: '#dc2626',
+    fontSize: 12,
+    marginTop: 6,
+  },
+  photoActionsRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  photoBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: '#cbd5e1',
+    borderRadius: 12,
+    paddingVertical: 14,
+  },
+  photoBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#334155',
+  },
+  photoPreviewBox: {
+    position: 'relative',
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  photoPreview: {
+    width: '100%',
+    height: 180,
+    backgroundColor: '#f1f5f9',
+  },
+  removePhotoBtn: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: '#ffffff',
+    borderRadius: 14,
+    elevation: 2,
   },
   textInput: {
     backgroundColor: '#f8fafc',
@@ -744,145 +645,8 @@ const styles = StyleSheet.create({
     color: '#0f172a',
   },
   textArea: {
-    minHeight: 70,
+    minHeight: 65,
     textAlignVertical: 'top',
-  },
-  quantityRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    width: 140,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 10,
-    overflow: 'hidden',
-  },
-  qtyBtn: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#f8fafc',
-  },
-  qtyInput: {
-    flex: 1,
-    height: 40,
-    textAlign: 'center',
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#0f172a',
-    backgroundColor: '#ffffff',
-  },
-  voiceCard: {
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 12,
-    padding: 12,
-  },
-  recordStartBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 12,
-  },
-  recordStartText: {
-    color: '#2563eb',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  recordingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  pulsingDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#dc2626',
-  },
-  recordingTime: {
-    flex: 1,
-    color: '#dc2626',
-    fontWeight: '600',
-    fontSize: 13,
-  },
-  stopBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#16a34a',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  stopBtnText: {
-    color: '#ffffff',
-    fontWeight: '600',
-    fontSize: 12,
-  },
-  cancelVoiceBtn: {
-    padding: 6,
-  },
-  recordedRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  recordedTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#0f172a',
-  },
-  recordedDuration: {
-    fontSize: 11,
-    color: '#64748b',
-  },
-  deleteVoiceBtn: {
-    padding: 8,
-  },
-  voiceErrorText: {
-    fontSize: 12,
-    color: '#dc2626',
-    marginTop: 4,
-  },
-  photoActionsRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  photoBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 10,
-    paddingVertical: 12,
-  },
-  photoBtnText: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#334155',
-  },
-  photoPreviewBox: {
-    position: 'relative',
-    width: 120,
-    height: 90,
-  },
-  photoPreview: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 10,
-  },
-  removePhotoBtn: {
-    position: 'absolute',
-    top: -8,
-    right: -8,
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
   },
   footer: {
     paddingHorizontal: 20,
@@ -892,18 +656,18 @@ const styles = StyleSheet.create({
   },
   submitButton: {
     flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: '#2563eb',
     paddingVertical: 14,
     borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   submitButtonDisabled: {
-    backgroundColor: '#94a3b8',
+    backgroundColor: '#93c5fd',
   },
   submitButtonText: {
-    color: '#ffffff',
     fontSize: 15,
     fontWeight: '700',
+    color: '#ffffff',
   },
 });

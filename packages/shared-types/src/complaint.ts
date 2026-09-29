@@ -43,6 +43,13 @@ export const AcceptAssignmentSchema = z.object({
 }).optional();
 export type AcceptAssignment = z.infer<typeof AcceptAssignmentSchema>;
 
+export const AttachChatMessageToComplaintSchema = z.object({
+  messageId: z.string().uuid().optional(),
+  complaintId: z.string().uuid(),
+});
+export type AttachChatMessageToComplaint = z.infer<typeof AttachChatMessageToComplaintSchema>;
+
+
 export const TranslateComplaintSchema = z.object({
   text: z.string().min(1, 'Text to translate is required').max(5000),
   targetLang: z.string().min(2).max(10).default('en'),
@@ -81,6 +88,7 @@ export const ComplaintPublicSchema = z.object({
   pendingAssigneeId: z.string().nullable().optional(),
   assignmentStatus: AssignmentStatusSchema.optional(),
   resolvedAt: z.string().nullable().optional(),
+  wasAppended: z.boolean().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

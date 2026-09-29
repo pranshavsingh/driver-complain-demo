@@ -4,6 +4,7 @@ import {
   createRequest,
   listRequests,
   getOne,
+  proposeIssue,
   approveAndIssue,
   rejectRequest,
   getStats,
@@ -71,5 +72,7 @@ sparePartsRouter.get('/', listRequests);
 sparePartsRouter.get('/stats', requireRole('SUPER_ADMIN', 'ADMIN', 'EXECUTIVE'), getStats);
 sparePartsRouter.get('/export', requireRole('SUPER_ADMIN', 'ADMIN', 'EXECUTIVE'), exportXlsx);
 sparePartsRouter.get('/:id', validateUuidParam('id'), getOne);
-sparePartsRouter.patch('/:id/issue', validateUuidParam('id'), requireRole('SUPER_ADMIN', 'ADMIN'), approveAndIssue);
-sparePartsRouter.patch('/:id/reject', validateUuidParam('id'), requireRole('SUPER_ADMIN', 'ADMIN'), rejectRequest);
+sparePartsRouter.patch('/:id/propose-issue', validateUuidParam('id'), requireRole('SUPER_ADMIN', 'ADMIN', 'EXECUTIVE'), proposeIssue);
+sparePartsRouter.patch('/:id/issue', validateUuidParam('id'), requireRole('SUPER_ADMIN'), approveAndIssue);
+sparePartsRouter.patch('/:id/approve', validateUuidParam('id'), requireRole('SUPER_ADMIN'), approveAndIssue);
+sparePartsRouter.patch('/:id/reject', validateUuidParam('id'), requireRole('SUPER_ADMIN', 'ADMIN', 'EXECUTIVE'), rejectRequest);

@@ -299,7 +299,18 @@ export async function create(
     vehicleSite = vRecord?.siteIncharge?.site ?? null;
   }
 
-  const categoryToUse = input.category ?? 'SUPPORT';
+  const categoryToUse = input.category ?? 'BREAKDOWN';
+
+  // Duplicate Check: If driver has an open/unresolved complaint in this category, append as update/evidence
+  const existingOpenComplaint = await prisma.complaint.findFirst({
+    where: {
+      driverId: driver.id,
+      category: categoryToUse,
+      status: { notIn: ['RESOLVED', 'REJECTED'] },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
   // Route to executive under vehicle's Site In-charge / matching site first, then category executive / admin.
   const autoAssignedToId = await findLeastLoadedAdmin(categoryToUse, siteInchargeIdForVehicle, vehicleSite);
 
@@ -345,6 +356,112 @@ export async function create(
 
   const rawTitle = typeof input.title === 'string' ? input.title.trim() : '';
   const finalTitle = rawTitle || `${categoryToUse} Issue`;
+
+  if (existingOpenComplaint) {
+    const updatedComplaint = await prisma.$transaction(
+      async (tx) => {
+        if (uploads.length > 0) {
+          await tx.complaintAttachment.createMany({
+            data: uploads.map(({ kind, asset, originalName, transcription }) => ({
+              complaintId: existingOpenComplaint.id,
+              uploadedById: driverUserId,
+              kind,
+              url: asset.url,
+              publicId: asset.publicId,
+              resourceType: asset.resourceType,
+              format: asset.format,
+              bytes: asset.bytes,
+              durationSec: asset.durationSec,
+              originalName,
+              transcription,
+            })),
+          });
+        }
+
+        await tx.complaintUpdate.create({
+          data: {
+            complaintId: existingOpenComplaint.id,
+            authorId: driverUserId,
+            fromStatus: existingOpenComplaint.status,
+            toStatus: existingOpenComplaint.status,
+            note: `[Driver Update] ${finalDescription}`,
+          },
+        });
+
+        const now = new Date();
+        await tx.complaint.update({
+          where: { id: existingOpenComplaint.id },
+          data: {
+            updatedAt: now,
+            ...(voiceTranscription && !existingOpenComplaint.transcription
+              ? { transcription: voiceTranscription }
+              : {}),
+          },
+        });
+
+        const notifyUserIds = Array.from(
+          new Set([
+            ...adminIds,
+            ...(existingOpenComplaint.assignedToId ? [existingOpenComplaint.assignedToId] : []),
+          ]),
+        );
+
+        if (notifyUserIds.length > 0) {
+          await tx.notification.createMany({
+            data: notifyUserIds.map((id) => ({
+              userId: id,
+              type: 'COMPLAINT_UPDATED' as const,
+              title: `Update on ${existingOpenComplaint.complaintNo}`,
+              body: `Driver added update: ${finalDescription.slice(0, 100)}`,
+              complaintId: existingOpenComplaint.id,
+              data: { complaintId: existingOpenComplaint.id, type: 'COMPLAINT_UPDATED' },
+            })),
+          });
+        }
+
+        return tx.complaint.findUniqueOrThrow({
+          where: { id: existingOpenComplaint.id },
+          include: listInclude,
+        });
+      },
+      { timeout: 15000, maxWait: 10000 },
+    );
+
+    const notifyUserIds = Array.from(
+      new Set([
+        ...adminIds,
+        ...(existingOpenComplaint.assignedToId ? [existingOpenComplaint.assignedToId] : []),
+      ]),
+    );
+
+    dispatchComplaintEvent({
+      userIds: notifyUserIds,
+      event: REALTIME_EVENTS.complaintUpdated,
+      payload: {
+        complaintId: updatedComplaint.id,
+        complaintNo: updatedComplaint.complaintNo,
+        status: updatedComplaint.status,
+        at: new Date().toISOString(),
+      },
+      push: {
+        title: `Update on ${updatedComplaint.complaintNo}`,
+        body: `Driver added update: ${finalDescription.slice(0, 100)}`,
+        data: { complaintId: updatedComplaint.id, type: 'COMPLAINT_UPDATED' },
+      },
+    });
+
+    emitToRoles(['SUPER_ADMIN', 'ADMIN', 'EXECUTIVE'], REALTIME_EVENTS.complaintUpdated, {
+      complaintId: updatedComplaint.id,
+      complaintNo: updatedComplaint.complaintNo,
+      status: updatedComplaint.status,
+      at: new Date().toISOString(),
+    });
+
+    return {
+      ...toComplaintPublic(updatedComplaint),
+      wasAppended: true,
+    };
+  }
 
   const activeLoading = await prisma.loadingRecord.findFirst({
     where: {
@@ -437,7 +554,7 @@ export async function create(
       where: { id: complaint.id },
       include: listInclude,
     });
-  });
+  }, { timeout: 15000, maxWait: 10000 });
 
   // Live + push delivery, post-commit and best-effort — the admins' Notification rows
   // (written in the transaction above) are the durable record if this fails.

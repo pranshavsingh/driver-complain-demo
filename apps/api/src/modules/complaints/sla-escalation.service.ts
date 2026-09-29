@@ -1,6 +1,6 @@
 import { prisma } from '../../lib/prisma';
 import { logger } from '../../lib/logger';
-import { getCategorySlaList, EXCLUDED_SLA_CATEGORIES } from '../settings/settings.service';
+import { getCategorySlaList } from '../settings/settings.service';
 import { emitEventToUsers } from '../../realtime/socket';
 
 function formatEnum(value: string): string {
@@ -80,9 +80,6 @@ export async function checkAndEscalateSlaBreaches(): Promise<SlaEscalationResult
   let totalNotifiedUsers = 0;
 
   for (const complaint of openComplaints) {
-    // Skip excluded categories (SUPPORT & COMPLAINT_STATUS)
-    if (EXCLUDED_SLA_CATEGORIES.has(complaint.category)) continue;
-
     const targetSlaHours = slaMap.get(complaint.category) ?? 12;
     const elapsedMs = now.getTime() - complaint.createdAt.getTime();
     const elapsedHours = elapsedMs / (1000 * 60 * 60);

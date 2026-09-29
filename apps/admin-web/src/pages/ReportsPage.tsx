@@ -1388,13 +1388,13 @@ export function ReportsPage(): ReactElement {
                               const isBreakdown = c.category === 'BREAKDOWN';
                               const isTyre = c.category === 'TYRE_ISSUE';
                               const isFuelIssue = c.category === 'FUEL_DEF';
-                              const isSupport = c.category === 'SUPPORT';
+                              const isMaintenance = c.category === 'VEHICLE_MAINTENANCE';
 
                               return (
                                 <div
                                   key={evt.id}
                                   className={`pipeline-node incident-node ${
-                                    isBreakdown ? 'node-breakdown' : isTyre ? 'node-tyre' : isFuelIssue ? 'node-fuel' : 'node-support'
+                                    isBreakdown ? 'node-breakdown' : isTyre ? 'node-tyre' : isFuelIssue ? 'node-fuel' : 'node-breakdown'
                                   }`}
                                 >
                                   <div className="pipeline-spine">
@@ -1402,8 +1402,8 @@ export function ReportsPage(): ReactElement {
                                       {isBreakdown && '🚨'}
                                       {isTyre && '🛞'}
                                       {isFuelIssue && '⛽'}
-                                      {isSupport && '📞'}
-                                      {!isBreakdown && !isTyre && !isFuelIssue && !isSupport && '⚠️'}
+                                      {isMaintenance && '🔧'}
+                                      {!isBreakdown && !isTyre && !isFuelIssue && !isMaintenance && '⚠️'}
                                     </div>
                                     {eIdx < item.orderedEvents.length - 1 ? (
                                       <div className="spine-connector alert-spine" />

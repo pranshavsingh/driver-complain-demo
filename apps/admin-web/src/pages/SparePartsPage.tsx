@@ -1,4 +1,4 @@
-import { useState, type ReactElement } from 'react';
+import { useState, useMemo, type ReactElement } from 'react';
 import type {
   SparePartRequestPublic,
   WarehousePublic,
@@ -16,30 +16,50 @@ import {
   Trash2,
   CheckCircle2,
   AlertTriangle,
-  FileSpreadsheet,
   Volume2,
-  UserCheck,
   UserX,
   Wrench,
+  Clock,
+  ShieldCheck,
+  Download,
+  ExternalLink,
+  ImageIcon,
 } from '../components/Icons';
 import * as api from '../api/endpoints';
 import { useAuth, isSuperAdmin } from '../auth/AuthContext';
 import { ErrorBanner } from '../components/ErrorBanner';
+import { Pagination } from '../components/Pagination';
 import { useApiResource } from '../hooks/useApiResource';
+import { formatDateTime } from '../lib/format';
 
 export function SparePartsPage(): ReactElement {
   const { user: currentUser } = useAuth();
   const isSuper = isSuperAdmin(currentUser);
+  const canPrepareIssue =
+    currentUser?.role === 'SUPER_ADMIN' ||
+    currentUser?.role === 'ADMIN' ||
+    currentUser?.role === 'EXECUTIVE';
 
   const [activeTab, setActiveTab] = useState<'requests' | 'warehouses'>('requests');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [typeFilter, setTypeFilter] = useState<string>('ALL');
   const [warehouseFilter, setWarehouseFilter] = useState<string>('ALL');
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
+
+  // Universal Lightbox Photo Preview State
+  const [selectedPhoto, setSelectedPhoto] = useState<{
+    url: string;
+    title: string;
+    subtitle: string;
+    date: string;
+  } | null>(null);
 
   // Modals state
   const [viewingRequest, setViewingRequest] = useState<SparePartRequestPublic | null>(null);
   const [issuingRequest, setIssuingRequest] = useState<SparePartRequestPublic | null>(null);
+  const [approvingRequest, setApprovingRequest] = useState<SparePartRequestPublic | null>(null);
   const [rejectingRequest, setRejectingRequest] = useState<SparePartRequestPublic | null>(null);
   const [showWarehouseModal, setShowWarehouseModal] = useState(false);
   const [editingWarehouse, setEditingWarehouse] = useState<WarehousePublic | null>(null);
@@ -47,7 +67,7 @@ export function SparePartsPage(): ReactElement {
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
-  // Issue Form State
+  // Propose / Issue Form State
   const [issueWarehouseId, setIssueWarehouseId] = useState('');
   const [issueType, setIssueType] = useState<SparePartType>('NEW');
   const [issuePartName, setIssuePartName] = useState('');
@@ -84,36 +104,78 @@ export function SparePartsPage(): ReactElement {
   const stats = statsResource.data;
 
   // Filtered requests
-  const filteredRequests = requests.filter((r) => {
-    if (statusFilter !== 'ALL' && r.status !== statusFilter) return false;
-    if (typeFilter !== 'ALL' && r.type !== typeFilter) return false;
-    if (warehouseFilter !== 'ALL' && r.warehouseId !== warehouseFilter) return false;
+  const filteredRequests = useMemo(() => {
+    return requests.filter((r) => {
+      if (statusFilter !== 'ALL' && r.status !== statusFilter) return false;
+      if (typeFilter !== 'ALL' && r.type !== typeFilter) return false;
+      if (warehouseFilter !== 'ALL' && r.warehouseId !== warehouseFilter) return false;
 
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase();
-    const reqNoMatch = r.requestNo.toLowerCase().includes(q);
-    const partMatch = (r.partName || '').toLowerCase().includes(q);
-    const descMatch = (r.description || '').toLowerCase().includes(q);
-    const plateMatch = (r.vehicle?.plateNumber || '').toLowerCase().includes(q);
-    const driverMatch = r.driver?.user
-      ? `${r.driver.user.firstName} ${r.driver.user.lastName} ${r.driver.user.employeeId}`.toLowerCase().includes(q)
-      : false;
-    const issuedPartMatch = (r.issuedPartName || '').toLowerCase().includes(q);
-    const issuedPartNoMatch = (r.issuedPartNo || '').toLowerCase().includes(q);
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase();
+      const reqNoMatch = r.requestNo.toLowerCase().includes(q);
+      const partMatch = (r.partName || '').toLowerCase().includes(q);
+      const descMatch = (r.description || '').toLowerCase().includes(q);
+      const plateMatch = (r.vehicle?.plateNumber || '').toLowerCase().includes(q);
+      const driverMatch = r.driver?.user
+        ? `${r.driver.user.firstName} ${r.driver.user.lastName} ${r.driver.user.employeeId}`.toLowerCase().includes(q)
+        : false;
+      const issuedPartMatch = (r.issuedPartName || '').toLowerCase().includes(q);
+      const issuedPartNoMatch = (r.issuedPartNo || '').toLowerCase().includes(q);
 
-    return reqNoMatch || partMatch || descMatch || plateMatch || driverMatch || issuedPartMatch || issuedPartNoMatch;
-  });
+      return (
+        reqNoMatch ||
+        partMatch ||
+        descMatch ||
+        plateMatch ||
+        driverMatch ||
+        issuedPartMatch ||
+        issuedPartNoMatch
+      );
+    });
+  }, [requests, statusFilter, typeFilter, warehouseFilter, searchQuery]);
 
-  const handleOpenIssue = (req: SparePartRequestPublic): void => {
+  const totalItems = filteredRequests.length;
+  const totalPages = Math.ceil(totalItems / pageSize) || 1;
+
+  const paginatedRequests = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredRequests.slice(start, start + pageSize);
+  }, [filteredRequests, page, pageSize]);
+
+  const hasActiveFilters =
+    searchQuery !== '' || statusFilter !== 'ALL' || typeFilter !== 'ALL' || warehouseFilter !== 'ALL';
+
+  const handleClearFilters = () => {
+    setSearchQuery('');
+    setStatusFilter('ALL');
+    setTypeFilter('ALL');
+    setWarehouseFilter('ALL');
+    setPage(1);
+  };
+
+  const handleOpenProposeIssue = (req: SparePartRequestPublic): void => {
     setIssuingRequest(req);
     setIssueType(req.type || 'NEW');
-    setIssuePartName(req.partName || '');
-    setIssuePartNo('');
-    setIssueQty(req.quantity || 1);
-    setIssueWarehouseId(warehousesList.find((w) => w.isActive)?.id || '');
-    setIssueReturnedPartNo('');
-    setIssueReturnedCondition('Worn / Replaced');
-    setIssueNotes('');
+    setIssuePartName(req.issuedPartName || req.partName || '');
+    setIssuePartNo(req.issuedPartNo || '');
+    setIssueQty(req.issuedQty || req.quantity || 1);
+    setIssueWarehouseId(req.warehouseId || warehousesList.find((w) => w.isActive)?.id || '');
+    setIssueReturnedPartNo(req.returnedPartNo || '');
+    setIssueReturnedCondition(req.returnedPartCondition || 'Worn / Replaced');
+    setIssueNotes(req.adminNotes || '');
+    setActionError(null);
+  };
+
+  const handleOpenApproveModal = (req: SparePartRequestPublic): void => {
+    setApprovingRequest(req);
+    setIssueType(req.type || 'NEW');
+    setIssuePartName(req.issuedPartName || req.partName || 'Spare Part');
+    setIssuePartNo(req.issuedPartNo || 'N/A');
+    setIssueQty(req.issuedQty || req.quantity || 1);
+    setIssueWarehouseId(req.warehouseId || warehousesList.find((w) => w.isActive)?.id || '');
+    setIssueReturnedPartNo(req.returnedPartNo || '');
+    setIssueReturnedCondition(req.returnedPartCondition || '');
+    setIssueNotes(req.adminNotes || '');
     setActionError(null);
   };
 
@@ -147,7 +209,8 @@ export function SparePartsPage(): ReactElement {
     setShowWarehouseModal(true);
   };
 
-  const handleIssueSubmit = async (e: React.FormEvent): Promise<void> => {
+  // Executive / Admin proposes issue (status -> ISSUE_PENDING_APPROVAL)
+  const handleProposeSubmit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
     if (!issuingRequest) return;
     if (!issueWarehouseId) {
@@ -161,34 +224,83 @@ export function SparePartsPage(): ReactElement {
 
     const parsedQty = parseInt(String(issueQty), 10);
     if (isNaN(parsedQty) || parsedQty <= 0) {
-      setActionError('Issued quantity must be a positive integer (at least 1)');
-      return;
-    }
-
-    if (!window.confirm(`Are you sure you want to approve and issue "${issuePartName.trim()}" (${parsedQty} unit(s)) for this vehicle?`)) {
+      setActionError('Quantity must be at least 1');
       return;
     }
 
     try {
       setActionLoading(true);
       setActionError(null);
-      await api.spareParts.approveAndIssue(issuingRequest.id, {
-        warehouseId: issueWarehouseId,
-        type: issueType,
-        issuedPartName: issuePartName.trim(),
-        issuedPartNo: issuePartNo.trim(),
-        issuedQty: parsedQty,
-        returnedPartNo: issueType === 'EXCHANGE' ? issueReturnedPartNo.trim() : undefined,
-        returnedPartCondition: issueType === 'EXCHANGE' ? issueReturnedCondition.trim() : undefined,
-        adminNotes: issueNotes.trim() || undefined,
-      });
+
+      if (isSuper) {
+        await api.spareParts.approveAndIssue(issuingRequest.id, {
+          warehouseId: issueWarehouseId,
+          type: issueType,
+          issuedPartName: issuePartName.trim(),
+          issuedPartNo: issuePartNo.trim(),
+          issuedQty: parsedQty,
+          returnedPartNo: issueType === 'EXCHANGE' ? issueReturnedPartNo.trim() : undefined,
+          returnedPartCondition: issueType === 'EXCHANGE' ? issueReturnedCondition.trim() : undefined,
+          adminNotes: issueNotes.trim() || undefined,
+        });
+      } else {
+        await api.spareParts.proposeIssue(issuingRequest.id, {
+          warehouseId: issueWarehouseId,
+          type: issueType,
+          issuedPartName: issuePartName.trim(),
+          issuedPartNo: issuePartNo.trim(),
+          issuedQty: parsedQty,
+          returnedPartNo: issueType === 'EXCHANGE' ? issueReturnedPartNo.trim() : undefined,
+          returnedPartCondition: issueType === 'EXCHANGE' ? issueReturnedCondition.trim() : undefined,
+          adminNotes: issueNotes.trim() || undefined,
+        });
+      }
 
       setIssuingRequest(null);
       void requestsResource.reload();
       void statsResource.reload();
       void warehousesResource.reload();
     } catch (err: any) {
-      setActionError(err?.message || 'Failed to issue spare part');
+      setActionError(err?.message || 'Failed to submit issue proposal');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // SuperAdmin approves proposed issue (status -> ISSUED)
+  const handleSuperAdminApprove = async (e: React.FormEvent): Promise<void> => {
+    e.preventDefault();
+    if (!approvingRequest) return;
+    if (!issueWarehouseId) {
+      setActionError('Please select a warehouse');
+      return;
+    }
+    if (!issuePartName.trim()) {
+      setActionError('Please enter the part name');
+      return;
+    }
+
+    try {
+      setActionLoading(true);
+      setActionError(null);
+
+      await api.spareParts.approveAndIssue(approvingRequest.id, {
+        warehouseId: issueWarehouseId,
+        type: issueType,
+        issuedPartName: issuePartName.trim(),
+        issuedPartNo: issuePartNo.trim() || undefined,
+        issuedQty: issueQty,
+        returnedPartNo: issueType === 'EXCHANGE' ? issueReturnedPartNo.trim() : undefined,
+        returnedPartCondition: issueType === 'EXCHANGE' ? issueReturnedCondition.trim() : undefined,
+        adminNotes: issueNotes.trim() || undefined,
+      });
+
+      setApprovingRequest(null);
+      void requestsResource.reload();
+      void statsResource.reload();
+      void warehousesResource.reload();
+    } catch (err: any) {
+      setActionError(err?.message || 'Failed to approve and issue spare part');
     } finally {
       setActionLoading(false);
     }
@@ -199,10 +311,6 @@ export function SparePartsPage(): ReactElement {
     if (!rejectingRequest) return;
     if (!rejectionReason.trim()) {
       setActionError('Please provide a rejection reason');
-      return;
-    }
-
-    if (!window.confirm('Are you sure you want to reject this spare part request?')) {
       return;
     }
 
@@ -227,11 +335,6 @@ export function SparePartsPage(): ReactElement {
     e.preventDefault();
     if (!whName.trim()) {
       setActionError('Warehouse name is required');
-      return;
-    }
-
-    if (whContactPhone.trim() && !/^[+0-9\s-]{7,20}$/.test(whContactPhone.trim())) {
-      setActionError('Please enter a valid contact phone number');
       return;
     }
 
@@ -277,7 +380,7 @@ export function SparePartsPage(): ReactElement {
   };
 
   const handleDeleteWarehouse = async (wh: WarehousePublic): Promise<void> => {
-    if (!window.confirm(`Are you sure you want to delete or deactivate warehouse "${wh.name}"?`)) {
+    if (!window.confirm(`Are you sure you want to delete warehouse "${wh.name}"?`)) {
       return;
     }
     try {
@@ -288,20 +391,67 @@ export function SparePartsPage(): ReactElement {
     }
   };
 
-  const handleExportExcel = async (): Promise<void> => {
+  const handleExportCsv = (): void => {
+    if (requests.length === 0) return;
+    setExporting(true);
     try {
-      setExporting(true);
-      await api.spareParts.exportXlsx(
-        {
-          status: statusFilter !== 'ALL' ? statusFilter : undefined,
-          type: typeFilter !== 'ALL' ? typeFilter : undefined,
-          warehouseId: warehouseFilter !== 'ALL' ? warehouseFilter : undefined,
-          search: searchQuery.trim() || undefined,
-        },
-        `spare-parts-requisitions-${new Date().toISOString().slice(0, 10)}.xlsx`,
-      );
-    } catch (err: any) {
-      alert(err?.message || 'Export failed');
+      const headers = [
+        'Request No',
+        'Created Date',
+        'Vehicle Plate',
+        'Driver Name',
+        'Driver Employee ID',
+        'Driver Phone',
+        'Requisition Type',
+        'Status',
+        'Driver Description',
+        'Issued Part Name',
+        'Issued Part No',
+        'Issued Qty',
+        'Warehouse',
+        'Returned Part No',
+        'Returned Part Condition',
+        'Prepared By',
+        'Approved By',
+        'Issued At',
+        'Notes',
+      ];
+
+      const rows = filteredRequests.map((r) => [
+        r.requestNo,
+        new Date(r.createdAt).toISOString(),
+        r.vehicle?.plateNumber ?? '',
+        r.driver?.user ? `${r.driver.user.firstName} ${r.driver.user.lastName}` : '',
+        r.driver?.user?.employeeId ?? '',
+        r.driver?.user?.phone ?? '',
+        r.type ?? '',
+        r.status,
+        (r.description ?? '').replace(/"/g, '""'),
+        (r.issuedPartName ?? r.partName ?? '').replace(/"/g, '""'),
+        r.issuedPartNo ?? '',
+        r.issuedQty ?? r.quantity ?? '',
+        r.warehouse?.name ?? '',
+        r.returnedPartNo ?? '',
+        r.returnedPartCondition ?? '',
+        r.issueProposedBy ? `${r.issueProposedBy.firstName} ${r.issueProposedBy.lastName}` : '',
+        r.approvedBy ? `${r.approvedBy.firstName} ${r.approvedBy.lastName}` : '',
+        r.issuedAt ? new Date(r.issuedAt).toISOString() : '',
+        (r.adminNotes ?? '').replace(/"/g, '""'),
+      ]);
+
+      const csvContent =
+        'data:text/csv;charset=utf-8,' +
+        [headers.join(','), ...rows.map((row) => row.map((val) => `"${val}"`).join(','))].join('\n');
+
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement('a');
+      link.setAttribute('href', encodedUri);
+      link.setAttribute('download', `spare-part-requisitions-${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      alert('Failed to export CSV');
     } finally {
       setExporting(false);
     }
@@ -310,13 +460,85 @@ export function SparePartsPage(): ReactElement {
   const getStatusBadge = (status: SparePartRequestStatus) => {
     switch (status) {
       case 'PENDING_APPROVAL':
-        return <span className="badge badge-warning">Pending Approval</span>;
-      case 'APPROVED':
-        return <span className="badge badge-info">Approved</span>;
+        return (
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+              padding: '3px 8px',
+              borderRadius: 12,
+              fontSize: 12,
+              fontWeight: 700,
+              backgroundColor: 'var(--warning-bg)',
+              color: 'var(--warning-text)',
+              border: '1px solid var(--warning-border)',
+            }}
+          >
+            <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: 'var(--warning-border)' }} />
+            Pending Review
+          </span>
+        );
+      case 'ISSUE_PENDING_APPROVAL':
+        return (
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+              padding: '3px 8px',
+              borderRadius: 12,
+              fontSize: 12,
+              fontWeight: 700,
+              backgroundColor: 'rgba(249, 115, 22, 0.12)',
+              color: '#ea580c',
+              border: '1px solid rgba(249, 115, 22, 0.35)',
+            }}
+          >
+            <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#ea580c' }} />
+            Issue Pending SuperAdmin
+          </span>
+        );
       case 'ISSUED':
-        return <span className="badge badge-success">Issued</span>;
+        return (
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+              padding: '3px 8px',
+              borderRadius: 12,
+              fontSize: 12,
+              fontWeight: 700,
+              backgroundColor: 'var(--success-bg)',
+              color: 'var(--success-text)',
+              border: '1px solid var(--success-border)',
+            }}
+          >
+            <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: 'var(--success-border)' }} />
+            Issued & Fulfilled
+          </span>
+        );
       case 'REJECTED':
-        return <span className="badge badge-danger">Rejected</span>;
+        return (
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+              padding: '3px 8px',
+              borderRadius: 12,
+              fontSize: 12,
+              fontWeight: 700,
+              backgroundColor: 'var(--danger-bg)',
+              color: 'var(--danger-text)',
+              border: '1px solid var(--danger-border)',
+            }}
+          >
+            <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: 'var(--danger-border)' }} />
+            Rejected
+          </span>
+        );
       default:
         return <span className="badge">{status}</span>;
     }
@@ -325,34 +547,105 @@ export function SparePartsPage(): ReactElement {
   const getTypeBadge = (type: SparePartType) => {
     switch (type) {
       case 'NEW':
-        return <span className="badge" style={{ backgroundColor: '#e0f2fe', color: '#0369a1' }}>New Part</span>;
+        return (
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '3px 8px',
+              borderRadius: 12,
+              fontSize: 11,
+              fontWeight: 700,
+              backgroundColor: 'rgba(59, 130, 246, 0.12)',
+              color: 'var(--accent)',
+              border: '1px solid rgba(59, 130, 246, 0.3)',
+            }}
+          >
+            New Part
+          </span>
+        );
       case 'EXCHANGE':
-        return <span className="badge" style={{ backgroundColor: '#fef3c7', color: '#b45309' }}>Exchange (Old Returned)</span>;
+        return (
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '3px 8px',
+              borderRadius: 12,
+              fontSize: 11,
+              fontWeight: 700,
+              backgroundColor: 'rgba(234, 179, 8, 0.12)',
+              color: 'var(--warning-text)',
+              border: '1px solid var(--warning-border)',
+            }}
+          >
+            Exchange
+          </span>
+        );
       case 'REPAIR':
-        return <span className="badge" style={{ backgroundColor: '#f3e8ff', color: '#7e22ce' }}>Repair</span>;
+        return (
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '3px 8px',
+              borderRadius: 12,
+              fontSize: 11,
+              fontWeight: 700,
+              backgroundColor: 'rgba(168, 85, 247, 0.12)',
+              color: '#9333ea',
+              border: '1px solid rgba(168, 85, 247, 0.3)',
+            }}
+          >
+            Repair
+          </span>
+        );
       default:
-        return <span className="badge">{type}</span>;
+        return (
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              padding: '3px 8px',
+              borderRadius: 12,
+              fontSize: 11,
+              fontWeight: 600,
+              backgroundColor: 'var(--bg)',
+              color: 'var(--muted)',
+              border: '1px solid var(--border)',
+            }}
+          >
+            {type}
+          </span>
+        );
     }
   };
 
+  const pendingCount = stats?.totalPending ?? requests.filter((r) => r.status === 'PENDING_APPROVAL').length;
+  const issuePendingCount = stats?.totalIssuePending ?? requests.filter((r) => r.status === 'ISSUE_PENDING_APPROVAL').length;
+  const issuedCount = stats?.totalIssued ?? requests.filter((r) => r.status === 'ISSUED').length;
+  const activeWarehousesCount = warehousesList.filter((w) => w.isActive).length;
+
   return (
     <div className="page-container">
-      {/* Page Header */}
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+      {/* Top Header */}
+      <div className="page-header">
         <div>
           <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Package size={26} color="#3b82f6" />
-            Spare Parts & Inventory Requisition
+            <Package size={26} color="var(--accent)" /> Spare Parts & Inventory Requisition
           </h1>
-          <p className="page-subtitle" style={{ color: 'var(--text-muted, #64748b)', marginTop: 4 }}>
-            Manage driver spare part requests, warehouse issue tracking, exchanges, and inventory audit logs.
+          <p className="page-subtitle">
+            Review driver voice notes & photos, assign requisition types, issue warehouse parts, and manage SuperAdmin sign-offs.
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: 10 }}>
+        <div className="header-action-group">
           <button
             type="button"
-            className="btn btn-secondary"
+            className="btn-secondary"
             onClick={() => {
               void requestsResource.reload();
               void warehousesResource.reload();
@@ -361,27 +654,28 @@ export function SparePartsPage(): ReactElement {
             disabled={requestsResource.loading}
             title="Refresh records"
           >
-            <RotateCw size={16} className={requestsResource.loading ? 'animate-spin' : ''} />
+            <RotateCw size={14} style={{ marginRight: 6 }} className={requestsResource.loading ? 'spin' : ''} />
             <span>Refresh</span>
           </button>
 
           {activeTab === 'requests' ? (
             <button
               type="button"
-              className="btn btn-secondary"
-              onClick={handleExportExcel}
+              className="btn-primary"
+              onClick={handleExportCsv}
               disabled={exporting || requests.length === 0}
-              title="Download Excel Spreadsheet"
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
             >
-              <FileSpreadsheet size={16} color="#16a34a" />
+              <Download size={15} />
               <span>{exporting ? 'Exporting…' : 'Export Excel'}</span>
             </button>
           ) : (
             isSuper && (
               <button
                 type="button"
-                className="btn btn-primary"
+                className="btn-primary"
                 onClick={handleOpenAddWarehouse}
+                style={{ display: 'flex', alignItems: 'center', gap: 6 }}
               >
                 <Plus size={16} />
                 <span>Add Warehouse</span>
@@ -391,410 +685,713 @@ export function SparePartsPage(): ReactElement {
         </div>
       </div>
 
-      {/* Summary KPI Cards */}
-      <div className="grid-summary-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 24 }}>
-        <div className="card" style={{ padding: 18, borderLeft: '4px solid #eab308' }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted, #64748b)' }}>Pending SuperAdmin Approval</div>
-          <div style={{ fontSize: 28, fontWeight: 700, color: '#eab308', marginTop: 4 }}>
-            {stats?.totalPending ?? requests.filter((r) => r.status === 'PENDING_APPROVAL').length}
+      <ErrorBanner error={requestsResource.error || warehousesResource.error} />
+
+      {/* KPI Summary Cards Grid (Interactive Status Selectors) */}
+      <div className="stat-cards-grid">
+        <div
+          className={`stat-card stat-warning ${statusFilter === 'PENDING_APPROVAL' ? 'selected' : ''}`}
+          onClick={() => {
+            setActiveTab('requests');
+            setStatusFilter((prev) => (prev === 'PENDING_APPROVAL' ? 'ALL' : 'PENDING_APPROVAL'));
+            setPage(1);
+          }}
+          title="Filter by Pending Review"
+        >
+          <div className="stat-card-header">
+            <span className="stat-card-title">Driver Requests (Pending Review)</span>
+            <Clock size={20} color="var(--warning-border)" />
           </div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted, #64748b)', marginTop: 4 }}>Awaiting warehouse issue</div>
+          <div className="stat-card-value">{pendingCount}</div>
+          <div className="stat-card-footer">Awaiting Executive / Admin action</div>
         </div>
 
-        <div className="card" style={{ padding: 18, borderLeft: '4px solid #16a34a' }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted, #64748b)' }}>Issued & Completed</div>
-          <div style={{ fontSize: 28, fontWeight: 700, color: '#16a34a', marginTop: 4 }}>
-            {stats?.totalIssued ?? requests.filter((r) => r.status === 'ISSUED').length}
+        <div
+          className={`stat-card stat-info ${statusFilter === 'ISSUE_PENDING_APPROVAL' ? 'selected' : ''}`}
+          onClick={() => {
+            setActiveTab('requests');
+            setStatusFilter((prev) => (prev === 'ISSUE_PENDING_APPROVAL' ? 'ALL' : 'ISSUE_PENDING_APPROVAL'));
+            setPage(1);
+          }}
+          title="Filter by Issue Pending Approval"
+        >
+          <div className="stat-card-header">
+            <span className="stat-card-title">Issue Pending SuperAdmin</span>
+            <Wrench size={20} color="#0284c7" />
           </div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted, #64748b)', marginTop: 4 }}>Successfully dispatched</div>
+          <div className="stat-card-value">{issuePendingCount}</div>
+          <div className="stat-card-footer">Prepared by Executive/Admin</div>
         </div>
 
-        <div className="card" style={{ padding: 18, borderLeft: '4px solid #f97316' }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted, #64748b)' }}>Exchanges Tracked</div>
-          <div style={{ fontSize: 28, fontWeight: 700, color: '#f97316', marginTop: 4 }}>
-            {requests.filter((r) => r.type === 'EXCHANGE' && r.status === 'ISSUED').length}
+        <div
+          className={`stat-card stat-success ${statusFilter === 'ISSUED' ? 'selected' : ''}`}
+          onClick={() => {
+            setActiveTab('requests');
+            setStatusFilter((prev) => (prev === 'ISSUED' ? 'ALL' : 'ISSUED'));
+            setPage(1);
+          }}
+          title="Filter by Issued & Fulfilled"
+        >
+          <div className="stat-card-header">
+            <span className="stat-card-title">Issued & Fulfilled</span>
+            <CheckCircle2 size={20} color="var(--success-border)" />
           </div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted, #64748b)', marginTop: 4 }}>Old parts returned</div>
+          <div className="stat-card-value">{issuedCount}</div>
+          <div className="stat-card-footer">Successfully approved & issued</div>
         </div>
 
-        <div className="card" style={{ padding: 18, borderLeft: '4px solid #3b82f6' }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted, #64748b)' }}>Active Warehouses</div>
-          <div style={{ fontSize: 28, fontWeight: 700, color: '#3b82f6', marginTop: 4 }}>
-            {warehousesList.filter((w) => w.isActive).length}
+        <div
+          className={`stat-card ${activeTab === 'warehouses' ? 'selected' : ''}`}
+          onClick={() => {
+            setActiveTab('warehouses');
+            setPage(1);
+          }}
+          title="View Warehouse Directory"
+        >
+          <div className="stat-card-header">
+            <span className="stat-card-title">Active Warehouses</span>
+            <WarehouseIcon size={20} color="var(--accent)" />
           </div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted, #64748b)', marginTop: 4 }}>Inventory storage hubs</div>
+          <div className="stat-card-value">{activeWarehousesCount}</div>
+          <div className="stat-card-footer">Inventory storage hubs</div>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div style={{ borderBottom: '1px solid var(--border-color, #e2e8f0)', marginBottom: 20, display: 'flex', gap: 20 }}>
+      {/* Navigation Tabs Bar */}
+      <div style={{ display: 'flex', gap: 12 }}>
         <button
           type="button"
-          onClick={() => setActiveTab('requests')}
-          style={{
-            padding: '10px 16px',
-            fontWeight: 600,
-            fontSize: 15,
-            borderBottom: activeTab === 'requests' ? '3px solid #3b82f6' : '3px solid transparent',
-            color: activeTab === 'requests' ? '#3b82f6' : 'var(--text-muted, #64748b)',
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
+          className={`btn-${activeTab === 'requests' ? 'primary' : 'secondary'}`}
+          onClick={() => {
+            setActiveTab('requests');
+            setPage(1);
           }}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
         >
-          <Package size={18} />
-          <span>Driver Requisitions ({filteredRequests.length})</span>
+          <Package size={16} />
+          <span>Spare Part Requisitions</span>
+          <span
+            style={{
+              marginLeft: 4,
+              fontSize: 12,
+              fontWeight: 700,
+              padding: '2px 8px',
+              borderRadius: 12,
+              backgroundColor:
+                activeTab === 'requests'
+                  ? 'rgba(255, 255, 255, 0.25)'
+                  : 'var(--bg)',
+              color: activeTab === 'requests' ? '#ffffff' : 'var(--muted)',
+            }}
+          >
+            {requests.length}
+          </span>
         </button>
 
         <button
           type="button"
-          onClick={() => setActiveTab('warehouses')}
-          style={{
-            padding: '10px 16px',
-            fontWeight: 600,
-            fontSize: 15,
-            borderBottom: activeTab === 'warehouses' ? '3px solid #3b82f6' : '3px solid transparent',
-            color: activeTab === 'warehouses' ? '#3b82f6' : 'var(--text-muted, #64748b)',
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
+          className={`btn-${activeTab === 'warehouses' ? 'primary' : 'secondary'}`}
+          onClick={() => {
+            setActiveTab('warehouses');
+            setPage(1);
           }}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
         >
-          <WarehouseIcon size={18} />
-          <span>Warehouse Directory ({warehousesList.length})</span>
+          <WarehouseIcon size={16} />
+          <span>Warehouse Directory</span>
+          <span
+            style={{
+              marginLeft: 4,
+              fontSize: 12,
+              fontWeight: 700,
+              padding: '2px 8px',
+              borderRadius: 12,
+              backgroundColor:
+                activeTab === 'warehouses'
+                  ? 'rgba(255, 255, 255, 0.25)'
+                  : 'var(--bg)',
+              color: activeTab === 'warehouses' ? '#ffffff' : 'var(--muted)',
+            }}
+          >
+            {warehousesList.length}
+          </span>
         </button>
       </div>
 
-      {/* Tab 1: Requests List */}
+      {/* =========================================================================
+          TAB 1: SPARE PART REQUISITIONS VIEW
+         ========================================================================= */}
       {activeTab === 'requests' && (
-        <div className="card" style={{ padding: 20 }}>
-          {/* Filter Bar */}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 20, alignItems: 'center' }}>
-            <div style={{ flex: 1, minWidth: 240, position: 'relative' }}>
-              <Search size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
-              <input
-                type="text"
-                className="form-input"
-                style={{ paddingLeft: 36 }}
-                placeholder="Search request #, part name, driver, vehicle plate..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
+        <>
+          {/* Structured Filter Card (Matching Complaints & Maintenance Pages) */}
+          <div className="filter-card">
+            <div className="filter-grid">
+              {/* Row 1 - Search */}
+              <div className="filter-group filter-wide">
+                <label htmlFor="spare-search" className="filter-label">
+                  Search
+                </label>
+                <div className="filter-input-box">
+                  <Search size={15} className="filter-icon" />
+                  <input
+                    id="spare-search"
+                    className="filter-input"
+                    placeholder="Search request #, part, driver, plate..."
+                    value={searchQuery}
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value);
+                      setPage(1);
+                    }}
+                  />
+                  {searchQuery ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchQuery('');
+                        setPage(1);
+                      }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--muted)',
+                        cursor: 'pointer',
+                        padding: 0,
+                        display: 'flex',
+                      }}
+                    >
+                      <X size={14} />
+                    </button>
+                  ) : null}
+                </div>
+              </div>
 
-            <div style={{ width: 180 }}>
-              <select
-                className="form-select"
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-              >
-                <option value="ALL">All Statuses</option>
-                <option value="PENDING_APPROVAL">Pending Approval</option>
-                <option value="ISSUED">Issued</option>
-                <option value="REJECTED">Rejected</option>
-              </select>
-            </div>
+              {/* Status Filter */}
+              <div className="filter-group">
+                <label htmlFor="spare-status" className="filter-label">
+                  Status
+                </label>
+                <select
+                  id="spare-status"
+                  className="filter-select"
+                  value={statusFilter}
+                  onChange={(e) => {
+                    setStatusFilter(e.target.value);
+                    setPage(1);
+                  }}
+                >
+                  <option value="ALL">All Statuses</option>
+                  <option value="PENDING_APPROVAL">🟡 Pending Review</option>
+                  <option value="ISSUE_PENDING_APPROVAL">🟠 Issue Pending Approval</option>
+                  <option value="ISSUED">🟢 Issued & Fulfilled</option>
+                  <option value="REJECTED">🔴 Rejected</option>
+                </select>
+              </div>
 
-            <div style={{ width: 170 }}>
-              <select
-                className="form-select"
-                value={typeFilter}
-                onChange={(e) => setTypeFilter(e.target.value)}
-              >
-                <option value="ALL">All Types</option>
-                <option value="NEW">New Part</option>
-                <option value="EXCHANGE">Exchange</option>
-                <option value="REPAIR">Repair</option>
-                <option value="OTHER">Other</option>
-              </select>
-            </div>
+              {/* Requisition Type Filter */}
+              <div className="filter-group">
+                <label htmlFor="spare-type" className="filter-label">
+                  Requisition Type
+                </label>
+                <select
+                  id="spare-type"
+                  className="filter-select"
+                  value={typeFilter}
+                  onChange={(e) => {
+                    setTypeFilter(e.target.value);
+                    setPage(1);
+                  }}
+                >
+                  <option value="ALL">All Types</option>
+                  <option value="NEW">New Part</option>
+                  <option value="EXCHANGE">Exchange</option>
+                  <option value="REPAIR">Repair</option>
+                  <option value="OTHER">Other</option>
+                </select>
+              </div>
 
-            <div style={{ width: 180 }}>
-              <select
-                className="form-select"
-                value={warehouseFilter}
-                onChange={(e) => setWarehouseFilter(e.target.value)}
-              >
-                <option value="ALL">All Warehouses</option>
-                {warehousesList.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.name}
-                  </option>
-                ))}
-              </select>
+              {/* Warehouse Filter */}
+              <div className="filter-group">
+                <label htmlFor="spare-warehouse" className="filter-label">
+                  Warehouse
+                </label>
+                <select
+                  id="spare-warehouse"
+                  className="filter-select"
+                  value={warehouseFilter}
+                  onChange={(e) => {
+                    setWarehouseFilter(e.target.value);
+                    setPage(1);
+                  }}
+                >
+                  <option value="ALL">All Warehouses</option>
+                  {warehousesList.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name} {w.location ? `(${w.location})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Clear Filters Action Button */}
+              {hasActiveFilters ? (
+                <div className="filter-group filter-action-btn-group" style={{ gridColumn: 'span 3' }}>
+                  <button
+                    type="button"
+                    className="btn-clear-filters"
+                    onClick={handleClearFilters}
+                  >
+                    Clear all filters
+                  </button>
+                </div>
+              ) : null}
             </div>
           </div>
 
-          {/* Table */}
-          {requestsResource.loading && !requestsResource.data ? (
-            <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>Loading spare part requisitions…</div>
-          ) : filteredRequests.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: 60, color: 'var(--text-muted)' }}>
-              <Package size={48} color="#94a3b8" style={{ margin: '0 auto 12px' }} />
-              <h3>No spare part requests found</h3>
-              <p>When drivers request spare parts from their mobile app, they will appear here for review and issuance.</p>
+          {/* Table Card Panel */}
+          <div className="table-card">
+            <div className="table-card-header">
+              <h3 className="table-card-title">
+                <Package size={18} color="var(--accent)" /> Requisition Master
+                <span className="badge-pill">{totalItems} Records</span>
+              </h3>
             </div>
-          ) : (
-            <div className="table-responsive" style={{ overflowX: 'auto' }}>
-              <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr style={{ borderBottom: '2px solid var(--border-color, #e2e8f0)', textAlign: 'left' }}>
-                    <th style={{ padding: '12px 14px' }}>Request No</th>
-                    <th style={{ padding: '12px 14px' }}>Date</th>
-                    <th style={{ padding: '12px 14px' }}>Driver</th>
-                    <th style={{ padding: '12px 14px' }}>Vehicle</th>
-                    <th style={{ padding: '12px 14px' }}>Part Requested</th>
-                    <th style={{ padding: '12px 14px' }}>Type</th>
-                    <th style={{ padding: '12px 14px' }}>Evidence</th>
-                    <th style={{ padding: '12px 14px' }}>Status</th>
-                    <th style={{ padding: '12px 14px' }}>Issued Details</th>
-                    <th style={{ padding: '12px 14px', textAlign: 'right' }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredRequests.map((req) => {
-                    const driverUser = req.driver?.user;
-                    return (
-                      <tr key={req.id} style={{ borderBottom: '1px solid var(--border-color, #f1f5f9)' }}>
-                        <td style={{ padding: '12px 14px', fontWeight: 600 }}>
-                          <span style={{ color: '#2563eb' }}>{req.requestNo}</span>
-                        </td>
-                        <td style={{ padding: '12px 14px', fontSize: 13, color: 'var(--text-muted)' }}>
-                          {new Date(req.createdAt).toLocaleDateString()}
-                        </td>
-                        <td style={{ padding: '12px 14px' }}>
-                          <div style={{ fontWeight: 600, fontSize: 13 }}>
-                            {driverUser ? `${driverUser.firstName} ${driverUser.lastName}` : 'Driver'}
-                          </div>
-                          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                            ID: {driverUser?.employeeId ?? 'N/A'}
-                          </div>
-                        </td>
-                        <td style={{ padding: '12px 14px' }}>
-                          <span className="badge" style={{ backgroundColor: '#f1f5f9', color: '#334155', fontWeight: 600 }}>
-                            {req.vehicle?.plateNumber ?? 'N/A'}
-                          </span>
-                        </td>
-                        <td style={{ padding: '12px 14px' }}>
-                          <div style={{ fontWeight: 600 }}>{req.partName || 'Spare Part'}</div>
-                          <div style={{ fontSize: 12, color: 'var(--text-muted)', maxWidth: 200, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {req.description}
-                          </div>
-                          <div style={{ fontSize: 12, color: '#3b82f6' }}>Qty: {req.quantity}</div>
-                        </td>
-                        <td style={{ padding: '12px 14px' }}>{getTypeBadge(req.type)}</td>
-                        <td style={{ padding: '12px 14px' }}>
-                          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                            {req.photoUrl ? (
-                              <a
-                                href={req.photoUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                title="View Photo"
-                                style={{ display: 'inline-block' }}
-                              >
-                                <img
-                                  src={req.photoUrl}
-                                  alt="Part proof"
-                                  style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'cover', border: '1px solid #cbd5e1' }}
-                                />
-                              </a>
-                            ) : null}
-                            {req.voiceUrl ? (
+
+            {requestsResource.loading && requests.length === 0 ? (
+              <div className="notif-empty-state" style={{ padding: 48 }}>
+                <RotateCw size={28} className="spin" color="var(--accent)" />
+                <p style={{ marginTop: 8 }}>Loading spare part requisitions…</p>
+              </div>
+            ) : filteredRequests.length === 0 ? (
+              <div className="notif-empty-state" style={{ padding: 48 }}>
+                <Package size={36} color="var(--muted)" />
+                <h3 style={{ margin: '8px 0 4px', color: 'var(--text)' }}>No spare part requests found</h3>
+                <p style={{ margin: 0, color: 'var(--muted)', fontSize: 13, maxWidth: 440 }}>
+                  {hasActiveFilters
+                    ? 'No requisitions match your active search and filter criteria.'
+                    : 'When drivers submit voice notes & photos from mobile, they will appear here for Executive/Admin issue preparation and SuperAdmin approval.'}
+                </p>
+                {hasActiveFilters ? (
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={handleClearFilters}
+                    style={{ marginTop: 14 }}
+                  >
+                    Clear all filters
+                  </button>
+                ) : null}
+              </div>
+            ) : (
+              <div className="table-responsive">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Request #</th>
+                      <th>Date</th>
+                      <th>Driver</th>
+                      <th>Vehicle</th>
+                      <th>Voice & Photo Proof</th>
+                      <th>Type</th>
+                      <th>Status</th>
+                      <th>Fulfillment Details</th>
+                      <th style={{ textAlign: 'right' }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paginatedRequests.map((req) => {
+                      const driverUser = req.driver?.user;
+                      return (
+                        <tr key={req.id}>
+                          {/* Request # */}
+                          <td>
+                            <strong style={{ color: 'var(--accent)', fontFamily: 'monospace', fontSize: 13 }}>
+                              {req.requestNo}
+                            </strong>
+                          </td>
+
+                          {/* Date */}
+                          <td style={{ fontSize: 13, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
+                            {formatDateTime(req.createdAt)}
+                          </td>
+
+                          {/* Driver */}
+                          <td>
+                            <div style={{ fontWeight: 700, fontSize: 13 }}>
+                              {driverUser ? `${driverUser.firstName} ${driverUser.lastName}` : 'Driver'}
+                            </div>
+                            <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                              ID: {driverUser?.employeeId ?? 'N/A'}
+                            </div>
+                          </td>
+
+                          {/* Vehicle */}
+                          <td>
+                            <span
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                padding: '3px 8px',
+                                borderRadius: 6,
+                                fontSize: 12,
+                                fontWeight: 700,
+                                backgroundColor: 'var(--bg)',
+                                color: 'var(--text)',
+                                border: '1px solid var(--border)',
+                              }}
+                            >
+                              {req.vehicle?.plateNumber ?? 'N/A'}
+                            </span>
+                          </td>
+
+                          {/* Voice & Photo Proof */}
+                          <td>
+                            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                              {req.voiceUrl ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setViewingRequest(req)}
+                                  title="Listen to Voice Note"
+                                  style={{
+                                    padding: '4px 8px',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 5,
+                                    backgroundColor: 'rgba(124, 58, 237, 0.1)',
+                                    color: '#7c3aed',
+                                    border: '1px solid rgba(124, 58, 237, 0.25)',
+                                    borderRadius: 6,
+                                    cursor: 'pointer',
+                                    fontSize: 11,
+                                    fontWeight: 700,
+                                  }}
+                                >
+                                  <Volume2 size={13} />
+                                  <span>Voice Note</span>
+                                </button>
+                              ) : null}
+
+                              {req.photoUrl ? (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setSelectedPhoto({
+                                      url: req.photoUrl!,
+                                      title: `Photo Evidence #${req.requestNo}`,
+                                      subtitle: `${req.vehicle?.plateNumber ?? 'Vehicle'} • ${driverUser ? `${driverUser.firstName} ${driverUser.lastName}` : 'Driver'}`,
+                                      date: formatDateTime(req.createdAt),
+                                    })
+                                  }
+                                  title="Click to view photo evidence"
+                                  style={{
+                                    border: 'none',
+                                    background: 'transparent',
+                                    padding: 0,
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                  }}
+                                >
+                                  <img
+                                    src={req.photoUrl}
+                                    alt="Part proof"
+                                    style={{
+                                      width: 34,
+                                      height: 34,
+                                      borderRadius: 6,
+                                      objectFit: 'cover',
+                                      border: '1px solid var(--border)',
+                                    }}
+                                  />
+                                </button>
+                              ) : null}
+
+                              {!req.photoUrl && !req.voiceUrl && (
+                                <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+                                  {req.description || 'No attachments'}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* Requisition Type */}
+                          <td>{getTypeBadge(req.type)}</td>
+
+                          {/* Status */}
+                          <td>{getStatusBadge(req.status)}</td>
+
+                          {/* Fulfillment Info */}
+                          <td>
+                            {req.status === 'ISSUED' ? (
+                              <div>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--success-text)' }}>
+                                  {req.issuedPartName} (Qty: {req.issuedQty})
+                                </div>
+                                <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                                  S/N: {req.issuedPartNo || 'N/A'} • {req.warehouse?.name}
+                                </div>
+                                {req.returnedPartNo ? (
+                                  <div style={{ fontSize: 11, color: '#b45309', marginTop: 2 }}>
+                                    Returned: {req.returnedPartNo}
+                                  </div>
+                                ) : null}
+                              </div>
+                            ) : req.status === 'ISSUE_PENDING_APPROVAL' ? (
+                              <div>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: '#ea580c' }}>
+                                  Prepared: {req.issuedPartName} (Qty: {req.issuedQty})
+                                </div>
+                                <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                                  {req.warehouse?.name} • By: {req.issueProposedBy ? `${req.issueProposedBy.firstName}` : 'Admin'}
+                                </div>
+                              </div>
+                            ) : req.status === 'REJECTED' ? (
+                              <div style={{ fontSize: 11, color: 'var(--danger-text)' }}>
+                                Reason: {req.rejectionReason}
+                              </div>
+                            ) : (
+                              <span style={{ fontSize: 12, color: 'var(--warning-text)', fontWeight: 600 }}>
+                                Awaiting Executive / Admin action
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Actions */}
+                          <td style={{ textAlign: 'right' }}>
+                            <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
                               <button
                                 type="button"
-                                className="btn btn-sm btn-secondary"
+                                className="btn-secondary"
                                 onClick={() => setViewingRequest(req)}
-                                title="Play voice recording"
-                                style={{ padding: '4px 8px' }}
+                                style={{ padding: '5px 10px', fontSize: 12 }}
+                                title="View Full Details"
                               >
-                                <Volume2 size={14} color="#7c3aed" />
+                                Details
                               </button>
-                            ) : null}
-                            {!req.photoUrl && !req.voiceUrl && (
-                              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Text only</span>
-                            )}
-                          </div>
-                        </td>
-                        <td style={{ padding: '12px 14px' }}>{getStatusBadge(req.status)}</td>
-                        <td style={{ padding: '12px 14px' }}>
-                          {req.status === 'ISSUED' ? (
-                            <div>
-                              <div style={{ fontSize: 13, fontWeight: 600, color: '#16a34a' }}>
-                                {req.issuedPartName} (Qty: {req.issuedQty})
-                              </div>
-                              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                                S/N: {req.issuedPartNo} • {req.warehouse?.name}
-                              </div>
-                              {req.returnedPartNo ? (
-                                <div style={{ fontSize: 11, color: '#b45309', marginTop: 2 }}>
-                                  Returned: {req.returnedPartNo} ({req.returnedPartCondition || 'Returned'})
-                                </div>
-                              ) : null}
-                            </div>
-                          ) : req.status === 'REJECTED' ? (
-                            <div style={{ fontSize: 12, color: '#dc2626' }}>
-                              Reason: {req.rejectionReason}
-                            </div>
-                          ) : (
-                            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Awaiting issue</span>
-                          )}
-                        </td>
-                        <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                            <button
-                              type="button"
-                              className="btn btn-sm btn-secondary"
-                              onClick={() => setViewingRequest(req)}
-                              title="View Full Details"
-                            >
-                              Details
-                            </button>
 
-                            {isSuper && req.status === 'PENDING_APPROVAL' && (
-                              <>
+                              {/* Executive/Admin Prepare Issue */}
+                              {canPrepareIssue && req.status === 'PENDING_APPROVAL' && (
                                 <button
                                   type="button"
-                                  className="btn btn-sm btn-primary"
-                                  onClick={() => handleOpenIssue(req)}
-                                  title="Approve & Issue Item"
-                                  style={{ backgroundColor: '#16a34a', borderColor: '#16a34a' }}
+                                  className="btn-primary"
+                                  onClick={() => handleOpenProposeIssue(req)}
+                                  style={{ padding: '5px 10px', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                                  title={isSuper ? 'Direct Stock Issue' : 'Prepare Issue for SuperAdmin'}
                                 >
-                                  <UserCheck size={14} />
-                                  <span>Issue</span>
+                                  <Wrench size={13} />
+                                  <span>{isSuper ? 'Issue' : 'Prepare'}</span>
                                 </button>
+                              )}
 
+                              {/* SuperAdmin Approve Proposed Issue */}
+                              {isSuper && req.status === 'ISSUE_PENDING_APPROVAL' && (
                                 <button
                                   type="button"
-                                  className="btn btn-sm btn-secondary"
-                                  onClick={() => handleOpenReject(req)}
-                                  title="Reject Request"
-                                  style={{ color: '#dc2626' }}
+                                  className="btn-primary"
+                                  onClick={() => handleOpenApproveModal(req)}
+                                  style={{
+                                    padding: '5px 10px',
+                                    fontSize: 12,
+                                    backgroundColor: 'var(--success-border)',
+                                    borderColor: 'var(--success-border)',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                  }}
+                                  title="Authorize and release stock"
                                 >
-                                  <UserX size={14} />
+                                  <ShieldCheck size={14} />
+                                  <span>Approve</span>
                                 </button>
-                              </>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+                              )}
+
+                              {/* Reject */}
+                              {(isSuper || canPrepareIssue) &&
+                                (req.status === 'PENDING_APPROVAL' || req.status === 'ISSUE_PENDING_APPROVAL') && (
+                                  <button
+                                    type="button"
+                                    className="btn-secondary"
+                                    onClick={() => handleOpenReject(req)}
+                                    style={{ padding: '5px 8px', color: 'var(--danger-text)' }}
+                                    title="Reject Request"
+                                  >
+                                    <UserX size={14} />
+                                  </button>
+                                )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Pagination Panel */}
+            {totalPages > 1 && (
+              <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)' }}>
+                <Pagination
+                  meta={{
+                    page,
+                    pageSize,
+                    total: totalItems,
+                    totalPages,
+                  }}
+                  onPageChange={setPage}
+                  onPageSizeChange={(newSize) => {
+                    setPageSize(newSize);
+                    setPage(1);
+                  }}
+                />
+              </div>
+            )}
+          </div>
+        </>
       )}
 
-      {/* Tab 2: Warehouses CRUD */}
+      {/* =========================================================================
+          TAB 2: WAREHOUSE DIRECTORY VIEW
+         ========================================================================= */}
       {activeTab === 'warehouses' && (
-        <div className="card" style={{ padding: 20 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <WarehouseIcon size={20} color="#3b82f6" />
-              Warehouse Locations & Depots
+        <div className="table-card">
+          <div className="table-card-header">
+            <h3 className="table-card-title">
+              <WarehouseIcon size={18} color="var(--accent)" /> Warehouse Directory
+              <span className="badge-pill">{warehousesList.length} Hubs</span>
             </h3>
+
             {isSuper && (
               <button
                 type="button"
-                className="btn btn-primary"
+                className="btn-primary"
                 onClick={handleOpenAddWarehouse}
+                style={{ display: 'flex', alignItems: 'center', gap: 6 }}
               >
-                <Plus size={16} />
-                <span>Add Warehouse</span>
+                <Plus size={15} /> Add Warehouse
               </button>
             )}
           </div>
 
-          {warehousesResource.loading && !warehousesResource.data ? (
-            <div style={{ textAlign: 'center', padding: 40 }}>Loading warehouses…</div>
+          {warehousesResource.loading && warehousesList.length === 0 ? (
+            <div className="notif-empty-state" style={{ padding: 48 }}>
+              <RotateCw size={28} className="spin" color="var(--accent)" />
+              <p style={{ marginTop: 8 }}>Loading warehouses…</p>
+            </div>
           ) : warehousesList.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
-              <WarehouseIcon size={40} color="#94a3b8" style={{ margin: '0 auto 12px' }} />
-              <h4>No warehouses defined</h4>
-              <p>Add your company's warehouses and depots to issue spare parts to vehicles.</p>
-              {isSuper && (
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  onClick={handleOpenAddWarehouse}
-                  style={{ marginTop: 12 }}
-                >
-                  <Plus size={16} /> Add First Warehouse
-                </button>
-              )}
+            <div className="notif-empty-state" style={{ padding: 48 }}>
+              <WarehouseIcon size={36} color="var(--muted)" />
+              <h3 style={{ margin: '8px 0 4px', color: 'var(--text)' }}>No warehouses registered</h3>
+              <p style={{ margin: 0, color: 'var(--muted)', fontSize: 13 }}>
+                Add warehouse depots to manage stock and issue spare parts.
+              </p>
             </div>
           ) : (
             <div className="table-responsive">
-              <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <table className="admin-table">
                 <thead>
-                  <tr style={{ borderBottom: '2px solid var(--border-color, #e2e8f0)', textAlign: 'left' }}>
-                    <th style={{ padding: '12px 14px' }}>Warehouse Name</th>
-                    <th style={{ padding: '12px 14px' }}>Code</th>
-                    <th style={{ padding: '12px 14px' }}>Location / Address</th>
-                    <th style={{ padding: '12px 14px' }}>Contact Person</th>
-                    <th style={{ padding: '12px 14px' }}>Phone</th>
-                    <th style={{ padding: '12px 14px' }}>Status</th>
-                    <th style={{ padding: '12px 14px' }}>Issued Parts</th>
-                    {isSuper && <th style={{ padding: '12px 14px', textAlign: 'right' }}>Actions</th>}
+                  <tr>
+                    <th>Warehouse Name</th>
+                    <th>Code</th>
+                    <th>Location / Address</th>
+                    <th>Contact Person</th>
+                    <th>Phone</th>
+                    <th>Status</th>
+                    <th>Issued Items</th>
+                    {isSuper && <th style={{ textAlign: 'right' }}>Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {warehousesList.map((wh) => (
-                    <tr key={wh.id} style={{ borderBottom: '1px solid var(--border-color, #f1f5f9)' }}>
-                      <td style={{ padding: '12px 14px', fontWeight: 600 }}>{wh.name}</td>
-                      <td style={{ padding: '12px 14px' }}>
-                        <span className="badge" style={{ backgroundColor: '#f1f5f9', color: '#475569' }}>
+                    <tr key={wh.id}>
+                      <td style={{ fontWeight: 700 }}>{wh.name}</td>
+                      <td>
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            padding: '2px 8px',
+                            borderRadius: 6,
+                            fontSize: 12,
+                            fontWeight: 700,
+                            backgroundColor: 'var(--bg)',
+                            color: 'var(--muted)',
+                            border: '1px solid var(--border)',
+                          }}
+                        >
                           {wh.code || '—'}
                         </span>
                       </td>
-                      <td style={{ padding: '12px 14px', color: 'var(--text-muted)' }}>{wh.location || '—'}</td>
-                      <td style={{ padding: '12px 14px' }}>{wh.contactPerson || '—'}</td>
-                      <td style={{ padding: '12px 14px' }}>{wh.contactPhone || '—'}</td>
-                      <td style={{ padding: '12px 14px' }}>
+                      <td style={{ color: 'var(--muted)', fontSize: 13 }}>{wh.location || '—'}</td>
+                      <td style={{ fontSize: 13 }}>{wh.contactPerson || '—'}</td>
+                      <td style={{ fontSize: 13, color: 'var(--accent)' }}>{wh.contactPhone || '—'}</td>
+                      <td>
                         {wh.isActive ? (
-                          <span className="badge badge-success">Active</span>
+                          <span
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 5,
+                              padding: '2px 8px',
+                              borderRadius: 12,
+                              fontSize: 11,
+                              fontWeight: 700,
+                              backgroundColor: 'var(--success-bg)',
+                              color: 'var(--success-text)',
+                              border: '1px solid var(--success-border)',
+                            }}
+                          >
+                            <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: 'var(--success-border)' }} />
+                            Active
+                          </span>
                         ) : (
-                          <span className="badge badge-danger">Inactive</span>
+                          <span
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 5,
+                              padding: '2px 8px',
+                              borderRadius: 12,
+                              fontSize: 11,
+                              fontWeight: 700,
+                              backgroundColor: 'var(--danger-bg)',
+                              color: 'var(--danger-text)',
+                              border: '1px solid var(--danger-border)',
+                            }}
+                          >
+                            <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: 'var(--danger-border)' }} />
+                            Inactive
+                          </span>
                         )}
                       </td>
-                      <td style={{ padding: '12px 14px' }}>
-                        <span style={{ fontWeight: 600 }}>{wh._count?.issuedParts ?? 0}</span> items
+                      <td style={{ fontWeight: 700 }}>
+                        {wh._count?.issuedParts ?? 0}
                       </td>
                       {isSuper && (
-                        <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                        <td style={{ textAlign: 'right' }}>
+                          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                             <button
                               type="button"
-                              className="btn btn-sm btn-secondary"
+                              className="btn-secondary"
                               onClick={() => handleOpenEditWarehouse(wh)}
+                              style={{ padding: '4px 8px' }}
                               title="Edit Warehouse"
                             >
-                              <Edit2 size={14} />
+                              <Edit2 size={13} />
                             </button>
                             <button
                               type="button"
-                              className="btn btn-sm btn-secondary"
+                              className="btn-secondary"
                               onClick={() => handleToggleWarehouseStatus(wh)}
-                              title={wh.isActive ? 'Deactivate' : 'Activate'}
+                              style={{ padding: '4px 8px', fontSize: 11 }}
                             >
                               {wh.isActive ? 'Deactivate' : 'Activate'}
                             </button>
                             <button
                               type="button"
-                              className="btn btn-sm btn-secondary"
+                              className="btn-secondary"
                               onClick={() => handleDeleteWarehouse(wh)}
+                              style={{ padding: '4px 8px', color: 'var(--danger-text)' }}
                               title="Delete Warehouse"
-                              style={{ color: '#dc2626' }}
                             >
-                              <Trash2 size={14} />
+                              <Trash2 size={13} />
                             </button>
                           </div>
                         </td>
@@ -808,138 +1405,406 @@ export function SparePartsPage(): ReactElement {
         </div>
       )}
 
-      {/* Detail Modal */}
-      {viewingRequest && (
-        <div className="modal-backdrop" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }}>
-          <div className="modal-content card" style={{ maxWidth: 640, width: '100%', maxHeight: '90vh', overflowY: 'auto', padding: 24, borderRadius: 12 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8, fontSize: 18 }}>
-                <Package size={20} color="#3b82f6" />
-                Requisition #{viewingRequest.requestNo}
-              </h2>
-              <button type="button" className="btn-close" onClick={() => setViewingRequest(null)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+      {/* =========================================================================
+          MODALS & LIGHTBOX
+         ========================================================================= */}
+
+      {/* Universal Photo Lightbox Modal */}
+      {selectedPhoto ? (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.85)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1100,
+            padding: 20,
+            backdropFilter: 'blur(6px)',
+          }}
+          onClick={() => setSelectedPhoto(null)}
+        >
+          <div
+            style={{
+              maxWidth: 750,
+              width: '100%',
+              borderRadius: 12,
+              backgroundColor: 'var(--surface)',
+              border: '1px solid var(--border)',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+              overflow: 'hidden',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                padding: '16px 20px',
+                borderBottom: '1px solid var(--border)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                background: 'var(--surface)',
+              }}
+            >
+              <div>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <ImageIcon size={18} color="var(--accent)" />
+                  {selectedPhoto.title}
+                </h3>
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
+                  {selectedPhoto.subtitle} • {selectedPhoto.date}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedPhoto(null)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: 'var(--muted)',
+                  padding: 4,
+                }}
+              >
                 <X size={20} />
               </button>
             </div>
 
-            <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+            <div
+              style={{
+                padding: 20,
+                textAlign: 'center',
+                backgroundColor: '#090d16',
+                maxHeight: '65vh',
+                overflowY: 'auto',
+              }}
+            >
+              <img
+                src={selectedPhoto.url}
+                alt="Document Preview"
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: '55vh',
+                  borderRadius: 8,
+                  objectFit: 'contain',
+                }}
+              />
+            </div>
+
+            <div
+              style={{
+                padding: '12px 20px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                borderTop: '1px solid var(--border)',
+                background: 'var(--surface)',
+              }}
+            >
+              <a
+                href={selectedPhoto.url}
+                target="_blank"
+                rel="noreferrer"
+                className="btn-secondary"
+                style={{ fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              >
+                <ExternalLink size={14} /> Open Full Resolution
+              </a>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => setSelectedPhoto(null)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {/* Requisition Details Modal */}
+      {viewingRequest && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.65)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: 20,
+            backdropFilter: 'blur(4px)',
+          }}
+        >
+          <div
+            style={{
+              maxWidth: 620,
+              width: '100%',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              padding: 24,
+              borderRadius: 'var(--radius)',
+              backgroundColor: 'var(--surface)',
+              color: 'var(--text)',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)',
+              border: '1px solid var(--border)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8, fontSize: 17, fontWeight: 700 }}>
+                <Package size={20} color="var(--accent)" />
+                Requisition #{viewingRequest.requestNo}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setViewingRequest(null)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)', padding: 4 }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
               {getStatusBadge(viewingRequest.status)}
               {getTypeBadge(viewingRequest.type)}
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16, background: 'var(--bg-muted, #f8fafc)', padding: 12, borderRadius: 8 }}>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: 12,
+                marginBottom: 16,
+                backgroundColor: 'var(--bg)',
+                padding: 14,
+                borderRadius: 'var(--radius)',
+                border: '1px solid var(--border)',
+              }}
+            >
               <div>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Driver</div>
-                <div style={{ fontWeight: 600 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase' }}>Driver</div>
+                <div style={{ fontWeight: 700, fontSize: 14, marginTop: 2 }}>
                   {viewingRequest.driver?.user ? `${viewingRequest.driver.user.firstName} ${viewingRequest.driver.user.lastName}` : 'Driver'}
                 </div>
-                <div style={{ fontSize: 12 }}>Emp ID: {viewingRequest.driver?.user?.employeeId}</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>ID: {viewingRequest.driver?.user?.employeeId}</div>
                 {viewingRequest.driver?.user?.phone && (
-                  <div style={{ fontSize: 12, color: '#3b82f6' }}>Phone: {viewingRequest.driver.user.phone}</div>
+                  <div style={{ fontSize: 12, color: 'var(--accent)', marginTop: 2 }}>Phone: {viewingRequest.driver.user.phone}</div>
                 )}
               </div>
 
               <div>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Vehicle</div>
-                <div style={{ fontWeight: 600 }}>Plate: {viewingRequest.vehicle?.plateNumber}</div>
-                <div style={{ fontSize: 12 }}>
-                  Model: {viewingRequest.vehicle?.make} {viewingRequest.vehicle?.model || ''}
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase' }}>Vehicle</div>
+                <div style={{ fontWeight: 700, fontSize: 14, marginTop: 2 }}>{viewingRequest.vehicle?.plateNumber}</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
+                  {viewingRequest.vehicle?.make} {viewingRequest.vehicle?.model || ''}
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Date: {new Date(viewingRequest.createdAt).toLocaleString()}</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>Date: {formatDateTime(viewingRequest.createdAt)}</div>
               </div>
-            </div>
-
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>Part Description & Notes</div>
-              <div style={{ padding: 12, backgroundColor: 'var(--bg-muted, #f8fafc)', borderRadius: 8, fontSize: 14 }}>
-                {viewingRequest.description}
-              </div>
-              {viewingRequest.transcription && viewingRequest.transcription !== viewingRequest.description && (
-                <div style={{ marginTop: 8, fontSize: 12, color: '#7c3aed' }}>
-                  <strong>Voice Note Transcription:</strong> {viewingRequest.transcription}
-                </div>
-              )}
             </div>
 
             {/* Voice player */}
             {viewingRequest.voiceUrl && (
-              <div style={{ marginBottom: 16, padding: 12, backgroundColor: '#f5f3ff', borderRadius: 8 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#6d28d9', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Volume2 size={16} /> Driver Voice Note
+              <div
+                style={{
+                  marginBottom: 16,
+                  padding: 14,
+                  backgroundColor: 'rgba(124, 58, 237, 0.08)',
+                  borderRadius: 'var(--radius)',
+                  border: '1px solid rgba(124, 58, 237, 0.25)',
+                }}
+              >
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#7c3aed', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Volume2 size={18} /> Driver Voice Recording
                 </div>
-                <audio controls src={viewingRequest.voiceUrl} style={{ width: '100%' }} />
+                <audio controls src={viewingRequest.voiceUrl} style={{ width: '100%', height: 38 }} />
+                {viewingRequest.transcription && (
+                  <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text)' }}>
+                    <strong style={{ color: '#7c3aed' }}>Transcription:</strong> {viewingRequest.transcription}
+                  </div>
+                )}
               </div>
             )}
 
             {/* Photo preview */}
             {viewingRequest.photoUrl && (
               <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Photo Evidence</div>
-                <a href={viewingRequest.photoUrl} target="_blank" rel="noreferrer">
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 6 }}>
+                  Photo Evidence
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSelectedPhoto({
+                      url: viewingRequest.photoUrl!,
+                      title: `Photo Evidence #${viewingRequest.requestNo}`,
+                      subtitle: `${viewingRequest.vehicle?.plateNumber ?? 'Vehicle'} • ${viewingRequest.driver?.user?.firstName ?? 'Driver'}`,
+                      date: formatDateTime(viewingRequest.createdAt),
+                    })
+                  }
+                  style={{
+                    border: 'none',
+                    background: 'transparent',
+                    padding: 0,
+                    cursor: 'pointer',
+                    display: 'inline-block',
+                    position: 'relative',
+                  }}
+                >
                   <img
                     src={viewingRequest.photoUrl}
                     alt="Proof"
-                    style={{ maxWidth: '100%', maxHeight: 240, borderRadius: 8, objectFit: 'contain', border: '1px solid #e2e8f0' }}
+                    style={{ maxWidth: '100%', maxHeight: 220, borderRadius: 'var(--radius)', objectFit: 'contain', border: '1px solid var(--border)' }}
                   />
-                </a>
+                  <span
+                    style={{
+                      position: 'absolute',
+                      right: 8,
+                      bottom: 8,
+                      backgroundColor: 'rgba(0,0,0,0.75)',
+                      color: '#ffffff',
+                      padding: '3px 8px',
+                      borderRadius: 4,
+                      fontSize: 11,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                    }}
+                  >
+                    <ExternalLink size={11} /> Click to Zoom
+                  </span>
+                </button>
               </div>
             )}
 
-            {/* Issuance Information if Issued */}
-            {viewingRequest.status === 'ISSUED' && (
-              <div style={{ padding: 16, backgroundColor: '#f0fdf4', borderRadius: 8, border: '1px solid #bbf7d0', marginBottom: 16 }}>
-                <h4 style={{ margin: '0 0 8px', color: '#166534', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <CheckCircle2 size={18} color="#16a34a" /> Issuance & Fulfillment Record
-                </h4>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: 13 }}>
-                  <div><strong>Issued Part:</strong> {viewingRequest.issuedPartName}</div>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 4 }}>
+                Driver Description
+              </div>
+              <div
+                style={{
+                  padding: 12,
+                  backgroundColor: 'var(--bg)',
+                  borderRadius: 'var(--radius)',
+                  fontSize: 13,
+                  border: '1px solid var(--border)',
+                }}
+              >
+                {viewingRequest.description || 'No additional note'}
+              </div>
+            </div>
+
+            {/* Prepared Issue Block */}
+            {viewingRequest.status === 'ISSUE_PENDING_APPROVAL' && (
+              <div
+                style={{
+                  padding: 14,
+                  backgroundColor: 'rgba(249, 115, 22, 0.08)',
+                  borderRadius: 'var(--radius)',
+                  border: '1px solid rgba(249, 115, 22, 0.3)',
+                  marginBottom: 16,
+                }}
+              >
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#ea580c', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                  <Clock size={16} /> Issue Prepared — Awaiting SuperAdmin Sign-Off
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 13 }}>
+                  <div><strong>Proposed Part:</strong> {viewingRequest.issuedPartName}</div>
                   <div><strong>Part / Serial No:</strong> {viewingRequest.issuedPartNo}</div>
-                  <div><strong>Quantity Issued:</strong> {viewingRequest.issuedQty}</div>
+                  <div><strong>Quantity:</strong> {viewingRequest.issuedQty}</div>
                   <div><strong>Warehouse:</strong> {viewingRequest.warehouse?.name}</div>
-                  {viewingRequest.returnedPartNo && (
-                    <>
-                      <div><strong>Returned Part No:</strong> {viewingRequest.returnedPartNo}</div>
-                      <div><strong>Returned Condition:</strong> {viewingRequest.returnedPartCondition || 'N/A'}</div>
-                    </>
-                  )}
-                  <div><strong>Issued By:</strong> {viewingRequest.approvedBy ? `${viewingRequest.approvedBy.firstName} ${viewingRequest.approvedBy.lastName}` : 'Admin'}</div>
-                  <div><strong>Issued At:</strong> {viewingRequest.issuedAt ? new Date(viewingRequest.issuedAt).toLocaleString() : 'N/A'}</div>
+                  <div><strong>Requisition Type:</strong> {viewingRequest.type}</div>
+                  <div><strong>Prepared By:</strong> {viewingRequest.issueProposedBy ? `${viewingRequest.issueProposedBy.firstName}` : 'Admin'}</div>
                 </div>
                 {viewingRequest.adminNotes && (
-                  <div style={{ marginTop: 8, fontSize: 12, color: '#166534' }}>
-                    <strong>Admin Remarks:</strong> {viewingRequest.adminNotes}
+                  <div style={{ marginTop: 8, fontSize: 12, color: 'var(--muted)' }}>
+                    <strong>Notes:</strong> {viewingRequest.adminNotes}
                   </div>
                 )}
               </div>
             )}
 
-            {viewingRequest.status === 'REJECTED' && (
-              <div style={{ padding: 16, backgroundColor: '#fef2f2', borderRadius: 8, border: '1px solid #fecaca', marginBottom: 16 }}>
-                <h4 style={{ margin: '0 0 8px', color: '#991b1b', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <AlertTriangle size={18} color="#dc2626" /> Request Rejected
-                </h4>
-                <div style={{ fontSize: 13, color: '#991b1b' }}>
-                  <strong>Rejection Reason:</strong> {viewingRequest.rejectionReason}
+            {/* Completed Issue Record */}
+            {viewingRequest.status === 'ISSUED' && (
+              <div
+                style={{
+                  padding: 14,
+                  backgroundColor: 'var(--success-bg)',
+                  borderRadius: 'var(--radius)',
+                  border: '1px solid var(--success-border)',
+                  marginBottom: 16,
+                }}
+              >
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--success-text)', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                  <CheckCircle2 size={16} /> Issuance & Fulfillment Record
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 13 }}>
+                  <div><strong>Issued Part:</strong> {viewingRequest.issuedPartName}</div>
+                  <div><strong>Part / Serial No:</strong> {viewingRequest.issuedPartNo}</div>
+                  <div><strong>Quantity:</strong> {viewingRequest.issuedQty}</div>
+                  <div><strong>Warehouse:</strong> {viewingRequest.warehouse?.name}</div>
+                  <div><strong>Requisition Type:</strong> {viewingRequest.type}</div>
+                  {viewingRequest.returnedPartNo && (
+                    <>
+                      <div><strong>Returned Part No:</strong> {viewingRequest.returnedPartNo}</div>
+                      <div><strong>Condition:</strong> {viewingRequest.returnedPartCondition || 'N/A'}</div>
+                    </>
+                  )}
+                  <div><strong>Authorized By:</strong> {viewingRequest.approvedBy ? `${viewingRequest.approvedBy.firstName} ${viewingRequest.approvedBy.lastName}` : 'SuperAdmin'}</div>
+                  <div><strong>Issued At:</strong> {viewingRequest.issuedAt ? formatDateTime(viewingRequest.issuedAt) : 'N/A'}</div>
                 </div>
               </div>
             )}
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
-              <button type="button" className="btn btn-secondary" onClick={() => setViewingRequest(null)}>
+            {viewingRequest.status === 'REJECTED' && (
+              <div
+                style={{
+                  padding: 14,
+                  backgroundColor: 'var(--danger-bg)',
+                  borderRadius: 'var(--radius)',
+                  border: '1px solid var(--danger-border)',
+                  marginBottom: 16,
+                }}
+              >
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--danger-text)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <AlertTriangle size={16} /> Request Rejected
+                </div>
+                <div style={{ fontSize: 13, color: 'var(--danger-text)', marginTop: 4 }}>
+                  <strong>Reason:</strong> {viewingRequest.rejectionReason}
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 18 }}>
+              <button type="button" className="btn-secondary" onClick={() => setViewingRequest(null)}>
                 Close
               </button>
-              {isSuper && viewingRequest.status === 'PENDING_APPROVAL' && (
+              {canPrepareIssue && viewingRequest.status === 'PENDING_APPROVAL' && (
                 <button
                   type="button"
-                  className="btn btn-primary"
+                  className="btn-primary"
                   onClick={() => {
                     const req = viewingRequest;
                     setViewingRequest(null);
-                    handleOpenIssue(req);
+                    handleOpenProposeIssue(req);
                   }}
-                  style={{ backgroundColor: '#16a34a', borderColor: '#16a34a' }}
                 >
-                  Approve & Issue Item
+                  {isSuper ? 'Direct Issue' : 'Prepare Issue'}
+                </button>
+              )}
+              {isSuper && viewingRequest.status === 'ISSUE_PENDING_APPROVAL' && (
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => {
+                    const req = viewingRequest;
+                    setViewingRequest(null);
+                    handleOpenApproveModal(req);
+                  }}
+                  style={{ backgroundColor: 'var(--success-border)', borderColor: 'var(--success-border)' }}
+                >
+                  Approve & Issue
                 </button>
               )}
             </div>
@@ -947,27 +1812,83 @@ export function SparePartsPage(): ReactElement {
         </div>
       )}
 
-      {/* SuperAdmin Issue Modal */}
+      {/* Prepare Issue Modal */}
       {issuingRequest && (
-        <div className="modal-backdrop" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }}>
-          <div className="modal-content card" style={{ maxWidth: 580, width: '100%', maxHeight: '90vh', overflowY: 'auto', padding: 24, borderRadius: 12 }}>
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.65)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: 20,
+            backdropFilter: 'blur(4px)',
+          }}
+        >
+          <div
+            style={{
+              maxWidth: 560,
+              width: '100%',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              padding: 24,
+              borderRadius: 'var(--radius)',
+              backgroundColor: 'var(--surface)',
+              color: 'var(--text)',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)',
+              border: '1px solid var(--border)',
+            }}
+          >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <h2 style={{ margin: 0, fontSize: 18, color: '#166534', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <CheckCircle2 size={22} color="#16a34a" />
-                Approve & Issue Part — #{issuingRequest.requestNo}
+              <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Wrench size={20} color="var(--accent)" />
+                {isSuper ? 'Direct Stock Issue' : 'Prepare Requisition Issue'} — #{issuingRequest.requestNo}
               </h2>
-              <button type="button" className="btn-close" onClick={() => setIssuingRequest(null)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+              <button
+                type="button"
+                onClick={() => setIssuingRequest(null)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)' }}
+              >
                 <X size={20} />
               </button>
             </div>
 
+            {/* Evidence summary box */}
+            <div
+              style={{
+                padding: 12,
+                backgroundColor: 'var(--bg)',
+                borderRadius: 'var(--radius)',
+                marginBottom: 16,
+                border: '1px solid var(--border)',
+                display: 'flex',
+                gap: 12,
+                alignItems: 'center',
+              }}
+            >
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                  Vehicle: <strong>{issuingRequest.vehicle?.plateNumber}</strong>
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                  Driver: <strong>{issuingRequest.driver?.user?.firstName} {issuingRequest.driver?.user?.lastName}</strong>
+                </div>
+              </div>
+              {issuingRequest.voiceUrl && (
+                <audio controls src={issuingRequest.voiceUrl} style={{ width: 180, height: 32 }} />
+              )}
+            </div>
+
             {actionError && <ErrorBanner error={actionError} />}
 
-            <form onSubmit={handleIssueSubmit}>
+            <form onSubmit={handleProposeSubmit}>
               <div style={{ marginBottom: 14 }}>
                 <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: 6 }}>Select Warehouse *</label>
                 <select
-                  className="form-select"
+                  className="filter-select"
+                  style={{ width: '100%', height: 38 }}
                   value={issueWarehouseId}
                   onChange={(e) => setIssueWarehouseId(e.target.value)}
                   required
@@ -985,23 +1906,25 @@ export function SparePartsPage(): ReactElement {
                 <div>
                   <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: 6 }}>Requisition Type *</label>
                   <select
-                    className="form-select"
+                    className="filter-select"
+                    style={{ width: '100%', height: 38 }}
                     value={issueType}
                     onChange={(e) => setIssueType(e.target.value as SparePartType)}
                   >
-                    <option value="NEW">New Part</option>
-                    <option value="EXCHANGE">Exchange (Old Part Returned)</option>
+                    <option value="NEW">New Part Issue</option>
+                    <option value="EXCHANGE">Exchange (Old Part Return)</option>
                     <option value="REPAIR">Repair / Overhaul</option>
-                    <option value="OTHER">Other</option>
+                    <option value="OTHER">Other / Consumable</option>
                   </select>
                 </div>
 
                 <div>
-                  <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: 6 }}>Quantity Issued *</label>
+                  <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: 6 }}>Quantity to Issue *</label>
                   <input
                     type="number"
                     min={1}
-                    className="form-input"
+                    className="filter-select"
+                    style={{ width: '100%', height: 38 }}
                     value={issueQty}
                     onChange={(e) => setIssueQty(Number(e.target.value))}
                     required
@@ -1011,11 +1934,12 @@ export function SparePartsPage(): ReactElement {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
                 <div>
-                  <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: 6 }}>Issued Part Name *</label>
+                  <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: 6 }}>Part Name / Description *</label>
                   <input
                     type="text"
-                    className="form-input"
-                    placeholder="e.g. Front Brake Pad Set"
+                    className="filter-select"
+                    style={{ width: '100%', height: 38 }}
+                    placeholder="e.g. Brake Pad Set"
                     value={issuePartName}
                     onChange={(e) => setIssuePartName(e.target.value)}
                     required
@@ -1023,10 +1947,11 @@ export function SparePartsPage(): ReactElement {
                 </div>
 
                 <div>
-                  <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: 6 }}>Issued Part No / S.N. *</label>
+                  <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: 6 }}>Part / Serial Number *</label>
                   <input
                     type="text"
-                    className="form-input"
+                    className="filter-select"
+                    style={{ width: '100%', height: 38 }}
                     placeholder="e.g. BP-2026-X991"
                     value={issuePartNo}
                     onChange={(e) => setIssuePartNo(e.target.value)}
@@ -1035,29 +1960,38 @@ export function SparePartsPage(): ReactElement {
                 </div>
               </div>
 
-              {/* Exchange Fields (if Exchange selected) */}
               {issueType === 'EXCHANGE' && (
-                <div style={{ padding: 14, backgroundColor: '#fef3c7', borderRadius: 8, marginBottom: 14, border: '1px solid #fde68a' }}>
-                  <div style={{ fontWeight: 600, fontSize: 13, color: '#92400e', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <Wrench size={16} /> Return / Exchange Tracking (Old Part Received)
+                <div
+                  style={{
+                    padding: 12,
+                    backgroundColor: 'var(--warning-bg)',
+                    borderRadius: 'var(--radius)',
+                    marginBottom: 14,
+                    border: '1px solid var(--warning-border)',
+                  }}
+                >
+                  <div style={{ fontWeight: 700, fontSize: 12, color: 'var(--warning-text)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Wrench size={14} /> Old Part Received Back
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                     <div>
-                      <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Old Part Serial / Code</label>
+                      <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 4 }}>Old Part Serial / Code</label>
                       <input
                         type="text"
-                        className="form-input"
-                        placeholder="Old part serial number"
+                        className="filter-select"
+                        style={{ width: '100%', height: 34 }}
+                        placeholder="Old part serial"
                         value={issueReturnedPartNo}
                         onChange={(e) => setIssueReturnedPartNo(e.target.value)}
                       />
                     </div>
                     <div>
-                      <label style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Condition of Returned Item</label>
+                      <label style={{ fontSize: 11, fontWeight: 600, display: 'block', marginBottom: 4 }}>Condition</label>
                       <input
                         type="text"
-                        className="form-input"
-                        placeholder="e.g. Worn, Broken, Repairable"
+                        className="filter-select"
+                        style={{ width: '100%', height: 34 }}
+                        placeholder="e.g. Worn, Broken"
                         value={issueReturnedCondition}
                         onChange={(e) => setIssueReturnedCondition(e.target.value)}
                       />
@@ -1067,11 +2001,11 @@ export function SparePartsPage(): ReactElement {
               )}
 
               <div style={{ marginBottom: 16 }}>
-                <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: 6 }}>Admin Notes / Fulfillment Remarks</label>
+                <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: 6 }}>Admin Notes</label>
                 <textarea
-                  className="form-textarea"
-                  rows={2}
-                  placeholder="Optional fulfillment notes..."
+                  className="filter-select"
+                  style={{ width: '100%', height: 60, padding: 8 }}
+                  placeholder="Optional fulfillment remarks..."
                   value={issueNotes}
                   onChange={(e) => setIssueNotes(e.target.value)}
                 />
@@ -1080,7 +2014,7 @@ export function SparePartsPage(): ReactElement {
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
                 <button
                   type="button"
-                  className="btn btn-secondary"
+                  className="btn-secondary"
                   onClick={() => setIssuingRequest(null)}
                   disabled={actionLoading}
                 >
@@ -1088,11 +2022,182 @@ export function SparePartsPage(): ReactElement {
                 </button>
                 <button
                   type="submit"
-                  className="btn btn-primary"
+                  className="btn-primary"
                   disabled={actionLoading}
-                  style={{ backgroundColor: '#16a34a', borderColor: '#16a34a' }}
+                  style={isSuper ? { backgroundColor: 'var(--success-border)', borderColor: 'var(--success-border)' } : undefined}
                 >
-                  {actionLoading ? 'Issuing…' : 'Confirm & Issue Item'}
+                  {actionLoading ? 'Saving…' : isSuper ? 'Confirm & Direct Issue' : 'Submit for SuperAdmin Approval'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* SuperAdmin Final Approval Modal */}
+      {approvingRequest && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.65)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: 20,
+            backdropFilter: 'blur(4px)',
+          }}
+        >
+          <div
+            style={{
+              maxWidth: 560,
+              width: '100%',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              padding: 24,
+              borderRadius: 'var(--radius)',
+              backgroundColor: 'var(--surface)',
+              color: 'var(--text)',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)',
+              border: '1px solid var(--border)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8, color: 'var(--success-text)' }}>
+                <ShieldCheck size={20} color="var(--success-border)" />
+                SuperAdmin Sign-Off: #{approvingRequest.requestNo}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setApprovingRequest(null)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div
+              style={{
+                padding: 12,
+                backgroundColor: 'var(--success-bg)',
+                borderRadius: 'var(--radius)',
+                marginBottom: 16,
+                border: '1px solid var(--success-border)',
+                fontSize: 13,
+              }}
+            >
+              <div style={{ fontWeight: 700, color: 'var(--success-text)' }}>
+                Prepared by: {approvingRequest.issueProposedBy ? `${approvingRequest.issueProposedBy.firstName} ${approvingRequest.issueProposedBy.lastName}` : 'Admin'}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
+                Vehicle: <strong>{approvingRequest.vehicle?.plateNumber}</strong> • Driver: <strong>{approvingRequest.driver?.user?.firstName}</strong>
+              </div>
+            </div>
+
+            {actionError && <ErrorBanner error={actionError} />}
+
+            <form onSubmit={handleSuperAdminApprove}>
+              <div style={{ marginBottom: 14 }}>
+                <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: 6 }}>Warehouse *</label>
+                <select
+                  className="filter-select"
+                  style={{ width: '100%', height: 38 }}
+                  value={issueWarehouseId}
+                  onChange={(e) => setIssueWarehouseId(e.target.value)}
+                  required
+                >
+                  <option value="">-- Choose Warehouse --</option>
+                  {warehousesList.filter((w) => w.isActive).map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name} {w.location ? `(${w.location})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                <div>
+                  <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: 6 }}>Requisition Type</label>
+                  <select
+                    className="filter-select"
+                    style={{ width: '100%', height: 38 }}
+                    value={issueType}
+                    onChange={(e) => setIssueType(e.target.value as SparePartType)}
+                  >
+                    <option value="NEW">New Part</option>
+                    <option value="EXCHANGE">Exchange</option>
+                    <option value="REPAIR">Repair</option>
+                    <option value="OTHER">Other</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: 6 }}>Quantity</label>
+                  <input
+                    type="number"
+                    min={1}
+                    className="filter-select"
+                    style={{ width: '100%', height: 38 }}
+                    value={issueQty}
+                    onChange={(e) => setIssueQty(Number(e.target.value))}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                <div>
+                  <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: 6 }}>Part Name *</label>
+                  <input
+                    type="text"
+                    className="filter-select"
+                    style={{ width: '100%', height: 38 }}
+                    value={issuePartName}
+                    onChange={(e) => setIssuePartName(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: 6 }}>Part / Serial Number</label>
+                  <input
+                    type="text"
+                    className="filter-select"
+                    style={{ width: '100%', height: 38 }}
+                    value={issuePartNo}
+                    onChange={(e) => setIssuePartNo(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 16 }}>
+                <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: 6 }}>SuperAdmin Authorization Notes</label>
+                <textarea
+                  className="filter-select"
+                  style={{ width: '100%', height: 60, padding: 8 }}
+                  placeholder="Approved for stock release..."
+                  value={issueNotes}
+                  onChange={(e) => setIssueNotes(e.target.value)}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setApprovingRequest(null)}
+                  disabled={actionLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary"
+                  disabled={actionLoading}
+                  style={{ backgroundColor: 'var(--success-border)', borderColor: 'var(--success-border)' }}
+                >
+                  {actionLoading ? 'Approving…' : 'Approve & Release Stock'}
                 </button>
               </div>
             </form>
@@ -1102,13 +2207,40 @@ export function SparePartsPage(): ReactElement {
 
       {/* Reject Modal */}
       {rejectingRequest && (
-        <div className="modal-backdrop" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }}>
-          <div className="modal-content card" style={{ maxWidth: 480, width: '100%', padding: 24, borderRadius: 12 }}>
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.65)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: 20,
+            backdropFilter: 'blur(4px)',
+          }}
+        >
+          <div
+            style={{
+              maxWidth: 460,
+              width: '100%',
+              padding: 24,
+              borderRadius: 'var(--radius)',
+              backgroundColor: 'var(--surface)',
+              color: 'var(--text)',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)',
+              border: '1px solid var(--border)',
+            }}
+          >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <h2 style={{ margin: 0, fontSize: 18, color: '#dc2626' }}>
+              <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: 'var(--danger-text)' }}>
                 Reject Requisition #{rejectingRequest.requestNo}
               </h2>
-              <button type="button" className="btn-close" onClick={() => setRejectingRequest(null)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+              <button
+                type="button"
+                onClick={() => setRejectingRequest(null)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)' }}
+              >
                 <X size={20} />
               </button>
             </div>
@@ -1119,9 +2251,9 @@ export function SparePartsPage(): ReactElement {
               <div style={{ marginBottom: 16 }}>
                 <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: 6 }}>Reason for Rejection *</label>
                 <textarea
-                  className="form-textarea"
-                  rows={3}
-                  placeholder="State clearly why this request cannot be fulfilled (the driver will receive this in their notification)..."
+                  className="filter-select"
+                  style={{ width: '100%', height: 80, padding: 8 }}
+                  placeholder="State clearly why this request cannot be fulfilled..."
                   value={rejectionReason}
                   onChange={(e) => setRejectionReason(e.target.value)}
                   required
@@ -1131,7 +2263,7 @@ export function SparePartsPage(): ReactElement {
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
                 <button
                   type="button"
-                  className="btn btn-secondary"
+                  className="btn-secondary"
                   onClick={() => setRejectingRequest(null)}
                   disabled={actionLoading}
                 >
@@ -1139,9 +2271,9 @@ export function SparePartsPage(): ReactElement {
                 </button>
                 <button
                   type="submit"
-                  className="btn btn-primary"
+                  className="btn-primary"
                   disabled={actionLoading}
-                  style={{ backgroundColor: '#dc2626', borderColor: '#dc2626' }}
+                  style={{ backgroundColor: 'var(--danger-border)', borderColor: 'var(--danger-border)' }}
                 >
                   {actionLoading ? 'Rejecting…' : 'Confirm Rejection'}
                 </button>
@@ -1151,16 +2283,43 @@ export function SparePartsPage(): ReactElement {
         </div>
       )}
 
-      {/* Add/Edit Warehouse Modal */}
+      {/* Add / Edit Warehouse Modal */}
       {showWarehouseModal && (
-        <div className="modal-backdrop" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }}>
-          <div className="modal-content card" style={{ maxWidth: 500, width: '100%', padding: 24, borderRadius: 12 }}>
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.65)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: 20,
+            backdropFilter: 'blur(4px)',
+          }}
+        >
+          <div
+            style={{
+              maxWidth: 480,
+              width: '100%',
+              padding: 24,
+              borderRadius: 'var(--radius)',
+              backgroundColor: 'var(--surface)',
+              color: 'var(--text)',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)',
+              border: '1px solid var(--border)',
+            }}
+          >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <h2 style={{ margin: 0, fontSize: 18, display: 'flex', alignItems: 'center', gap: 8 }}>
-                <WarehouseIcon size={20} color="#3b82f6" />
+              <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <WarehouseIcon size={18} color="var(--accent)" />
                 {editingWarehouse ? 'Edit Warehouse' : 'Add New Warehouse'}
               </h2>
-              <button type="button" className="btn-close" onClick={() => setShowWarehouseModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+              <button
+                type="button"
+                onClick={() => setShowWarehouseModal(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--muted)' }}
+              >
                 <X size={20} />
               </button>
             </div>
@@ -1172,7 +2331,8 @@ export function SparePartsPage(): ReactElement {
                 <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: 6 }}>Warehouse Name *</label>
                 <input
                   type="text"
-                  className="form-input"
+                  className="filter-select"
+                  style={{ width: '100%', height: 38 }}
                   placeholder="e.g. Central Depot - Mumbai"
                   value={whName}
                   onChange={(e) => setWhName(e.target.value)}
@@ -1185,7 +2345,8 @@ export function SparePartsPage(): ReactElement {
                   <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: 6 }}>Warehouse Code</label>
                   <input
                     type="text"
-                    className="form-input"
+                    className="filter-select"
+                    style={{ width: '100%', height: 38 }}
                     placeholder="e.g. WH-BOM-01"
                     value={whCode}
                     onChange={(e) => setWhCode(e.target.value)}
@@ -1195,7 +2356,8 @@ export function SparePartsPage(): ReactElement {
                 <div>
                   <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: 6 }}>Status</label>
                   <select
-                    className="form-select"
+                    className="filter-select"
+                    style={{ width: '100%', height: 38 }}
                     value={whIsActive ? 'ACTIVE' : 'INACTIVE'}
                     onChange={(e) => setWhIsActive(e.target.value === 'ACTIVE')}
                   >
@@ -1209,7 +2371,8 @@ export function SparePartsPage(): ReactElement {
                 <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: 6 }}>Location / Address</label>
                 <input
                   type="text"
-                  className="form-input"
+                  className="filter-select"
+                  style={{ width: '100%', height: 38 }}
                   placeholder="e.g. Sector 18, Vashi, Navi Mumbai"
                   value={whLocation}
                   onChange={(e) => setWhLocation(e.target.value)}
@@ -1221,7 +2384,8 @@ export function SparePartsPage(): ReactElement {
                   <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: 6 }}>Contact Person</label>
                   <input
                     type="text"
-                    className="form-input"
+                    className="filter-select"
+                    style={{ width: '100%', height: 38 }}
                     placeholder="e.g. Ramesh Sharma"
                     value={whContactPerson}
                     onChange={(e) => setWhContactPerson(e.target.value)}
@@ -1232,7 +2396,8 @@ export function SparePartsPage(): ReactElement {
                   <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: 6 }}>Contact Phone</label>
                   <input
                     type="text"
-                    className="form-input"
+                    className="filter-select"
+                    style={{ width: '100%', height: 38 }}
                     placeholder="e.g. +91 9876543210"
                     value={whContactPhone}
                     onChange={(e) => setWhContactPhone(e.target.value)}
@@ -1243,7 +2408,7 @@ export function SparePartsPage(): ReactElement {
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
                 <button
                   type="button"
-                  className="btn btn-secondary"
+                  className="btn-secondary"
                   onClick={() => setShowWarehouseModal(false)}
                   disabled={actionLoading}
                 >
@@ -1251,7 +2416,7 @@ export function SparePartsPage(): ReactElement {
                 </button>
                 <button
                   type="submit"
-                  className="btn btn-primary"
+                  className="btn-primary"
                   disabled={actionLoading}
                 >
                   {actionLoading ? 'Saving…' : editingWarehouse ? 'Update Warehouse' : 'Create Warehouse'}

@@ -943,6 +943,7 @@ export function ComplaintDetailPage(): ReactElement {
                       <span>{formatEnum(a.kind)}</span>
                       {a.durationSec ? <span> · {formatDuration(a.durationSec)}</span> : null}
                       {a.bytes ? <span> · {formatBytes(a.bytes)}</span> : null}
+                      {a.createdAt ? <span> · {formatDateTime(a.createdAt)}</span> : null}
                     </div>
                   </div>
                 ))}

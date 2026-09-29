@@ -78,7 +78,7 @@ export default function DriverHomeDashboardScreen(): ReactElement {
     }
 
     // 3. Spare Parts Requisition -> Opens Spare Parts Requisition Modal
-    if ((tile.id as string) === 'SPARE_PARTS') {
+    if (tile.id === 'SPARE_PARTS') {
       setShowSparePartModal(true);
       return;
     }

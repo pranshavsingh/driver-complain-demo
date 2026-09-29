@@ -30,10 +30,7 @@ enum ComplaintCategory {
   TYRE_ISSUE
   FUEL_DEF
   ACCOUNTS
-  COMPLAINT_STATUS
-  MEDICAL_EMERGENCY
   VEHICLE_MAINTENANCE
-  SUPPORT
 }
 
 enum ComplaintStatus {
@@ -68,6 +65,7 @@ enum NotificationType {
   VEHICLE_ASSIGNED
   VEHICLE_UNASSIGNED
   SPARE_PART_REQUESTED
+  SPARE_PART_ISSUE_PROPOSED
   SPARE_PART_APPROVED
   SPARE_PART_ISSUED
   SPARE_PART_REJECTED
@@ -129,6 +127,7 @@ model User {
   notifications           Notification[]
   deviceTokens            DeviceToken[]
   refreshTokens           RefreshToken[]
+  proposedSpareParts      SparePartRequest[]    @relation("SparePartProposedBy")
   approvedSpareParts      SparePartRequest[]    @relation("SparePartApprovedBy")
   issuedSpareParts        SparePartRequest[]    @relation("SparePartIssuedBy")
   sentSupportMessages     SupportMessage[]      @relation("SentSupportMessages")
@@ -194,7 +193,7 @@ model Complaint {
   title             String
   description       String
   transcription     String?
-  category          ComplaintCategory @default(SUPPORT)
+  category          ComplaintCategory @default(BREAKDOWN)
   status            ComplaintStatus   @default(NEW)
   priority          Priority          @default(MEDIUM)
   assignedToId      String?           @db.Uuid
@@ -459,6 +458,7 @@ model Warehouse {
 
 enum SparePartRequestStatus {
   PENDING_APPROVAL
+  ISSUE_PENDING_APPROVAL
   APPROVED
   ISSUED
   REJECTED
@@ -494,6 +494,11 @@ model SparePartRequest {
   // Status & Type
   status                SparePartRequestStatus @default(PENDING_APPROVAL)
   type                  SparePartType          @default(NEW)
+
+  // Executive / Admin Issue Proposal
+  issueProposedById     String?                @db.Uuid
+  issueProposedBy       User?                  @relation("SparePartProposedBy", fields: [issueProposedById], references: [id], onDelete: SetNull)
+  issueProposedAt       DateTime?
 
   // SuperAdmin Approval
   approvedById          String?                @db.Uuid

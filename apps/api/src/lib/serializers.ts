@@ -22,6 +22,7 @@ import type {
   DeviceTokenPublic,
   PartySummary,
   ApprovalStatus,
+  ComplaintCategory,
 } from '@driver-complaint/shared-types';
 
 const iso = (d: Date | null | undefined): string | null => (d ? d.toISOString() : null);
@@ -214,7 +215,7 @@ export function toComplaintPublic(complaint: Complaint & {
     title: complaint.title,
     description: complaint.description,
     transcription: c.transcription ?? null,
-    category: c.category ?? 'SUPPORT',
+    category: (c.category as ComplaintCategory) ?? 'BREAKDOWN',
     status: complaint.status,
     priority: complaint.priority,
     tripPhase,

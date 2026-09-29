@@ -3,8 +3,14 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { ComplaintCategory } from '@driver-complaint/shared-types';
 
+export type GridTileId =
+  | ComplaintCategory
+  | 'SPARE_PARTS'
+  | 'SUPPORT'
+  | 'COMPLAINT_STATUS';
+
 export interface GridTile {
-  id: ComplaintCategory;
+  id: GridTileId;
   title: string;
   subtitle?: string;
   icon: keyof typeof Ionicons.glyphMap;
@@ -77,9 +83,9 @@ export const DASHBOARD_TILES: GridTile[] = [
     iconBgColor: '#FFFFFF',
   },
   {
-    id: 'SPARE_PARTS' as any,
+    id: 'SPARE_PARTS',
     title: 'Spare Parts Requisition',
-    subtitle: 'Voice, Photo & Text Request',
+    subtitle: 'Voice & Photo Request',
     icon: 'construct',
     bgColor: '#EFF6FF',
     borderColor: '#93C5FD',

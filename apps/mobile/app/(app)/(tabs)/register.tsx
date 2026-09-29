@@ -209,7 +209,7 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
       title: titleText,
       description: descriptionText,
       priority,
-      category: category ? (category as ComplaintCategory) : undefined,
+      category: category ? (category as ComplaintCategory) : 'BREAKDOWN',
       vehicleNumber: activeVehicleNumber,
     });
 
@@ -225,13 +225,21 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
 
     api.complaints
       .create(parsed.data, toEvidenceUpload(evidence))
-      .then(() => {
+      .then((res) => {
         setTextInput('');
         setManualVehicleInput('');
         setEvidence(NO_EVIDENCE);
         setPriority('MEDIUM');
         setSubmitStatus(null);
-        router.push('/(app)/(tabs)/history');
+        if (res.wasAppended) {
+          Alert.alert(
+            'Added to Open Complaint',
+            `Your new update and evidence have been added to your open complaint (${res.complaintNo}).`,
+            [{ text: 'OK', onPress: () => router.push('/(app)/(tabs)/history') }],
+          );
+        } else {
+          router.push('/(app)/(tabs)/history');
+        }
       })
       .catch((err: unknown) => {
         setError(err);

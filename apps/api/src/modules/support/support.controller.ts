@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import {
   SendSupportMessageSchema,
   SupportMessageListQuerySchema,
+  AttachChatMessageToComplaintSchema,
 } from '@driver-complaint/shared-types';
 import * as supportService from './support.service';
 import { ApiError } from '../../errors/api-error';
@@ -61,5 +62,27 @@ export async function getDefaultAdmin(req: Request, res: Response): Promise<void
   const result = await supportService.getDefaultSupportAdmin();
   sendSuccess(res, result);
 }
+
+export async function attachToComplaint(
+  req: Request<{ messageId?: string }>,
+  res: Response,
+): Promise<void> {
+  if (!req.user) throw ApiError.unauthorized();
+  if (!['SUPER_ADMIN', 'ADMIN'].includes(req.user.role)) {
+    throw ApiError.forbidden('Only SuperAdmin or Admin can link chat messages to complaints');
+  }
+  const body = AttachChatMessageToComplaintSchema.parse(req.body);
+  const targetMessageId = req.params.messageId || body.messageId;
+  if (!targetMessageId) {
+    throw ApiError.badRequest('messageId is required to attach chat message to complaint');
+  }
+  const result = await supportService.appendChatMessageToComplaint(
+    req.user.id,
+    targetMessageId,
+    body.complaintId,
+  );
+  sendSuccess(res, result);
+}
+
 
 

@@ -38,6 +38,7 @@ export const NotificationTypeSchema = z.enum([
   'VEHICLE_ASSIGNED',
   'VEHICLE_UNASSIGNED',
   'SPARE_PART_REQUESTED',
+  'SPARE_PART_ISSUE_PROPOSED',
   'SPARE_PART_APPROVED',
   'SPARE_PART_ISSUED',
   'SPARE_PART_REJECTED',
@@ -85,10 +86,7 @@ export const ComplaintCategorySchema = z.enum([
   'TYRE_ISSUE',
   'FUEL_DEF',
   'ACCOUNTS',
-  'COMPLAINT_STATUS',
-  'MEDICAL_EMERGENCY',
   'VEHICLE_MAINTENANCE',
-  'SUPPORT',
 ]);
 export type ComplaintCategory = z.infer<typeof ComplaintCategorySchema>;
 export const COMPLAINT_CATEGORIES = ComplaintCategorySchema.options;
@@ -112,6 +110,7 @@ export const TRIP_PHASES = TripPhaseSchema.options;
 
 export const SparePartRequestStatusSchema = z.enum([
   'PENDING_APPROVAL',
+  'ISSUE_PENDING_APPROVAL',
   'APPROVED',
   'ISSUED',
   'REJECTED',

@@ -205,7 +205,7 @@ export function SlaBadge({ sla }: { sla: SlaInfo }): ReactElement {
 
 /** Rich Category Badge */
 export function CategoryBadge({ category }: { category?: string | null }): ReactElement {
-  const cat = category || 'SUPPORT';
+  const cat = category || 'BREAKDOWN';
 
   const config: Record<string, { label: string; icon: string; bg: string; color: string; border: string }> = {
     TYRE_ISSUE: {
@@ -256,27 +256,6 @@ export function CategoryBadge({ category }: { category?: string | null }): React
       bg: 'rgba(234, 179, 8, 0.14)',
       color: '#eab308',
       border: 'rgba(234, 179, 8, 0.35)',
-    },
-    MEDICAL_EMERGENCY: {
-      label: 'Medical Emergency',
-      icon: '🚑',
-      bg: 'rgba(225, 29, 72, 0.16)',
-      color: '#e11d48',
-      border: 'rgba(225, 29, 72, 0.4)',
-    },
-    COMPLAINT_STATUS: {
-      label: 'Complaint Status',
-      icon: '📋',
-      bg: 'rgba(59, 130, 246, 0.12)',
-      color: '#3b82f6',
-      border: 'rgba(59, 130, 246, 0.3)',
-    },
-    SUPPORT: {
-      label: 'Support',
-      icon: '💬',
-      bg: 'rgba(148, 163, 184, 0.12)',
-      color: 'var(--muted)',
-      border: 'var(--border)',
     },
   };
 

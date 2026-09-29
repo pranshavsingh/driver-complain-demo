@@ -1,7 +1,9 @@
 import type { Request, Response } from 'express';
 import {
   CreateSparePartRequestSchema,
+  ProposeIssueSparePartSchema,
   IssueSparePartSchema,
+  ApproveSparePartSchema,
   RejectSparePartRequestSchema,
   SparePartListQuerySchema,
   CreateWarehouseSchema,
@@ -64,9 +66,22 @@ export async function getOne(req: Request<{ id: string }>, res: Response): Promi
   sendSuccess(res, result);
 }
 
+export async function proposeIssue(req: Request<{ id: string }>, res: Response): Promise<void> {
+  if (!req.user) throw ApiError.unauthorized();
+  const input = ProposeIssueSparePartSchema.parse(req.body);
+  const result = await sparePartsService.proposeIssueRequest(
+    req.user.id,
+    req.params.id,
+    input,
+  );
+  sendSuccess(res, result);
+}
+
 export async function approveAndIssue(req: Request<{ id: string }>, res: Response): Promise<void> {
   if (!req.user) throw ApiError.unauthorized();
-  const input = IssueSparePartSchema.parse(req.body);
+  const input = req.body && Object.keys(req.body).length > 0
+    ? ApproveSparePartSchema.parse(req.body)
+    : undefined;
   const result = await sparePartsService.approveAndIssueRequest(
     req.user.id,
     req.params.id,

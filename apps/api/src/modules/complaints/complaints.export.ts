@@ -38,7 +38,7 @@ const EVIDENCE_LABELS: Record<AttachmentKind, [singular: string, plural: string]
 
 /** Formats category into clear, human-readable labels. */
 function describeCategory(category: string | null | undefined): string {
-  if (!category) return 'Support';
+  if (!category) return 'Breakdown';
   switch (category) {
     case 'FUEL_DEF':
       return 'Fuel / DEF';
@@ -54,12 +54,6 @@ function describeCategory(category: string | null | undefined): string {
       return 'Accounts';
     case 'VEHICLE_MAINTENANCE':
       return 'Vehicle Maintenance';
-    case 'MEDICAL_EMERGENCY':
-      return 'Medical Emergency';
-    case 'COMPLAINT_STATUS':
-      return 'Complaint Status';
-    case 'SUPPORT':
-      return 'Support';
     default:
       return category.replace(/_/g, ' ');
   }
@@ -116,16 +110,7 @@ function computeSlaMetrics(
   resolvedAt?: Date | null,
   now = new Date(),
 ): { slaStatus: string; resolutionTime: string } {
-  const cat = (category || '').toUpperCase();
-  if (cat === 'SUPPORT' || cat === 'COMPLAINT_STATUS') {
-    const elapsedMs = resolvedAt ? Math.max(0, resolvedAt.getTime() - createdAt.getTime()) : Math.max(0, now.getTime() - createdAt.getTime());
-    const durStr = formatDurationMs(elapsedMs);
-    return {
-      slaStatus: 'N/A (No SLA Target)',
-      resolutionTime: resolvedAt ? durStr : `Pending (${durStr} elapsed)`,
-    };
-  }
-
+  const cat = (category || 'BREAKDOWN').toUpperCase();
   const created = createdAt.getTime();
   const slaHours = categorySlaMap?.[cat] ?? 12;
   const slaMs = slaHours * 60 * 60 * 1000;

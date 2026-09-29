@@ -22,12 +22,13 @@ import { ErrorBanner } from '../components/ErrorBanner';
 import { useApiResource } from '../hooks/useApiResource';
 
 export const APP_CATEGORY_OPTIONS: { value: ComplaintCategory; label: string; icon: string }[] = [
-  { value: 'LOADING', label: 'Loading / Unloading', icon: '🚛' },
+  { value: 'LOADING', label: 'Loading', icon: '🚛' },
+  { value: 'UNLOADING', label: 'Unloading', icon: '📦' },
   { value: 'BREAKDOWN', label: 'Breakdown', icon: '🚨' },
   { value: 'TYRE_ISSUE', label: 'Tyre issue', icon: '🛞' },
   { value: 'FUEL_DEF', label: 'Fuel / DEF', icon: '⛽' },
   { value: 'ACCOUNTS', label: 'Accounts', icon: '💼' },
-  { value: 'SUPPORT', label: 'Spare parts Requisition / Requirements', icon: '📦' },
+  { value: 'VEHICLE_MAINTENANCE', label: 'Vehicle Maintenance', icon: '🔧' },
 ];
 
 export function getCategoryLabel(cat?: string | null): string {

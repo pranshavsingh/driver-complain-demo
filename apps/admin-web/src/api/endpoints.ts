@@ -34,7 +34,9 @@ import {
   type CreateWarehouseInput,
   type UpdateWarehouseInput,
   type SparePartRequestPublic,
+  type ProposeIssueSparePartInput,
   type IssueSparePartInput,
+  type ApproveSparePartInput,
   type RejectSparePartRequestInput,
   type SparePartStatsSummary,
   type SupportMessagePublic,
@@ -375,10 +377,15 @@ export const spareParts = {
     request(z.any(), '/spare-parts', { query }),
   getOne: (id: string): Promise<SparePartRequestPublic> =>
     request(z.any(), `/spare-parts/${id}`),
-  approveAndIssue: (id: string, input: IssueSparePartInput): Promise<SparePartRequestPublic> =>
-    request(z.any(), `/spare-parts/${id}/issue`, {
+  proposeIssue: (id: string, input: ProposeIssueSparePartInput): Promise<SparePartRequestPublic> =>
+    request(z.any(), `/spare-parts/${id}/propose-issue`, {
       method: 'PATCH',
       body: input,
+    }),
+  approveAndIssue: (id: string, input?: ApproveSparePartInput | IssueSparePartInput): Promise<SparePartRequestPublic> =>
+    request(z.any(), `/spare-parts/${id}/issue`, {
+      method: 'PATCH',
+      body: input || {},
     }),
   reject: (id: string, input: RejectSparePartRequestInput): Promise<SparePartRequestPublic> =>
     request(z.any(), `/spare-parts/${id}/reject`, {
@@ -430,6 +437,12 @@ export const support = {
 
   getUnreadCount: (): Promise<{ unreadCount: number }> =>
     request(z.any(), '/support/unread-count'),
+
+  attachToComplaint: (messageId: string, complaintId: string): Promise<{ ok: boolean; complaintNo: string }> =>
+    request(z.object({ ok: z.boolean(), complaintNo: z.string() }), '/support/messages/attach-to-complaint', {
+      method: 'POST',
+      body: { messageId, complaintId },
+    }),
 };
 
 export const notifications = {

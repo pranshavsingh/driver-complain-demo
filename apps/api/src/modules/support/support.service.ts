@@ -3,13 +3,14 @@ import { ApiError } from '../../errors/api-error';
 import { uploadBuffer, cloudinaryFolder } from '../../lib/cloudinary';
 import { pushToUsers } from '../../lib/fcm';
 import { logger } from '../../lib/logger';
-import { emitEventToUsers } from '../../realtime/socket';
-import type {
-  SendSupportMessageInput,
-  SupportMessagePublic,
-  SupportConversationSummary,
-  SupportMessageListQuery,
-  SupportUserSummary,
+import { emitEventToUsers, emitToRoles } from '../../realtime/socket';
+import {
+  REALTIME_EVENTS,
+  type SendSupportMessageInput,
+  type SupportMessagePublic,
+  type SupportConversationSummary,
+  type SupportMessageListQuery,
+  type SupportUserSummary,
 } from '@driver-complaint/shared-types';
 
 function toUserSummary(user: any): SupportUserSummary {
@@ -92,8 +93,8 @@ export async function getConversations(
         prisma.supportMessage.findFirst({
           where: {
             OR: [
-              { senderId: currentUserId, receiverId: admin.id },
-              { senderId: admin.id, receiverId: currentUserId },
+              { senderId: currentUserId },
+              { receiverId: currentUserId },
             ],
           },
           orderBy: { createdAt: 'desc' },
@@ -101,7 +102,6 @@ export async function getConversations(
         }),
         prisma.supportMessage.count({
           where: {
-            senderId: admin.id,
             receiverId: currentUserId,
             isRead: false,
           },
@@ -144,23 +144,33 @@ export async function getConversations(
   });
 
   const conversationPromises = allUsers.map(async (user) => {
-    const [lastMessage, unreadCount] = await Promise.all([
-      prisma.supportMessage.findFirst({
-        where: {
+    const isDriver = user.role === 'DRIVER';
+    const msgWhere = isDriver
+      ? {
+          OR: [
+            { senderId: user.id },
+            { receiverId: user.id },
+          ],
+        }
+      : {
           OR: [
             { senderId: currentUserId, receiverId: user.id },
             { senderId: user.id, receiverId: currentUserId },
           ],
-        },
+        };
+
+    const unreadWhere = isDriver
+      ? { senderId: user.id, isRead: false }
+      : { senderId: user.id, receiverId: currentUserId, isRead: false };
+
+    const [lastMessage, unreadCount] = await Promise.all([
+      prisma.supportMessage.findFirst({
+        where: msgWhere,
         orderBy: { createdAt: 'desc' },
         include: { sender: true, receiver: true },
       }),
       prisma.supportMessage.count({
-        where: {
-          senderId: user.id,
-          receiverId: currentUserId,
-          isRead: false,
-        },
+        where: unreadWhere,
       }),
     ]);
 
@@ -214,12 +224,27 @@ export async function getMessages(
   const limit = Math.min(100, Math.max(1, query.limit ?? 50));
   const skip = (page - 1) * limit;
 
-  const where = {
-    OR: [
-      { senderId: currentUserId, receiverId: otherUserId },
-      { senderId: otherUserId, receiverId: currentUserId },
-    ],
-  };
+  const [currentUser, otherUser] = await Promise.all([
+    prisma.user.findUnique({ where: { id: currentUserId }, select: { role: true } }),
+    prisma.user.findUnique({ where: { id: otherUserId }, select: { role: true } }),
+  ]);
+
+  const isDriverThread = currentUser?.role === 'DRIVER' || otherUser?.role === 'DRIVER';
+  const driverUserId = currentUser?.role === 'DRIVER' ? currentUserId : otherUserId;
+
+  const where = isDriverThread
+    ? {
+        OR: [
+          { senderId: driverUserId },
+          { receiverId: driverUserId },
+        ],
+      }
+    : {
+        OR: [
+          { senderId: currentUserId, receiverId: otherUserId },
+          { senderId: otherUserId, receiverId: currentUserId },
+        ],
+      };
 
   const [items, total] = await Promise.all([
     prisma.supportMessage.findMany({
@@ -335,9 +360,12 @@ export async function sendMessage(
 
   const publicMsg = toSupportMessagePublic(created);
 
-  // 1. Live Realtime Socket Emission to both users' rooms
+  // 1. Live Realtime Socket Emission to both users' rooms + all support admins if a driver is involved
   try {
     emitEventToUsers([targetReceiverId, senderUserId], 'support:message', publicMsg);
+    if (sender.role === 'DRIVER' || receiver.role === 'DRIVER') {
+      emitToRoles(['SUPER_ADMIN', 'ADMIN'], 'support:message', publicMsg);
+    }
   } catch (err) {
     logger.error({ err }, 'Socket emission for support message failed');
   }
@@ -372,10 +400,16 @@ export async function markConversationRead(
   currentUserId: string,
   otherUserId: string,
 ): Promise<{ updated: number }> {
+  const otherUser = await prisma.user.findUnique({
+    where: { id: otherUserId },
+    select: { role: true },
+  });
+  const isOtherDriver = otherUser?.role === 'DRIVER';
+
   const { count } = await prisma.supportMessage.updateMany({
     where: {
       senderId: otherUserId,
-      receiverId: currentUserId,
+      ...(isOtherDriver ? {} : { receiverId: currentUserId }),
       isRead: false,
     },
     data: {
@@ -391,6 +425,13 @@ export async function markConversationRead(
         otherUserId,
         readAt: new Date().toISOString(),
       });
+      if (isOtherDriver) {
+        emitToRoles(['SUPER_ADMIN', 'ADMIN'], 'support:read', {
+          readerId: currentUserId,
+          otherUserId,
+          readAt: new Date().toISOString(),
+        });
+      }
     } catch (err) {
       logger.error({ err }, 'Socket emission for support read receipt failed');
     }
@@ -400,6 +441,21 @@ export async function markConversationRead(
 }
 
 export async function getUnreadCount(userId: string): Promise<{ unreadCount: number }> {
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+
+  if (user && ['SUPER_ADMIN', 'ADMIN', 'EXECUTIVE'].includes(user.role)) {
+    const count = await prisma.supportMessage.count({
+      where: {
+        isRead: false,
+        OR: [
+          { receiverId: userId },
+          { sender: { role: 'DRIVER' } },
+        ],
+      },
+    });
+    return { unreadCount: count };
+  }
+
   const count = await prisma.supportMessage.count({
     where: {
       receiverId: userId,
@@ -408,4 +464,125 @@ export async function getUnreadCount(userId: string): Promise<{ unreadCount: num
   });
   return { unreadCount: count };
 }
+
+export async function appendChatMessageToComplaint(
+  actorUserId: string,
+  messageId: string,
+  complaintId: string,
+): Promise<{ ok: boolean; complaintNo: string }> {
+  const actor = await prisma.user.findUnique({
+    where: { id: actorUserId },
+  });
+  if (!actor || !['SUPER_ADMIN', 'ADMIN'].includes(actor.role)) {
+    throw ApiError.forbidden('Only SuperAdmin or Admin can link chat messages to complaints');
+  }
+
+  const message = await prisma.supportMessage.findUnique({
+    where: { id: messageId },
+    include: { sender: true },
+  });
+  if (!message) {
+    throw ApiError.notFound('Chat message not found');
+  }
+
+  const complaint = await prisma.complaint.findUnique({
+    where: { id: complaintId },
+    include: {
+      driver: {
+        include: { user: true },
+      },
+    },
+  });
+  if (!complaint) {
+    throw ApiError.notFound('Complaint not found');
+  }
+
+  if (complaint.status === 'RESOLVED' || complaint.status === 'CLOSED') {
+    throw ApiError.badRequest(`Cannot link chat message to a ${complaint.status.toLowerCase()} complaint`);
+  }
+
+  if (complaint.driver.userId !== message.senderId) {
+    throw ApiError.badRequest('This chat message was not sent by the complaint driver');
+  }
+
+  const dateStr = new Date(message.createdAt).toLocaleString('en-IN', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'Asia/Kolkata',
+  });
+
+  const notePrefix = `[From Support Chat • ${dateStr}]`;
+  const noteText = message.content?.trim()
+    ? `${notePrefix}\n${message.content.trim()}`
+    : `${notePrefix} Attached media file from support chat`;
+
+  await prisma.$transaction(async (tx) => {
+    await tx.complaintUpdate.create({
+      data: {
+        complaintId: complaint.id,
+        authorId: actorUserId,
+        fromStatus: complaint.status,
+        toStatus: complaint.status,
+        note: noteText,
+      },
+    });
+
+    if (message.attachmentUrl) {
+      const isAudio = message.type === 'AUDIO';
+      const kind = isAudio ? 'VOICE' : 'PHOTO';
+      const resourceType = isAudio ? 'video' : 'image';
+      const format = isAudio ? 'm4a' : 'jpg';
+      const pubId = message.attachmentPublicId
+        ? `${message.attachmentPublicId}-c${complaint.id.slice(0, 8)}`
+        : `chat-${message.id}-c${complaint.id.slice(0, 8)}`;
+
+      await tx.complaintAttachment.create({
+        data: {
+          complaintId: complaint.id,
+          uploadedById: message.senderId,
+          kind,
+          url: message.attachmentUrl,
+          publicId: pubId,
+          resourceType,
+          format,
+          durationSec: message.attachmentDurationSec ?? null,
+          originalName: isAudio ? `Voice Note (${dateStr})` : `Photo (${dateStr})`,
+        },
+      });
+    }
+
+    await tx.complaint.update({
+      where: { id: complaint.id },
+      data: { updatedAt: new Date() },
+    });
+  });
+
+  try {
+    const notifyUserIds = Array.from(
+      new Set([
+        complaint.driver.userId,
+        ...(complaint.assignedToId ? [complaint.assignedToId] : []),
+      ]),
+    );
+
+    emitEventToUsers(notifyUserIds, REALTIME_EVENTS.complaintUpdated, {
+      complaintId: complaint.id,
+      complaintNo: complaint.complaintNo,
+      status: complaint.status,
+      at: new Date().toISOString(),
+    });
+
+    emitToRoles(['SUPER_ADMIN', 'ADMIN', 'EXECUTIVE'], REALTIME_EVENTS.complaintUpdated, {
+      complaintId: complaint.id,
+      complaintNo: complaint.complaintNo,
+      status: complaint.status,
+      at: new Date().toISOString(),
+    });
+  } catch (err) {
+    logger.error({ err }, 'Failed to emit socket updates for attached chat message');
+  }
+
+  return { ok: true, complaintNo: complaint.complaintNo };
+}
+
 

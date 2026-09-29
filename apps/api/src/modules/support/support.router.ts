@@ -6,6 +6,7 @@ import {
   markConversationRead,
   getUnreadCount,
   getDefaultAdmin,
+  attachToComplaint,
 } from './support.controller';
 import { authenticate } from '../../middleware/authenticate';
 import { createSingleFileUpload } from '../../middleware/upload';
@@ -25,6 +26,13 @@ supportRouter.use(authenticate);
 supportRouter.get('/conversations', getConversations);
 supportRouter.get('/unread-count', getUnreadCount);
 supportRouter.get('/default-admin', getDefaultAdmin);
+
+// Specialized message actions
+supportRouter.post('/messages/attach-to-complaint', attachToComplaint);
+supportRouter.post('/messages/:messageId/attach-to-complaint', validateUuidParam('messageId'), attachToComplaint);
+
 supportRouter.get('/messages/:otherUserId', validateUuidParam('otherUserId'), getMessages);
 supportRouter.post('/messages', uploadAttachment, sendMessage);
 supportRouter.patch('/messages/:otherUserId/read', validateUuidParam('otherUserId'), markConversationRead);
+
+

@@ -64,8 +64,6 @@ const CATEGORY_COLORS: Record<string, { bg: string; color: string; border: strin
   UNLOADING: { bg: 'rgba(168, 85, 247, 0.12)', color: '#a855f7', border: 'rgba(168, 85, 247, 0.35)' },
   ACCOUNTS: { bg: 'rgba(16, 185, 129, 0.12)', color: '#10b981', border: 'rgba(16, 185, 129, 0.35)' },
   VEHICLE_MAINTENANCE: { bg: 'rgba(234, 179, 8, 0.12)', color: '#eab308', border: 'rgba(234, 179, 8, 0.35)' },
-  MEDICAL_EMERGENCY: { bg: 'rgba(225, 29, 72, 0.16)', color: '#e11d48', border: 'rgba(225, 29, 72, 0.4)' },
-  SUPPORT: { bg: 'rgba(148, 163, 184, 0.12)', color: 'var(--muted)', border: 'var(--border)' },
 };
 
 /** Trip Phase visual config */
@@ -552,9 +550,9 @@ export function ComplaintsListPage(): ReactElement {
   };
 
   const getCategoryBadge = (cat?: ComplaintCategory | string | null) => {
-    const key = cat || 'SUPPORT';
-    const fallback = { bg: 'rgba(148, 163, 184, 0.12)', color: 'var(--muted)', border: 'var(--border)' };
-    const cfg = (key && CATEGORY_COLORS[key]) || CATEGORY_COLORS.SUPPORT || fallback;
+    const key = cat || 'BREAKDOWN';
+    const fallback = { bg: 'rgba(239, 68, 68, 0.12)', color: '#ef4444', border: 'rgba(239, 68, 68, 0.35)' };
+    const cfg = (key && CATEGORY_COLORS[key]) || CATEGORY_COLORS.BREAKDOWN || fallback;
     return (
       <span
         style={{

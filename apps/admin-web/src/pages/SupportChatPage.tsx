@@ -14,6 +14,7 @@ import {
   Loader,
   Phone,
   Volume2,
+  Link2,
 } from '../components/Icons';
 import * as api from '../api/endpoints';
 import { useAuth } from '../auth/AuthContext';
@@ -21,6 +22,7 @@ import { useRealtime } from '../realtime/RealtimeProvider';
 import type {
   SupportConversationSummary,
   SupportMessagePublic,
+  ComplaintPublic,
 } from '@driver-complaint/shared-types';
 
 type RoleFilter = 'ALL' | 'DRIVER' | 'ADMIN' | 'EXECUTIVE';
@@ -49,12 +51,70 @@ export function SupportChatPage(): ReactElement {
   // Photo Lightbox modal
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
 
+  // Link to complaint state
+  const [linkModalOpen, setLinkModalOpen] = useState(false);
+  const [linkingMessage, setLinkingMessage] = useState<SupportMessagePublic | null>(null);
+  const [driverOpenComplaints, setDriverOpenComplaints] = useState<ComplaintPublic[]>([]);
+  const [selectedComplaintId, setSelectedComplaintId] = useState('');
+  const [loadingComplaints, setLoadingComplaints] = useState(false);
+  const [isLinking, setIsLinking] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const openLinkModal = async (msg: SupportMessagePublic) => {
+    setLinkingMessage(msg);
+    setSelectedComplaintId('');
+    setLinkModalOpen(true);
+    setLoadingComplaints(true);
+
+    try {
+      const driverList = await api.drivers.list();
+      const contactUserId = selectedConversation?.contactUser.id;
+      const matchedDriver = driverList.find((d) => d.userId === contactUserId);
+      const driverId = matchedDriver?.id || selectedConversation?.vehicle?.driverId;
+
+      const res = await api.complaints.list(
+        { ...api.EMPTY_FILTER, driverId: driverId || '' },
+        1,
+        50,
+      );
+
+      const open = (res?.data || []).filter(
+        (c) => c.status !== 'RESOLVED' && c.status !== 'CLOSED',
+      );
+      setDriverOpenComplaints(open);
+      const firstComplaint = open[0];
+      if (firstComplaint) {
+        setSelectedComplaintId(firstComplaint.id);
+      }
+    } catch (err) {
+      console.error('Failed to load driver complaints', err);
+      setDriverOpenComplaints([]);
+    } finally {
+      setLoadingComplaints(false);
+    }
+  };
+
+  const handleAttachToComplaint = async () => {
+    if (!linkingMessage || !selectedComplaintId) return;
+    setIsLinking(true);
+    try {
+      const res = await api.support.attachToComplaint(linkingMessage.id, selectedComplaintId);
+      alert(`✅ Chat message successfully linked to Complaint #${res.complaintNo}`);
+      setLinkModalOpen(false);
+      setLinkingMessage(null);
+      setSelectedComplaintId('');
+    } catch (err: any) {
+      alert(err.message || 'Failed to attach message to complaint');
+    } finally {
+      setIsLinking(false);
+    }
+  };
 
   // Load conversations
   const loadConversations = async (keepSelection = true): Promise<void> => {
@@ -612,11 +672,24 @@ export function SupportChatPage(): ReactElement {
                         ) : null}
 
                         <div className={`chat-message-bubble ${isMe ? 'outgoing' : 'incoming'}`}>
-                          {/* Sender name for received group style */}
+                          {/* Sender name + Link button for received messages */}
                           {!isMe && (
-                            <span className="chat-sender-label">
-                              {msg.sender?.firstName || 'User'}
-                            </span>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
+                              <span className="chat-sender-label">
+                                {msg.sender?.firstName || 'User'}
+                              </span>
+                              {(user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN') && (
+                                <button
+                                  type="button"
+                                  className="btn-chat-link-complaint"
+                                  title="Link message to an open complaint"
+                                  onClick={() => openLinkModal(msg)}
+                                >
+                                  <Link2 size={11} />
+                                  <span>Link</span>
+                                </button>
+                              )}
+                            </div>
                           )}
 
                           {/* 1. PHOTO MESSAGE */}
@@ -841,6 +914,95 @@ export function SupportChatPage(): ReactElement {
               </button>
             </div>
             <img src={lightboxImage} alt="Enlarged Attachment" className="lightbox-img" />
+          </div>
+        </div>
+      )}
+
+      {/* Link Message to Complaint Modal */}
+      {linkModalOpen && linkingMessage && (
+        <div className="link-complaint-modal-overlay" onClick={() => setLinkModalOpen(false)}>
+          <div className="link-complaint-modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="link-complaint-modal-header">
+              <h3>📎 Link Chat Message to Complaint</h3>
+              <button
+                type="button"
+                className="btn-cancel-preview"
+                onClick={() => setLinkModalOpen(false)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="link-complaint-modal-body">
+              {/* Message preview snippet */}
+              <div className="message-preview-card">
+                <div className="message-preview-header">
+                  <span>{linkingMessage.sender?.firstName || 'Driver'}</span>
+                  <span>{formatMessageTime(linkingMessage.createdAt)}</span>
+                </div>
+                {linkingMessage.type === 'IMAGE' && linkingMessage.attachmentUrl ? (
+                  <img
+                    src={linkingMessage.attachmentUrl}
+                    alt="Chat photo"
+                    className="message-preview-media"
+                  />
+                ) : null}
+                {linkingMessage.type === 'AUDIO' ? (
+                  <div style={{ fontSize: 12, color: '#0284c7', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <Volume2 size={14} /> Voice Message ({linkingMessage.attachmentDurationSec || 0}s)
+                  </div>
+                ) : null}
+                {linkingMessage.content ? (
+                  <p className="message-preview-text">{linkingMessage.content}</p>
+                ) : null}
+              </div>
+
+              {/* Complaint selector */}
+              <div className="link-complaint-form-group">
+                <label>Select Open Complaint of Driver:</label>
+                {loadingComplaints ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', fontSize: 13, color: '#64748b' }}>
+                    <Loader size={16} className="icon-spin" /> Loading open complaints…
+                  </div>
+                ) : driverOpenComplaints.length === 0 ? (
+                  <div style={{ padding: '10px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, fontSize: 13, color: '#991b1b' }}>
+                    No open complaints found for this driver/vehicle.
+                  </div>
+                ) : (
+                  <select
+                    className="link-complaint-select"
+                    value={selectedComplaintId}
+                    onChange={(e) => setSelectedComplaintId(e.target.value)}
+                  >
+                    {driverOpenComplaints.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        #{c.complaintNo} — {c.title} ({c.category || 'General'}) [{c.status}]
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            </div>
+            <div className="link-complaint-modal-footer">
+              <button
+                type="button"
+                className="btn-cancel-preview"
+                style={{ padding: '6px 14px', fontSize: 13, borderRadius: 6, border: '1px solid #cbd5e1' }}
+                onClick={() => setLinkModalOpen(false)}
+                disabled={isLinking}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-submit-resolution"
+                style={{ background: '#0284c7', borderColor: '#0284c7', padding: '6px 16px', fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                onClick={handleAttachToComplaint}
+                disabled={!selectedComplaintId || isLinking || loadingComplaints}
+              >
+                {isLinking ? <Loader size={14} className="icon-spin" /> : <Link2 size={14} />}
+                <span>Attach to Complaint</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

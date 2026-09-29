@@ -7,7 +7,9 @@ import { pushToUsers } from '../../lib/fcm';
 import { logger } from '../../lib/logger';
 import type {
   CreateSparePartRequestInput,
+  ProposeIssueSparePartInput,
   IssueSparePartInput,
+  ApproveSparePartInput,
   RejectSparePartRequestInput,
   SparePartListQuery,
   SparePartRequestPublic,
@@ -41,6 +43,14 @@ const sparePartInclude = {
   },
   vehicle: true,
   warehouse: true,
+  issueProposedBy: {
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      employeeId: true,
+    },
+  },
   approvedBy: {
     select: {
       id: true,
@@ -75,6 +85,9 @@ export function toSparePartPublic(row: any): SparePartRequestPublic {
     voicePublicId: row.voicePublicId ?? null,
     status: row.status,
     type: row.type,
+    issueProposedById: row.issueProposedById ?? null,
+    issueProposedBy: row.issueProposedBy ?? null,
+    issueProposedAt: row.issueProposedAt instanceof Date ? row.issueProposedAt.toISOString() : (row.issueProposedAt ?? null),
     approvedById: row.approvedById ?? null,
     approvedBy: row.approvedBy ?? null,
     approvedAt: row.approvedAt instanceof Date ? row.approvedAt.toISOString() : (row.approvedAt ?? null),
@@ -402,10 +415,10 @@ export async function getOne(actor: Actor, id: string): Promise<SparePartRequest
   return toSparePartPublic(row);
 }
 
-export async function approveAndIssueRequest(
-  adminUserId: string,
+export async function proposeIssueRequest(
+  actorUserId: string,
   id: string,
-  input: IssueSparePartInput,
+  input: ProposeIssueSparePartInput,
 ): Promise<SparePartRequestPublic> {
   const existing = await prisma.sparePartRequest.findUnique({
     where: { id },
@@ -427,12 +440,10 @@ export async function approveAndIssueRequest(
     const row = await tx.sparePartRequest.update({
       where: { id },
       data: {
-        status: 'ISSUED',
+        status: 'ISSUE_PENDING_APPROVAL',
         type: input.type,
-        approvedById: adminUserId,
-        approvedAt: now,
-        issuedById: adminUserId,
-        issuedAt: now,
+        issueProposedById: actorUserId,
+        issueProposedAt: now,
         warehouseId: input.warehouseId,
         issuedPartName: input.issuedPartName.trim(),
         issuedPartNo: input.issuedPartNo.trim(),
@@ -444,13 +455,93 @@ export async function approveAndIssueRequest(
       include: sparePartInclude,
     });
 
+    // Notify SuperAdmins that an issue proposal is ready for sign-off
+    const superAdmins = await tx.user.findMany({
+      where: { role: 'SUPER_ADMIN', isActive: true },
+      select: { id: true },
+    });
+
+    if (superAdmins.length > 0) {
+      await tx.notification.createMany({
+        data: superAdmins.map((sa) => ({
+          userId: sa.id,
+          type: 'SPARE_PART_ISSUE_PROPOSED' as const,
+          title: `Spare Part Issue Prepared: ${existing.requestNo}`,
+          body: `Issuance for ${input.issuedPartName} (Qty: ${input.issuedQty ?? 1}, Type: ${input.type}) requires SuperAdmin approval.`,
+          data: { requestId: id, requestNo: existing.requestNo, type: 'SPARE_PART_ISSUE_PROPOSED' },
+        })),
+      });
+    }
+
+    return row;
+  });
+
+  return toSparePartPublic(updated);
+}
+
+export async function approveAndIssueRequest(
+  adminUserId: string,
+  id: string,
+  input?: ApproveSparePartInput | IssueSparePartInput,
+): Promise<SparePartRequestPublic> {
+  const existing = await prisma.sparePartRequest.findUnique({
+    where: { id },
+    include: {
+      driver: { include: { user: true } },
+      vehicle: true,
+      warehouse: true,
+    },
+  });
+  if (!existing) throw ApiError.notFound('Spare part request not found');
+
+  const targetWarehouseId = input?.warehouseId || existing.warehouseId;
+  if (!targetWarehouseId) {
+    throw ApiError.badRequest('A warehouse must be assigned to issue the spare part');
+  }
+
+  const warehouse = await prisma.warehouse.findUnique({
+    where: { id: targetWarehouseId },
+  });
+  if (!warehouse) throw ApiError.badRequest('Selected warehouse does not exist');
+
+  const finalPartName = input?.issuedPartName?.trim() || existing.issuedPartName || existing.partName || 'Spare Part';
+  const finalPartNo = input?.issuedPartNo?.trim() || existing.issuedPartNo || 'N/A';
+  const finalQty = input?.issuedQty ?? existing.issuedQty ?? existing.quantity ?? 1;
+  const finalType = input?.type || existing.type;
+  const finalReturnedPartNo = input?.returnedPartNo !== undefined ? (input.returnedPartNo?.trim() || null) : existing.returnedPartNo;
+  const finalReturnedCondition = input?.returnedPartCondition !== undefined ? (input.returnedPartCondition?.trim() || null) : existing.returnedPartCondition;
+  const finalAdminNotes = input?.adminNotes !== undefined ? (input.adminNotes?.trim() || null) : existing.adminNotes;
+
+  const now = new Date();
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const row = await tx.sparePartRequest.update({
+      where: { id },
+      data: {
+        status: 'ISSUED',
+        type: finalType,
+        approvedById: adminUserId,
+        approvedAt: now,
+        issuedById: adminUserId,
+        issuedAt: now,
+        warehouseId: targetWarehouseId,
+        issuedPartName: finalPartName,
+        issuedPartNo: finalPartNo,
+        issuedQty: finalQty,
+        returnedPartNo: finalReturnedPartNo,
+        returnedPartCondition: finalReturnedCondition,
+        adminNotes: finalAdminNotes,
+      },
+      include: sparePartInclude,
+    });
+
     // Notify the Driver
     await tx.notification.create({
       data: {
         userId: existing.driver.userId,
         type: 'SPARE_PART_ISSUED',
         title: `Spare Part Issued: ${existing.requestNo}`,
-        body: `Item ${input.issuedPartName} (Qty: ${input.issuedQty ?? 1}) has been issued from ${warehouse.name}.`,
+        body: `Item ${finalPartName} (Qty: ${finalQty}) has been issued from ${warehouse.name}.`,
         data: { requestId: id, requestNo: existing.requestNo, type: 'SPARE_PART_ISSUED' },
       },
     });
@@ -461,7 +552,7 @@ export async function approveAndIssueRequest(
   // Post-commit push notification to driver
   void pushToUsers([existing.driver.userId], {
     title: `Spare Part Issued: ${existing.requestNo}`,
-    body: `Item ${input.issuedPartName} (Qty: ${input.issuedQty ?? 1}) has been issued from ${warehouse.name}.`,
+    body: `Item ${finalPartName} (Qty: ${finalQty}) has been issued from ${warehouse.name}.`,
     data: { requestId: id, requestNo: existing.requestNo, type: 'SPARE_PART_ISSUED' },
   }).catch((err) => {
     logger.error({ err }, 'FCM push for spare part issuance failed');
@@ -535,8 +626,9 @@ export async function getStats(opts: { startDate?: string; endDate?: string; veh
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-  const [totalPending, totalApproved, totalIssued, totalRejected, totalRequests, recentThisMonth] = await Promise.all([
+  const [totalPending, totalIssuePending, totalApproved, totalIssued, totalRejected, totalRequests, recentThisMonth] = await Promise.all([
     prisma.sparePartRequest.count({ where: { ...where, status: 'PENDING_APPROVAL' } }),
+    prisma.sparePartRequest.count({ where: { ...where, status: 'ISSUE_PENDING_APPROVAL' } }),
     prisma.sparePartRequest.count({ where: { ...where, status: 'APPROVED' } }),
     prisma.sparePartRequest.count({ where: { ...where, status: 'ISSUED' } }),
     prisma.sparePartRequest.count({ where: { ...where, status: 'REJECTED' } }),
@@ -546,6 +638,7 @@ export async function getStats(opts: { startDate?: string; endDate?: string; veh
 
   return {
     totalPending,
+    totalIssuePending,
     totalApproved,
     totalIssued,
     totalRejected,

@@ -53,11 +53,10 @@ export interface SlaInfo {
   targetHours?: number;
 }
 
-export const EXCLUDED_SLA_CATEGORIES = new Set<string>(['SUPPORT', 'COMPLAINT_STATUS']);
+export const EXCLUDED_SLA_CATEGORIES = new Set<string>();
 
 export const DEFAULT_CATEGORY_SLA_HOURS: Record<string, number> = {
   BREAKDOWN: 2,
-  MEDICAL_EMERGENCY: 2,
   TYRE_ISSUE: 4,
   FUEL_DEF: 4,
   LOADING: 12,
@@ -68,7 +67,6 @@ export const DEFAULT_CATEGORY_SLA_HOURS: Record<string, number> = {
 
 /**
  * Computes elapsed aging and operational SLA target dynamically based on category SLA configurations.
- * Categories SUPPORT and COMPLAINT_STATUS are excluded from SLA requirements.
  */
 export function computeSlaInfo(
   createdAt: string,
@@ -91,7 +89,7 @@ export function computeSlaInfo(
 
   const elapsedText = resolvedAt ? `Resolved in ${formatHrsMins(elapsedMs)}` : `${formatHrsMins(elapsedMs)} ago`;
 
-  // Check if category is excluded (SUPPORT or COMPLAINT_STATUS)
+  // Check if category is excluded
   if (categoryOrPriority && EXCLUDED_SLA_CATEGORIES.has(categoryOrPriority)) {
     return {
       elapsedText,
