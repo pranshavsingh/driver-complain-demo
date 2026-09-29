@@ -242,12 +242,9 @@ export async function writeFleetFullReportXlsx(
   });
   masterSheet.columns = [
     { header: 'Vehicle Plate', key: 'plateNumber', width: 16 },
-    { header: 'Make & Model', key: 'makeModel', width: 22 },
-    { header: 'Year', key: 'year', width: 10 },
     { header: 'VIN / Chassis', key: 'vin', width: 20 },
     { header: 'Agreement', key: 'agreementStatus', width: 15 },
     { header: 'Assigned Driver', key: 'driverName', width: 22 },
-    { header: 'Driver Emp ID', key: 'driverEmployeeId', width: 14 },
     { header: 'Driver License', key: 'driverLicense', width: 18 },
     { header: 'Trip ID / Status', key: 'tripStatus', width: 20 },
     { header: 'Loading Arrival Time', key: 'reachedAt', width: 20, style: { numFmt: 'yyyy-mm-dd hh:mm' } },
@@ -264,7 +261,8 @@ export async function writeFleetFullReportXlsx(
     { header: 'Total Trip Cycle (min)', key: 'totalCycleMinutes', width: 20 },
     { header: 'Issues On Trip (Qty)', key: 'tripComplaintsCount', width: 18 },
     { header: 'Breakdown On Trip?', key: 'hasBreakdown', width: 18 },
-    { header: 'Trip Complaints / Incidents Detail', key: 'complaintsDetail', width: 50 },
+    { header: 'Complaint Date & Time', key: 'complaintDates', width: 25 },
+    { header: 'Trip Complaints / Incidents Detail', key: 'complaintsDetail', width: 30 },
     { header: 'Trip Incident Photo Proofs', key: 'complaintPhotos', width: 35 },
     { header: 'Trip Incident Voice Notes', key: 'complaintVoices', width: 35 },
     { header: 'Fuel Filled on Trip (L)', key: 'tripFuelQty', width: 18 },
@@ -274,7 +272,6 @@ export async function writeFleetFullReportXlsx(
     { header: 'Loaded Cargo Proof URL', key: 'completedPhotoUrl', width: 35 },
     { header: 'Destination Arrival Proof URL', key: 'tripCompletedPhotoUrl', width: 35 },
     { header: 'Unloaded Cargo Proof URL', key: 'unloadingPhotoUrl', width: 35 },
-    { header: 'Vehicle Maintenance Spend (₹)', key: 'vehicleTotalSpend', width: 25, style: { numFmt: '₹#,##0.00' } },
   ];
   masterSheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
   masterSheet.getRow(1).fill = {
@@ -288,17 +285,16 @@ export async function writeFleetFullReportXlsx(
     const v = item.vehicle;
     const d = item.driver;
     const u = item.driverUser;
-    const makeModel = [v.make, v.model].filter(Boolean).join(' ') || 'Standard Vehicle';
     const driverName = u ? `${u.firstName} ${u.lastName}`.trim() : 'Unassigned';
-    const driverEmpId = u?.employeeId ?? 'N/A';
     const driverLicense = d?.licenseNumber ?? 'N/A';
-
-    const vehicleTotalSpend = item.maintenanceRecords.reduce((s, m) => s + (m.cost ?? 0), 0);
 
     if (item.trips.length === 0) {
       // Vehicle with no trips logged yet - write a vehicle summary row
+      const complaintDates = item.complaints
+        .map((c) => new Date(c.createdAt).toISOString().replace('T', ' ').slice(0, 16))
+        .join(' | ');
       const complaintsSummary = item.complaints
-        .map((c) => `[${c.complaintNo}] ${c.category} - ${c.title} (${c.status})`)
+        .map((c) => c.complaintNo)
         .join(' | ');
       const hasBreakdown = item.complaints.some((c) => c.category === 'BREAKDOWN') ? 'YES' : 'NO';
       const complaintPhotos = item.complaints
@@ -313,12 +309,9 @@ export async function writeFleetFullReportXlsx(
 
       masterSheet.addRow({
         plateNumber: v.plateNumber,
-        makeModel,
-        year: v.year ?? '',
         vin: v.vin ?? '',
         agreementStatus: v.agreementStatus ?? '',
         driverName,
-        driverEmployeeId: driverEmpId,
         driverLicense,
         tripStatus: 'NO TRIPS RECORDED',
         reachedAt: '',
@@ -335,6 +328,7 @@ export async function writeFleetFullReportXlsx(
         totalCycleMinutes: '',
         tripComplaintsCount: item.complaints.length,
         hasBreakdown,
+        complaintDates: complaintDates || '',
         complaintsDetail: complaintsSummary || 'No issues reported',
         complaintPhotos,
         complaintVoices,
@@ -345,7 +339,6 @@ export async function writeFleetFullReportXlsx(
         completedPhotoUrl: '',
         tripCompletedPhotoUrl: '',
         unloadingPhotoUrl: '',
-        vehicleTotalSpend,
       }).commit();
     } else {
       // Iterate trips and correlate complaints and fuel
@@ -374,8 +367,11 @@ export async function writeFleetFullReportXlsx(
           (t.unloadingDurationMinutes ?? 0);
 
         const hasBreakdown = matchedComplaints.some((c) => c.category === 'BREAKDOWN') ? 'YES' : 'NO';
+        const complaintDates = matchedComplaints
+          .map((c) => new Date(c.createdAt).toISOString().replace('T', ' ').slice(0, 16))
+          .join(' | ');
         const complaintsDetail = matchedComplaints
-          .map((c) => `[${c.complaintNo}] ${c.category} - ${c.title} (${c.status}/${c.priority})${c.description ? `: ${c.description}` : ''}`)
+          .map((c) => c.complaintNo)
           .join(' | ');
 
         const complaintPhotos = matchedComplaints
@@ -397,12 +393,9 @@ export async function writeFleetFullReportXlsx(
 
         masterSheet.addRow({
           plateNumber: v.plateNumber,
-          makeModel,
-          year: v.year ?? '',
           vin: v.vin ?? '',
           agreementStatus: v.agreementStatus ?? '',
           driverName,
-          driverEmployeeId: driverEmpId,
           driverLicense,
           tripStatus: t.status,
           reachedAt: t.reachedAt ? new Date(t.reachedAt) : '',
@@ -419,6 +412,7 @@ export async function writeFleetFullReportXlsx(
           totalCycleMinutes: totalCycleMinutes || '',
           tripComplaintsCount: matchedComplaints.length,
           hasBreakdown,
+          complaintDates: complaintDates || '',
           complaintsDetail: complaintsDetail || 'None',
           complaintPhotos,
           complaintVoices,
@@ -429,7 +423,6 @@ export async function writeFleetFullReportXlsx(
           completedPhotoUrl: t.completedPhotoUrl ?? '',
           tripCompletedPhotoUrl: t.tripCompletedPhotoUrl ?? '',
           unloadingPhotoUrl: t.unloadingPhotoUrl ?? '',
-          vehicleTotalSpend,
         }).commit();
       }
     }
