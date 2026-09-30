@@ -56,7 +56,9 @@ export function DashboardPage(): ReactElement {
   const sparePartsResource = useApiResource('dashboard:spare-parts', () =>
     api.spareParts.list({ limit: 15 }),
   );
-  const usersResource = useApiResource('dashboard:users', () => api.users.list());
+  const usersResource = useApiResource('dashboard:users', () =>
+    isSuperAdmin(user) || user?.role === 'ADMIN' ? api.users.list() : Promise.resolve([]),
+  );
   const sitesResource = useApiResource('dashboard:sites', () => api.sites.list());
 
   const complaintsList: ComplaintPublic[] = complaintsResource.data?.data ?? [];

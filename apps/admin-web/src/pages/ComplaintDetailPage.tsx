@@ -1323,7 +1323,9 @@ export function ComplaintDetailPage(): ReactElement {
                 {(() => {
                   const isPending = complaint.assignmentStatus === 'PENDING';
                   const selectedUser = (adminsRes.data ?? []).find((a) => a.id === assignee);
-                  const isAssigningToSuperAdmin = user?.role === 'ADMIN' && selectedUser?.role === 'SUPER_ADMIN';
+                  const isAssigningToSuperAdmin =
+                    (user?.role === 'ADMIN' || user?.role === 'EXECUTIVE') &&
+                    selectedUser?.role === 'SUPER_ADMIN';
 
                   return (
                     <>

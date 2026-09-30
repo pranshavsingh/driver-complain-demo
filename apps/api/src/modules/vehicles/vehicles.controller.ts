@@ -6,7 +6,7 @@ import { sendSuccess } from '../../lib/http';
 
 /** Admin: list all vehicles with search/filter. */
 export async function list(req: Request, res: Response): Promise<void> {
-  const result = await vehiclesService.list(req.query as any);
+  const result = await vehiclesService.list(req.query as any, req.user);
   sendSuccess(res, result);
 }
 
@@ -21,7 +21,7 @@ export async function listMine(req: Request, res: Response): Promise<void> {
 export async function getById(req: Request, res: Response): Promise<void> {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   if (!id) throw ApiError.badRequest('Vehicle ID is required');
-  const result = await vehiclesService.getById(id);
+  const result = await vehiclesService.getById(id, req.user);
   sendSuccess(res, result);
 }
 
@@ -43,7 +43,7 @@ export async function update(req: Request, res: Response): Promise<void> {
   if (!parsed.success) {
     throw ApiError.badRequest(parsed.error.issues.map((i) => i.message).join('; '));
   }
-  const result = await vehiclesService.update(id, parsed.data);
+  const result = await vehiclesService.update(id, parsed.data, req.user);
   sendSuccess(res, result);
 }
 

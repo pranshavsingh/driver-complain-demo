@@ -658,7 +658,7 @@ export function SparePartsPage(): ReactElement {
             <span>Refresh</span>
           </button>
 
-          {activeTab === 'requests' ? (
+          {activeTab === 'requests' && currentUser?.role !== 'EXECUTIVE' ? (
             <button
               type="button"
               className="btn-primary"
@@ -669,19 +669,17 @@ export function SparePartsPage(): ReactElement {
               <Download size={15} />
               <span>{exporting ? 'Exporting…' : 'Export Excel'}</span>
             </button>
-          ) : (
-            isSuper && (
-              <button
-                type="button"
-                className="btn-primary"
-                onClick={handleOpenAddWarehouse}
-                style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-              >
-                <Plus size={16} />
-                <span>Add Warehouse</span>
-              </button>
-            )
-          )}
+          ) : activeTab === 'warehouses' && isSuper ? (
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={handleOpenAddWarehouse}
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+            >
+              <Plus size={16} />
+              <span>Add Warehouse</span>
+            </button>
+          ) : null}
         </div>
       </div>
 

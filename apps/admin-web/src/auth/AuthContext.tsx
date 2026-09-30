@@ -25,6 +25,11 @@ export function isSuperAdmin(user: UserPublic | null): boolean {
   return user !== null && user.role === 'SUPER_ADMIN';
 }
 
+/** Whether this user is an Executive (Site In-charge / Category Staff). */
+export function isExecutive(user: UserPublic | null): boolean {
+  return user !== null && user.role === 'EXECUTIVE';
+}
+
 type Status = 'loading' | 'authenticated' | 'anonymous';
 
 interface AuthContextValue {

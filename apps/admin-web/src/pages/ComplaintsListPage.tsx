@@ -28,6 +28,7 @@ import {
 } from '../components/Icons';
 import * as api from '../api/endpoints';
 import { EMPTY_FILTER, type ComplaintFilterInput } from '../api/endpoints';
+import { useAuth } from '../auth/AuthContext';
 import { useApiResource } from '../hooks/useApiResource';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { useCategorySlaMap } from '../hooks/useCategorySlaMap';
@@ -430,6 +431,7 @@ export function ComplaintsListPage(): ReactElement {
     api.complaints.list(filter, page, PAGE_SIZE),
   );
   const { slaMap } = useCategorySlaMap();
+  const { user } = useAuth();
 
   const { subscribe } = useRealtime();
   const [pending, setPending] = useState(0);
@@ -610,16 +612,18 @@ export function ComplaintsListPage(): ReactElement {
           <button type="button" className="btn-secondary" onClick={refresh} title="Reload complaints">
             <RotateCw size={15} style={{ marginRight: 6 }} /> Refresh
           </button>
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={handleExport}
-            disabled={exporting}
-            title="Export Excel report"
-          >
-            <Download size={15} style={{ marginRight: 6 }} />
-            {exporting ? 'Exporting…' : 'Export'}
-          </button>
+          {user?.role !== 'EXECUTIVE' && (
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={handleExport}
+              disabled={exporting}
+              title="Export Excel report"
+            >
+              <Download size={15} style={{ marginRight: 6 }} />
+              {exporting ? 'Exporting…' : 'Export'}
+            </button>
+          )}
         </div>
       </div>
 

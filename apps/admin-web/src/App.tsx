@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
-import { RequireAdmin } from './auth/RequireAdmin';
+import { RequireAdmin, RequireNonExecutive } from './auth/RequireAdmin';
 import { Layout } from './components/Layout';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
@@ -37,7 +37,14 @@ export function App(): ReactElement {
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/vehicles" element={<VehiclesPage />} />
         <Route path="/drivers" element={<Navigate to="/dashboard" replace />} />
-        <Route path="/users" element={<UsersPage />} />
+        <Route
+          path="/users"
+          element={
+            <RequireNonExecutive>
+              <UsersPage />
+            </RequireNonExecutive>
+          }
+        />
         <Route path="/complaints" element={<ComplaintsListPage />} />
         <Route path="/complaints/:id" element={<ComplaintDetailPage />} />
         <Route path="/loading" element={<LoadingTrackerPage />} />
@@ -46,9 +53,23 @@ export function App(): ReactElement {
         <Route path="/fuel-logs" element={<Navigate to="/maintenance?tab=fuel" replace />} />
         <Route path="/maintenance" element={<MaintenancePage />} />
         <Route path="/spare-parts" element={<SparePartsPage />} />
-        <Route path="/support" element={<SupportChatPage />} />
+        <Route
+          path="/support"
+          element={
+            <RequireNonExecutive>
+              <SupportChatPage />
+            </RequireNonExecutive>
+          }
+        />
         <Route path="/reports" element={<ReportsPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
+        <Route
+          path="/settings"
+          element={
+            <RequireNonExecutive>
+              <SettingsPage />
+            </RequireNonExecutive>
+          }
+        />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
       </Routes>

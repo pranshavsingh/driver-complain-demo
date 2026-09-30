@@ -28,6 +28,7 @@ import {
   PackageOpen,
 } from '../components/Icons';
 import * as api from '../api/endpoints';
+import { useAuth } from '../auth/AuthContext';
 import { useApiResource } from '../hooks/useApiResource';
 import { formatDateTime } from '../lib/format';
 import { ErrorBanner } from '../components/ErrorBanner';
@@ -207,6 +208,7 @@ export interface EnrichedTripJourney {
 }
 
 export function ReportsPage(): ReactElement {
+  const { user } = useAuth();
   // Master-Detail State
   const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -588,19 +590,21 @@ export function ReportsPage(): ReactElement {
           </div>
 
           <div className="header-actions" style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <button
-              type="button"
-              className="btn btn-primary export-btn"
-              onClick={() => void handleExportFleetXlsx()}
-              disabled={exportingFleet || fleetResource.loading || fleetList.length === 0}
-            >
-              {exportingFleet ? (
-                <RotateCw size={16} className="spin-icon" />
-              ) : (
-                <FileSpreadsheet size={16} />
-              )}
-              <span>{exportingFleet ? 'Generating Excel...' : 'Export All Vehicles Report (.xlsx)'}</span>
-            </button>
+            {user?.role !== 'EXECUTIVE' && (
+              <button
+                type="button"
+                className="btn btn-primary export-btn"
+                onClick={() => void handleExportFleetXlsx()}
+                disabled={exportingFleet || fleetResource.loading || fleetList.length === 0}
+              >
+                {exportingFleet ? (
+                  <RotateCw size={16} className="spin-icon" />
+                ) : (
+                  <FileSpreadsheet size={16} />
+                )}
+                <span>{exportingFleet ? 'Generating Excel...' : 'Export All Vehicles Report (.xlsx)'}</span>
+              </button>
+            )}
 
             <button
               type="button"
@@ -790,19 +794,21 @@ export function ReportsPage(): ReactElement {
         </div>
 
         <div className="header-actions">
-          <button
-            type="button"
-            className="btn btn-primary export-btn"
-            onClick={() => void handleExportXlsx()}
-            disabled={exporting || !reportData}
-          >
-            {exporting ? (
-              <RotateCw size={16} className="spin-icon" />
-            ) : (
-              <FileSpreadsheet size={16} />
-            )}
-            <span>{exporting ? 'Generating Excel...' : 'Export Full Report (.xlsx)'}</span>
-          </button>
+          {user?.role !== 'EXECUTIVE' && (
+            <button
+              type="button"
+              className="btn btn-primary export-btn"
+              onClick={() => void handleExportXlsx()}
+              disabled={exporting || !reportData}
+            >
+              {exporting ? (
+                <RotateCw size={16} className="spin-icon" />
+              ) : (
+                <FileSpreadsheet size={16} />
+              )}
+              <span>{exporting ? 'Generating Excel...' : 'Export Full Report (.xlsx)'}</span>
+            </button>
+          )}
         </div>
       </div>
 

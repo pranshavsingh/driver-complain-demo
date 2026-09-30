@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, type ReactElement } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { Truck, LayoutDashboard, Users, ClipboardList, LogOut, Bell, Menu, X, Trash2, CheckCircle2, Wrench, FileSpreadsheet, Package, Headphones, Settings } from './Icons';
 
-import { isAdmin, isSuperAdmin, useAuth } from '../auth/AuthContext';
+import { isAdmin, isSuperAdmin, isExecutive, useAuth } from '../auth/AuthContext';
 import { useRealtime } from '../realtime/RealtimeProvider';
 import { ThemeSwitcher } from './ThemeSwitcher';
 import { PageErrorBoundary } from './ErrorBoundary';
@@ -79,7 +79,7 @@ export function Layout(): ReactElement {
   const notifRef = useRef<HTMLDivElement>(null);
 
   const pendingApprovalsResource = useApiResource('users:pendingCount', () =>
-    isAdmin(user) ? api.users.pendingCount() : Promise.resolve({ pendingCount: 0 }),
+    isAdmin(user) && !isExecutive(user) ? api.users.pendingCount() : Promise.resolve({ pendingCount: 0 }),
   );
   const pendingCount = pendingApprovalsResource.data?.pendingCount ?? 0;
 
@@ -358,10 +358,10 @@ export function Layout(): ReactElement {
             className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
           >
             <Truck size={18} className="nav-icon" />
-            <span className="nav-label">Vehicle Entry</span>
+            <span className="nav-label">{isSuperAdmin(user) ? 'Vehicle Entry' : 'Vehicles'}</span>
           </NavLink>
 
-          {isAdmin(user) ? (
+          {isAdmin(user) && !isExecutive(user) ? (
             <NavLink
               to="/users"
               className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
@@ -463,13 +463,15 @@ export function Layout(): ReactElement {
             <span className="nav-label">Spare Parts</span>
           </NavLink>
 
-          <NavLink
-            to="/support"
-            className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
-          >
-            <Headphones size={18} className="nav-icon" />
-            <span className="nav-label">Support Chat</span>
-          </NavLink>
+          {!isExecutive(user) ? (
+            <NavLink
+              to="/support"
+              className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
+            >
+              <Headphones size={18} className="nav-icon" />
+              <span className="nav-label">Support Chat</span>
+            </NavLink>
+          ) : null}
 
           <NavLink
             to="/reports"
@@ -479,7 +481,7 @@ export function Layout(): ReactElement {
             <span className="nav-label">Vehicle Reports</span>
           </NavLink>
 
-          {isSuperAdmin(user) || isAdmin(user) ? (
+          {isSuperAdmin(user) || user?.role === 'ADMIN' ? (
             <NavLink
               to="/settings"
               className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}

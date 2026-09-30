@@ -21,6 +21,7 @@ import * as api from '../api/endpoints';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { Pagination } from '../components/Pagination';
 import { useApiResource } from '../hooks/useApiResource';
+import { useAuth, isSuperAdmin } from '../auth/AuthContext';
 
 const WHEEL_OPTIONS = [
   '4 Wheeler',
@@ -428,6 +429,8 @@ function InlineDriverSelect({
 }
 
 export function VehiclesPage(): ReactElement {
+  const { user } = useAuth();
+  const canAddVehicle = isSuperAdmin(user);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [wheelFilter, setWheelFilter] = useState('ALL');
@@ -459,7 +462,13 @@ export function VehiclesPage(): ReactElement {
   const driversResource = useApiResource('drivers:list', () => api.drivers.list());
   const usersResource = useApiResource('users:admins', () => api.users.list());
 
-  const vehiclesList: VehiclePublic[] = vehiclesResource.data ?? [];
+  const rawVehicles: VehiclePublic[] = vehiclesResource.data ?? [];
+  const vehiclesList: VehiclePublic[] = useMemo(() => {
+    if (user?.role === 'EXECUTIVE') {
+      return rawVehicles.filter((v) => v.siteInchargeId === user.id);
+    }
+    return rawVehicles;
+  }, [rawVehicles, user]);
   const driversList: DriverListItem[] = driversResource.data ?? [];
   const allUsers: UserPublic[] = usersResource.data ?? [];
   const adminMap = useMemo(() => {
@@ -754,14 +763,16 @@ export function VehiclesPage(): ReactElement {
             {vehiclesResource.loading ? 'Refreshing…' : 'Refresh'}
           </button>
 
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={handleOpenCreate}
-            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-          >
-            <Plus size={16} /> Add Vehicle Entry
-          </button>
+          {canAddVehicle && (
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={handleOpenCreate}
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+            >
+              <Plus size={16} /> Add Vehicle Entry
+            </button>
+          )}
         </div>
       </div>
 
@@ -957,7 +968,7 @@ export function VehiclesPage(): ReactElement {
                     <th>Status of Agreements</th>
                     <th>Assigned Driver</th>
                     <th>Make & Year</th>
-                    <th style={{ textAlign: 'right' }}>Actions</th>
+                    {isSuperAdmin(user) && <th style={{ textAlign: 'right' }}>Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -1100,46 +1111,48 @@ export function VehiclesPage(): ReactElement {
                           {!vehicle.make && !vehicle.year && <span style={{ color: 'var(--muted)' }}>—</span>}
                         </div>
                       </td>
-                      <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
-                          <button
-                            type="button"
-                            onClick={() => handleOpenEdit(vehicle)}
-                            title="Edit Vehicle Details"
-                            style={{
-                              padding: '6px 10px',
-                              borderRadius: 6,
-                              border: '1px solid var(--border)',
-                              background: 'var(--bg)',
-                              color: 'var(--accent)',
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                            }}
-                          >
-                            <Edit2 size={14} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteVehicle(vehicle)}
-                            title="Delete Vehicle"
-                            style={{
-                              padding: '6px 10px',
-                              borderRadius: 6,
-                              border: '1px solid var(--danger-border)',
-                              background: 'var(--danger-bg)',
-                              color: 'var(--danger-text)',
-                              cursor: 'pointer',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                            }}
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </td>
+                      {isSuperAdmin(user) && (
+                        <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEdit(vehicle)}
+                              title="Edit Vehicle Details"
+                              style={{
+                                padding: '6px 10px',
+                                borderRadius: 6,
+                                border: '1px solid var(--border)',
+                                background: 'var(--bg)',
+                                color: 'var(--accent)',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                              }}
+                            >
+                              <Edit2 size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteVehicle(vehicle)}
+                              title="Delete Vehicle"
+                              style={{
+                                padding: '6px 10px',
+                                borderRadius: 6,
+                                border: '1px solid var(--danger-border)',
+                                background: 'var(--danger-bg)',
+                                color: 'var(--danger-text)',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                              }}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>

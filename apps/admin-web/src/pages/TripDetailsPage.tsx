@@ -21,6 +21,7 @@ import {
 import * as api from '../api/endpoints';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { Pagination } from '../components/Pagination';
+import { useAuth } from '../auth/AuthContext';
 import { useApiResource } from '../hooks/useApiResource';
 import { formatDateTime } from '../lib/format';
 import { useRealtime } from '../realtime/RealtimeProvider';
@@ -71,6 +72,7 @@ function formatHms(startISO?: string | null, endISO?: string | null, fallbackFor
 }
 
 export function TripDetailsPage(): ReactElement {
+  const { user } = useAuth();
   const [selectedPhoto, setSelectedPhoto] = useState<{ url: string; title: string; address?: string | null } | null>(null);
   const [activeTab, setActiveTab] = useState<'matrix' | 'logs'>('matrix');
 
@@ -279,10 +281,12 @@ export function TripDetailsPage(): ReactElement {
         </div>
 
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <button type="button" className="btn-secondary" onClick={handleExportCsv}>
-            <Download size={14} style={{ marginRight: 6 }} />
-            Export CSV Report
-          </button>
+          {user?.role !== 'EXECUTIVE' && (
+            <button type="button" className="btn-secondary" onClick={handleExportCsv}>
+              <Download size={14} style={{ marginRight: 6 }} />
+              Export CSV Report
+            </button>
+          )}
           <button
             type="button"
             className="btn-primary"

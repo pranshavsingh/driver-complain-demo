@@ -1,6 +1,7 @@
 import { useState, useMemo, type ReactElement } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import * as api from '../api/endpoints';
+import { useAuth } from '../auth/AuthContext';
 import { useApiResource } from '../hooks/useApiResource';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { Pagination } from '../components/Pagination';
@@ -19,6 +20,7 @@ import {
 } from '../components/Icons';
 
 export function MaintenancePage(): ReactElement {
+  const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = searchParams.get('tab') === 'fuel' ? 'fuel' : 'replacements';
 
@@ -295,15 +297,17 @@ export function MaintenancePage(): ReactElement {
             {isLoading ? 'Refreshing…' : 'Refresh'}
           </button>
 
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={handleExportCsv}
-            disabled={isExporting}
-          >
-            <Download size={15} style={{ marginRight: 6 }} />
-            {isExporting ? 'Exporting…' : 'Export CSV'}
-          </button>
+          {user?.role !== 'EXECUTIVE' && (
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={handleExportCsv}
+              disabled={isExporting}
+            >
+              <Download size={15} style={{ marginRight: 6 }} />
+              {isExporting ? 'Exporting…' : 'Export CSV'}
+            </button>
+          )}
         </div>
       </div>
 

@@ -6,7 +6,10 @@ import { Pagination } from '../components/Pagination';
 import { formatDateTime } from '../lib/format';
 import { Fuel, Download, RotateCw, Search, X, ExternalLink, ImageIcon, ClipboardList } from '../components/Icons';
 
+import { useAuth } from '../auth/AuthContext';
+
 export function FuelLogsPage(): ReactElement {
+  const { user } = useAuth();
   const [typeFilter, setTypeFilter] = useState<string>('');
   const [search, setSearch] = useState<string>('');
   const [vehicleId, setVehicleId] = useState<string>('');
@@ -111,10 +114,12 @@ export function FuelLogsPage(): ReactElement {
             {logsRes.loading || statsRes.loading ? 'Refreshing…' : 'Refresh Data'}
           </button>
 
-          <button type="button" className="btn-primary" onClick={handleExportCsv}>
-            <Download size={15} style={{ marginRight: 6 }} />
-            Export CSV
-          </button>
+          {user?.role !== 'EXECUTIVE' && (
+            <button type="button" className="btn-primary" onClick={handleExportCsv}>
+              <Download size={15} style={{ marginRight: 6 }} />
+              Export CSV
+            </button>
+          )}
         </div>
       </div>
 

@@ -14,8 +14,16 @@ export interface VehicleFilterQuery {
 }
 
 /** All vehicles with optional search/filter — feeds admin vehicle management & dropdowns. */
-export async function list(query?: VehicleFilterQuery): Promise<VehiclePublic[]> {
+export async function list(
+  query?: VehicleFilterQuery,
+  actor?: { id: string; role: string },
+): Promise<VehiclePublic[]> {
   const where: any = {};
+
+  // For EXECUTIVE role, only return vehicles assigned to them
+  if (actor?.role === 'EXECUTIVE') {
+    where.siteInchargeId = actor.id;
+  }
 
   if (query?.search?.trim()) {
     const q = query.search.trim();
@@ -83,7 +91,7 @@ export async function listForUser(userId: string): Promise<VehiclePublic[]> {
 }
 
 /** Get single vehicle by ID. */
-export async function getById(id: string): Promise<VehiclePublic> {
+export async function getById(id: string, actor?: { id: string; role: string }): Promise<VehiclePublic> {
   const vehicle = await prisma.vehicle.findUnique({
     where: { id },
     include: {
@@ -96,6 +104,11 @@ export async function getById(id: string): Promise<VehiclePublic> {
     },
   });
   if (!vehicle) throw ApiError.notFound('Vehicle not found');
+
+  if (actor?.role === 'EXECUTIVE' && vehicle.siteInchargeId !== actor.id) {
+    throw ApiError.forbidden('You are not authorized to view this vehicle');
+  }
+
   return toVehiclePublic(vehicle);
 }
 
@@ -225,7 +238,11 @@ export async function create(input: CreateVehicle): Promise<VehiclePublic> {
 }
 
 /** Update an existing vehicle entry. */
-export async function update(id: string, input: UpdateVehicle): Promise<VehiclePublic> {
+export async function update(
+  id: string,
+  input: UpdateVehicle,
+  actor?: { id: string; role: string },
+): Promise<VehiclePublic> {
   const existing = await prisma.vehicle.findUnique({
     where: { id },
     include: {
@@ -237,6 +254,10 @@ export async function update(id: string, input: UpdateVehicle): Promise<VehicleP
     },
   });
   if (!existing) throw ApiError.notFound('Vehicle not found');
+
+  if (actor?.role === 'EXECUTIVE' && existing.siteInchargeId !== actor.id) {
+    throw ApiError.forbidden('You are not authorized to update this vehicle');
+  }
 
   // 1. Check plateNumber uniqueness
   if (input.plateNumber) {

@@ -42,3 +42,20 @@ export function RequireSuperAdmin({ children }: { children: ReactNode }): ReactE
 
   return <>{children}</>;
 }
+
+/**
+ * Route guard restricted to ADMIN and SUPER_ADMIN users (blocks EXECUTIVE users from /settings & /support).
+ */
+export function RequireNonExecutive({ children }: { children: ReactNode }): ReactElement {
+  const { status, user } = useAuth();
+
+  if (status === 'loading') {
+    return <div className="page-message">Restoring your session…</div>;
+  }
+
+  if (status !== 'authenticated' || !user || user.role === 'EXECUTIVE') {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return <>{children}</>;
+}

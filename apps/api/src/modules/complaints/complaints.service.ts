@@ -200,7 +200,7 @@ export interface EvidenceFile {
 /** Optional evidence for a new complaint: at most one file per kind. */
 export type ComplaintEvidence = Partial<Record<AttachmentKind, EvidenceFile>>;
 
-const ADMIN_ROLES: Role[] = ['ADMIN', 'SUPER_ADMIN'];
+const ADMIN_ROLES: Role[] = ['EXECUTIVE', 'ADMIN', 'SUPER_ADMIN'];
 
 /**
  * Photos go to Cloudinary's image pipeline; voice notes and videos both go to its video
@@ -622,7 +622,11 @@ function buildWhere(
       { assignedTo: { createdByAdminId: actor.id } },
     ];
   } else if (actor.role === 'EXECUTIVE') {
-    where.assignedToId = actor.id;
+    where.OR = [
+      { assignedToId: actor.id },
+      { vehicle: { siteInchargeId: actor.id } },
+      { driver: { vehicles: { some: { siteInchargeId: actor.id } } } },
+    ];
   } else if (query.driverId) {
     where.driverId = query.driverId;
   }
@@ -809,8 +813,22 @@ export async function getOne(actor: Actor, id: string): Promise<ComplaintDetail>
     throw ApiError.forbidden('You can only view your own complaints');
   }
 
-  if ((actor.role === 'ADMIN' || actor.role === 'EXECUTIVE') && complaint.assignedToId !== actor.id) {
-    throw ApiError.forbidden('You can only view complaints assigned to you');
+  if (actor.role === 'EXECUTIVE') {
+    const isAssigned = complaint.assignedToId === actor.id;
+    const isVehicleIncharge = complaint.vehicle?.siteInchargeId === actor.id;
+    const isDriverVehicleIncharge = complaint.driver?.vehicles?.some(
+      (v: any) => v.siteInchargeId === actor.id,
+    );
+    if (!isAssigned && !isVehicleIncharge && !isDriverVehicleIncharge) {
+      throw ApiError.forbidden('You can only view complaints assigned to you or your vehicles');
+    }
+  } else if (actor.role === 'ADMIN') {
+    const isAssigned = complaint.assignedToId === actor.id;
+    const isVehicleIncharge = complaint.vehicle?.siteInchargeId === actor.id;
+    const isSubordinate = complaint.assignedTo?.createdByAdminId === actor.id;
+    if (!isAssigned && !isVehicleIncharge && !isSubordinate) {
+      throw ApiError.forbidden('You can only view complaints assigned to you or your site');
+    }
   }
 
   return toComplaintDetail(complaint);
@@ -826,12 +844,30 @@ export async function updateStatus(
 
   const existing = await prisma.complaint.findUnique({
     where: { id },
-    include: { driver: true },
+    include: { driver: { include: { vehicles: true } }, vehicle: true },
   });
   if (!existing) throw ApiError.notFound('Complaint not found');
 
-  if ((actorObj.role === 'ADMIN' || actorObj.role === 'EXECUTIVE') && existing.assignedToId !== actorObj.id) {
-    throw ApiError.forbidden('You can only update complaints assigned to you');
+  if (actorObj.role === 'EXECUTIVE') {
+    const isAssigned = existing.assignedToId === actorObj.id;
+    const isVehicleIncharge = existing.vehicle?.siteInchargeId === actorObj.id;
+    const isDriverVehicleIncharge = existing.driver?.vehicles?.some(
+      (v) => v.siteInchargeId === actorObj.id,
+    );
+    if (!isAssigned && !isVehicleIncharge && !isDriverVehicleIncharge) {
+      throw ApiError.forbidden('You can only update complaints assigned to you or your vehicles');
+    }
+  } else if (actorObj.role === 'ADMIN') {
+    const isAssigned = existing.assignedToId === actorObj.id;
+    const isVehicleIncharge = existing.vehicle?.siteInchargeId === actorObj.id;
+    if (!isAssigned && !isVehicleIncharge) {
+      const assignedToUser = existing.assignedToId
+        ? await prisma.user.findUnique({ where: { id: existing.assignedToId }, select: { createdByAdminId: true } })
+        : null;
+      if (assignedToUser?.createdByAdminId !== actorObj.id) {
+        throw ApiError.forbidden('You can only update complaints assigned to you or your site');
+      }
+    }
   }
 
   const from = existing.status;
@@ -931,8 +967,10 @@ export async function assign(
     throw ApiError.badRequest('Assignee must be an active admin');
   }
 
-  // Admin assigning to SuperAdmin requires SuperAdmin acceptance
-  const isRequestingSuperAdmin = actorUser.role === 'ADMIN' && target.role === 'SUPER_ADMIN';
+  // Admin or Executive assigning to SuperAdmin requires SuperAdmin acceptance
+  const isRequestingSuperAdmin =
+    (actorUser.role === 'ADMIN' || actorUser.role === 'EXECUTIVE') &&
+    target.role === 'SUPER_ADMIN';
 
   const updated = await prisma.$transaction(async (tx) => {
     const complaint = await tx.complaint.update({
@@ -1249,18 +1287,14 @@ export async function translateComplaintText(
 }
 
 export async function getUnreadCount(actor: Actor): Promise<{ unreadCount: number }> {
-  const where: Prisma.ComplaintWhereInput = {};
-
+  let actorDriverId: string | undefined;
   if (actor.role === 'DRIVER') {
     const driver = await prisma.driver.findUnique({ where: { userId: actor.id } });
     if (!driver) return { unreadCount: 0 };
-    where.driverId = driver.id;
-    where.status = 'NEW';
-  } else {
-    // For Admins / SuperAdmins / Executives
-    where.status = 'NEW';
+    actorDriverId = driver.id;
   }
 
+  const where = buildWhere(actor, actorDriverId, { status: 'NEW' });
   const unreadCount = await prisma.complaint.count({ where });
   return { unreadCount };
 }
