@@ -36,7 +36,7 @@ complaintsRouter.get('/', validate(ComplaintListQuerySchema, 'query'), complaint
 // MUST precede '/:id' — otherwise "export" is captured as a complaint id.
 complaintsRouter.get(
   '/export',
-  requireRole('ADMIN', 'SUPER_ADMIN'),
+  requireRole('ADMIN', 'SUPER_ADMIN', 'EXECUTIVE'),
   validate(ComplaintExportQuerySchema, 'query'),
   complaintsController.exportXlsx,
 );
@@ -47,14 +47,14 @@ complaintsRouter.get('/:id', validateUuidParam('id'), complaintsController.getOn
 complaintsRouter.patch(
   '/:id/status',
   validateUuidParam('id'),
-  requireRole('ADMIN', 'SUPER_ADMIN'),
+  requireRole('ADMIN', 'SUPER_ADMIN', 'EXECUTIVE'),
   validate(UpdateComplaintStatusSchema),
   complaintsController.updateStatus,
 );
 complaintsRouter.post(
   '/:id/assign',
   validateUuidParam('id'),
-  requireRole('ADMIN', 'SUPER_ADMIN'),
+  requireRole('ADMIN', 'SUPER_ADMIN', 'EXECUTIVE'),
   validate(AssignComplaintSchema),
   complaintsController.assign,
 );

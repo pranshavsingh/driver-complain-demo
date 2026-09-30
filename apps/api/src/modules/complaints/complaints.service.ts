@@ -305,7 +305,7 @@ export async function create(
     where: {
       driverId: driver.id,
       category: categoryToUse,
-      status: { notIn: ['RESOLVED', 'REJECTED'] },
+      status: { notIn: ['RESOLVED', 'CLOSED'] },
     },
     orderBy: { createdAt: 'desc' },
   });
@@ -409,11 +409,11 @@ export async function create(
           await tx.notification.createMany({
             data: notifyUserIds.map((id) => ({
               userId: id,
-              type: 'COMPLAINT_UPDATED' as const,
+              type: 'COMMENT_ADDED' as const,
               title: `Update on ${existingOpenComplaint.complaintNo}`,
               body: `Driver added update: ${finalDescription.slice(0, 100)}`,
               complaintId: existingOpenComplaint.id,
-              data: { complaintId: existingOpenComplaint.id, type: 'COMPLAINT_UPDATED' },
+              data: { complaintId: existingOpenComplaint.id, type: 'COMMENT_ADDED' },
             })),
           });
         }
@@ -435,23 +435,25 @@ export async function create(
 
     dispatchComplaintEvent({
       userIds: notifyUserIds,
-      event: REALTIME_EVENTS.complaintUpdated,
+      event: REALTIME_EVENTS.complaintStatusChanged,
       payload: {
         complaintId: updatedComplaint.id,
         complaintNo: updatedComplaint.complaintNo,
+        title: updatedComplaint.title,
         status: updatedComplaint.status,
         at: new Date().toISOString(),
       },
       push: {
         title: `Update on ${updatedComplaint.complaintNo}`,
         body: `Driver added update: ${finalDescription.slice(0, 100)}`,
-        data: { complaintId: updatedComplaint.id, type: 'COMPLAINT_UPDATED' },
+        data: { complaintId: updatedComplaint.id, type: 'COMMENT_ADDED' },
       },
     });
 
-    emitToRoles(['SUPER_ADMIN', 'ADMIN', 'EXECUTIVE'], REALTIME_EVENTS.complaintUpdated, {
+    emitToRoles(['SUPER_ADMIN', 'ADMIN', 'EXECUTIVE'], REALTIME_EVENTS.complaintStatusChanged, {
       complaintId: updatedComplaint.id,
       complaintNo: updatedComplaint.complaintNo,
+      title: updatedComplaint.title,
       status: updatedComplaint.status,
       at: new Date().toISOString(),
     });

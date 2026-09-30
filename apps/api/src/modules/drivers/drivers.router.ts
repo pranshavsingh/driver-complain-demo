@@ -5,4 +5,4 @@ import * as driversController from './drivers.controller';
 
 export const driversRouter = Router();
 
-driversRouter.get('/', authenticate, requireRole('ADMIN', 'SUPER_ADMIN'), driversController.list);
+driversRouter.get('/', authenticate, requireRole('ADMIN', 'SUPER_ADMIN', 'EXECUTIVE'), driversController.list);

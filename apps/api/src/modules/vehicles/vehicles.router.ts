@@ -13,8 +13,8 @@ vehiclesRouter.use(authenticate);
 vehiclesRouter.get('/mine', vehiclesController.listMine);
 
 // Admin: every vehicle (filter dropdown & management table).
-vehiclesRouter.get('/', requireRole('ADMIN', 'SUPER_ADMIN'), vehiclesController.list);
-vehiclesRouter.post('/', requireRole('ADMIN', 'SUPER_ADMIN'), vehiclesController.create);
-vehiclesRouter.get('/:id', validateUuidParam('id'), requireRole('ADMIN', 'SUPER_ADMIN'), vehiclesController.getById);
-vehiclesRouter.patch('/:id', validateUuidParam('id'), requireRole('ADMIN', 'SUPER_ADMIN'), vehiclesController.update);
-vehiclesRouter.delete('/:id', validateUuidParam('id'), requireRole('ADMIN', 'SUPER_ADMIN'), vehiclesController.remove);
+vehiclesRouter.get('/', requireRole('ADMIN', 'SUPER_ADMIN', 'EXECUTIVE'), vehiclesController.list);
+vehiclesRouter.post('/', requireRole('ADMIN', 'SUPER_ADMIN', 'EXECUTIVE'), vehiclesController.create);
+vehiclesRouter.get('/:id', validateUuidParam('id'), requireRole('ADMIN', 'SUPER_ADMIN', 'EXECUTIVE'), vehiclesController.getById);
+vehiclesRouter.patch('/:id', validateUuidParam('id'), requireRole('ADMIN', 'SUPER_ADMIN', 'EXECUTIVE'), vehiclesController.update);
+vehiclesRouter.delete('/:id', validateUuidParam('id'), requireRole('ADMIN', 'SUPER_ADMIN', 'EXECUTIVE'), vehiclesController.remove);

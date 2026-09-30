@@ -46,8 +46,8 @@ loadingRouter.post('/complete-unloading', singlePhotoUpload, handleCompleteUnloa
 loadingRouter.get('/active', handleGetActiveLoading);
 
 // Admin & Operations dashboard listing endpoint
-loadingRouter.get('/monthly-summary', requireRole('ADMIN', 'SUPER_ADMIN'), handleGetMonthlyTripSummaries);
-loadingRouter.get('/export-csv', requireRole('ADMIN', 'SUPER_ADMIN'), handleExportTripsCsv);
-loadingRouter.get('/trips/export', requireRole('ADMIN', 'SUPER_ADMIN'), handleExportTrips);
-loadingRouter.get('/trips', requireRole('ADMIN', 'SUPER_ADMIN'), handleListLoadingRecords);
-loadingRouter.get('/', requireRole('ADMIN', 'SUPER_ADMIN'), handleListLoadingRecords);
+loadingRouter.get('/monthly-summary', requireRole('ADMIN', 'SUPER_ADMIN', 'EXECUTIVE'), handleGetMonthlyTripSummaries);
+loadingRouter.get('/export-csv', requireRole('ADMIN', 'SUPER_ADMIN', 'EXECUTIVE'), handleExportTripsCsv);
+loadingRouter.get('/trips/export', requireRole('ADMIN', 'SUPER_ADMIN', 'EXECUTIVE'), handleExportTrips);
+loadingRouter.get('/trips', requireRole('ADMIN', 'SUPER_ADMIN', 'EXECUTIVE'), handleListLoadingRecords);
+loadingRouter.get('/', requireRole('ADMIN', 'SUPER_ADMIN', 'EXECUTIVE'), handleListLoadingRecords);

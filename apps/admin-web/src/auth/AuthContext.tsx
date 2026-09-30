@@ -13,7 +13,7 @@ import * as api from '../api/endpoints';
 import { getRefreshToken, onSessionEnded, setTokens } from '../api/tokens';
 import { refreshSession } from '../api/client';
 
-const ADMIN_ROLES: Role[] = ['ADMIN', 'SUPER_ADMIN'];
+const ADMIN_ROLES: Role[] = ['EXECUTIVE', 'ADMIN', 'SUPER_ADMIN'];
 
 /** Whether this user may use the dashboard at all. */
 export function isAdmin(user: UserPublic | null): boolean {
@@ -91,7 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactElemen
       // The credentials are valid, but this dashboard is not theirs. Drop the tokens straight
       // away instead of leaving a live driver session sitting in an admin browser.
       await api.auth.logout();
-      throw new Error('This dashboard is for administrators. Drivers use the mobile app.');
+      throw new Error('This dashboard is for staff, executives, and administrators. Drivers use the mobile app.');
     }
 
     setUser(result.user);
