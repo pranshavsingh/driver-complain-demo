@@ -55,6 +55,7 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
 //    paths like '@expo+vector-icons' to become '@expo vector-icons' and return 404.
 //    Re-encoding '+' back to '%2B' in rewriteRequestUrl and enhanceMiddleware restores the correct folder path on disk.
 const defaultRewriteRequestUrl = config.server?.rewriteRequestUrl;
+const defaultEnhanceMiddleware = config.server?.enhanceMiddleware;
 config.server = {
   ...config.server,
   rewriteRequestUrl: (url) => {
@@ -65,8 +66,7 @@ config.server = {
     return rewritten;
   },
   enhanceMiddleware: (middleware, server) => {
-    const defaultEnhance = config.server?.enhanceMiddleware;
-    const enhanced = defaultEnhance ? defaultEnhance(middleware, server) : middleware;
+    const enhanced = defaultEnhanceMiddleware ? defaultEnhanceMiddleware(middleware, server) : middleware;
     return (req, res, next) => {
       if (req.url && req.url.includes('unstable_path=')) {
         req.url = req.url.replace(/\+/g, '%2B');
