@@ -3,7 +3,7 @@ import { prisma } from '../../lib/prisma';
 import { toVehiclePublic } from '../../lib/serializers';
 import { ApiError } from '../../errors/api-error';
 import { pushToUsers } from '../../lib/fcm';
-import { emitToUsers } from '../../realtime/socket';
+import { emitToUsers, emitToAll } from '../../realtime/socket';
 import { logger } from '../../lib/logger';
 
 export interface VehicleFilterQuery {
@@ -234,7 +234,9 @@ export async function create(input: CreateVehicle): Promise<VehiclePublic> {
     })();
   }
 
-  return toVehiclePublic(vehicle);
+  const publicVehicle = toVehiclePublic(vehicle);
+  emitToAll('vehicle:created', { vehicle: publicVehicle });
+  return publicVehicle;
 }
 
 /** Update an existing vehicle entry. */
@@ -439,7 +441,19 @@ export async function update(
     }
   }
 
-  return toVehiclePublic(vehicle);
+  const publicVehicle = toVehiclePublic(vehicle);
+  emitToAll('vehicle:updated', { vehicle: publicVehicle });
+  if (hasDriverIdInInput && (newDriverId || null) !== (existing.driverId || null)) {
+    emitToAll('vehicle:assigned', {
+      vehicleId: vehicle.id,
+      plateNumber: vehicle.plateNumber,
+      driverId: vehicle.driverId,
+      previousDriverId: existing.driverId,
+      vehicle: publicVehicle,
+    });
+  }
+
+  return publicVehicle;
 }
 
 /** Delete a vehicle entry. */
@@ -448,5 +462,6 @@ export async function remove(id: string): Promise<void> {
   if (!existing) throw ApiError.notFound('Vehicle not found');
 
   await prisma.vehicle.delete({ where: { id } });
+  emitToAll('vehicle:deleted', { id, plateNumber: existing.plateNumber });
 }
 

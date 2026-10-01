@@ -8,6 +8,7 @@ import {
   LoginResponseSchema,
   UserPublicSchema,
   VehiclePublicSchema,
+  type ComplaintCategory,
   type AdminSummary,
   type ComplaintDetail,
   type ComplaintPublic,
@@ -171,6 +172,13 @@ export const users = {
     request(UserPublicSchema, `/users/${id}`, { method: 'PATCH', body: input }),
   remove: (id: string): Promise<void> =>
     requestNoContent(`/users/${id}`, { method: 'DELETE' }),
+  getCategoryAssignments: (id: string): Promise<{ adminId: string; categories: ComplaintCategory[] }> =>
+    request(z.object({ adminId: z.string(), categories: z.array(z.string() as any) }), `/users/${id}/categories`),
+  setCategoryAssignments: (id: string, categories: ComplaintCategory[]): Promise<{ adminId: string; categories: ComplaintCategory[] }> =>
+    request(z.object({ adminId: z.string(), categories: z.array(z.string() as any) }), `/users/${id}/categories`, {
+      method: 'POST',
+      body: { categories },
+    }),
 };
 
 export const drivers = {

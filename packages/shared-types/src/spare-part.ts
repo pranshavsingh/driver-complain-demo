@@ -15,12 +15,21 @@ export const CreateSparePartRequestSchema = z.object({
 
 export type CreateSparePartRequestInput = z.infer<typeof CreateSparePartRequestSchema>;
 
+export const SparePartProductItemSchema = z.object({
+  name: z.string().trim().min(1, 'Product name is required').max(200),
+  quantity: z.coerce.number().int().min(1, 'Quantity must be at least 1').default(1),
+  serialNumber: z.string().trim().max(100).optional().default(''),
+});
+
+export type SparePartProductItem = z.infer<typeof SparePartProductItemSchema>;
+
 export const ProposeIssueSparePartSchema = z.object({
   warehouseId: z.string().uuid('Warehouse is required'),
   type: SparePartTypeSchema.default('NEW'),
-  issuedPartName: z.string().trim().min(1, 'Issued part name is required').max(100),
-  issuedPartNo: z.string().trim().min(1, 'Issued part / serial number is required').max(100),
-  issuedQty: z.coerce.number().int().min(1).default(1),
+  issuedPartName: z.string().trim().max(500).optional(),
+  issuedPartNo: z.string().trim().max(500).optional(),
+  issuedQty: z.coerce.number().int().min(1).default(1).optional(),
+  items: z.array(SparePartProductItemSchema).optional(),
   returnedPartNo: z.string().trim().max(100).optional(),
   returnedPartCondition: z.string().trim().max(100).optional(),
   adminNotes: z.string().trim().max(1000).optional(),
@@ -34,9 +43,10 @@ export type IssueSparePartInput = z.infer<typeof IssueSparePartSchema>;
 export const ApproveSparePartSchema = z.object({
   warehouseId: z.string().uuid().optional(),
   type: SparePartTypeSchema.optional(),
-  issuedPartName: z.string().trim().max(100).optional(),
-  issuedPartNo: z.string().trim().max(100).optional(),
+  issuedPartName: z.string().trim().max(500).optional(),
+  issuedPartNo: z.string().trim().max(500).optional(),
   issuedQty: z.coerce.number().int().min(1).optional(),
+  items: z.array(SparePartProductItemSchema).optional(),
   returnedPartNo: z.string().trim().max(100).optional(),
   returnedPartCondition: z.string().trim().max(100).optional(),
   adminNotes: z.string().trim().max(1000).optional(),

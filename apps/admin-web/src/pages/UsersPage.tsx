@@ -1,5 +1,5 @@
 import { useState, useEffect, type ReactElement } from 'react';
-import type { UserPublic, Role, ComplaintCategory } from '@driver-complaint/shared-types';
+import type { UserPublic, Role, ComplaintCategory, ApprovalStatus } from '@driver-complaint/shared-types';
 import {
   Users,
   RotateCw,
@@ -48,6 +48,30 @@ export function UsersPage(): ReactElement {
   const [searchQuery, setSearchQuery] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingUser, setEditingUser] = useState<UserPublic | null>(null);
+  const [editPin, setEditPin] = useState('');
+  const [adminAssignedCategories, setAdminAssignedCategories] = useState<ComplaintCategory[]>([]);
+
+  useEffect(() => {
+    if (editingUser && (editingUser.role === 'ADMIN' || editingUser.role === 'SUPER_ADMIN')) {
+      api.users.getCategoryAssignments(editingUser.id)
+        .then((res) => {
+          const cats = (res.categories || []) as ComplaintCategory[];
+          if (editingUser.category && !cats.includes(editingUser.category as ComplaintCategory)) {
+            cats.push(editingUser.category as ComplaintCategory);
+          }
+          setAdminAssignedCategories(cats);
+        })
+        .catch(() => {
+          if (editingUser.category) {
+            setAdminAssignedCategories([editingUser.category as ComplaintCategory]);
+          } else {
+            setAdminAssignedCategories([]);
+          }
+        });
+    } else {
+      setAdminAssignedCategories([]);
+    }
+  }, [editingUser]);
 
   // Form State for User Creation
   const [employeeId, setEmployeeId] = useState('');
@@ -381,9 +405,24 @@ export function UsersPage(): ReactElement {
     }
   };
 
+  const handleOpenEdit = (targetUser: UserPublic): void => {
+    setEditingUser({ ...targetUser });
+    setEditPin('');
+  };
+
   const handleSaveEdit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
     if (!editingUser) return;
+
+    if (!editingUser.employeeId?.trim()) {
+      alert('Employee ID is required.');
+      return;
+    }
+
+    if (!editingUser.firstName?.trim() || !editingUser.lastName?.trim()) {
+      alert('Please fill in both First and Last Name.');
+      return;
+    }
 
     if (editingUser.email?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(editingUser.email.trim())) {
       alert('Please enter a valid email address.');
@@ -391,22 +430,46 @@ export function UsersPage(): ReactElement {
     }
 
     if (editingUser.phone?.trim() && !/^[+0-9\s-]{7,20}$/.test(editingUser.phone.trim())) {
-      alert('Please enter a valid phone number.');
+      alert('Please enter a valid phone number (min 7 digits).');
+      return;
+    }
+
+    if (editPin.trim()) {
+      if (!/^\d{4,8}$/.test(editPin.trim())) {
+        alert('PIN must be 4 to 8 digits (numeric only).');
+        return;
+      }
+    }
+
+    if (editingUser.role === 'DRIVER' && !editingUser.licenseNumber?.trim()) {
+      alert('Driving License (DL) number is required for driver accounts.');
       return;
     }
 
     try {
       setSubmitting(true);
       await api.users.update(editingUser.id, {
-        firstName: editingUser.firstName,
-        lastName: editingUser.lastName,
+        employeeId: editingUser.employeeId.trim().toUpperCase(),
+        ...(editPin.trim() ? { pin: editPin.trim() } : {}),
+        role: editingUser.role,
+        approvalStatus: editingUser.approvalStatus,
+        isActive: editingUser.isActive,
+        firstName: editingUser.firstName.trim(),
+        lastName: editingUser.lastName.trim(),
         email: editingUser.email?.trim() || null,
         phone: editingUser.phone?.trim() || null,
-        category: editingUser.category ?? null,
+        licenseNumber: editingUser.licenseNumber?.trim() || null,
+        category: adminAssignedCategories[0] ?? editingUser.category ?? null,
         site: editingUser.site?.trim() || null,
         createdByAdminId: editingUser.createdByAdminId ?? null,
       });
+
+      if (editingUser.role === 'ADMIN' || editingUser.role === 'SUPER_ADMIN') {
+        await api.users.setCategoryAssignments(editingUser.id, adminAssignedCategories);
+      }
+
       setEditingUser(null);
+      setEditPin('');
       void usersResource.reload();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -1065,7 +1128,7 @@ export function UsersPage(): ReactElement {
                               alignItems: 'center',
                               justifyContent: 'center',
                             }}
-                            onClick={() => setEditingUser(u)}
+                            onClick={() => handleOpenEdit(u)}
                             title="Edit user details"
                           >
                             <Edit2 size={13} />
@@ -1809,36 +1872,241 @@ export function UsersPage(): ReactElement {
               onSubmit={handleSaveEdit}
               style={{ padding: 24, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 18 }}
             >
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-                <div>
+              {/* Section 1: Identity & Credentials */}
+              <div
+                style={{
+                  backgroundColor: 'var(--bg)',
+                  padding: 14,
+                  borderRadius: 10,
+                  border: '1px solid var(--border)',
+                }}
+              >
+                <div style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--accent)', marginBottom: 10 }}>
+                  1. Credentials & Identity
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                  <div>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
+                      Employee ID <span style={{ color: 'var(--danger-text)' }}>*</span>
+                    </label>
+                    <input
+                      type="text"
+                      className="filter-select"
+                      value={editingUser.employeeId}
+                      onChange={(e) => setEditingUser({ ...editingUser, employeeId: e.target.value.toUpperCase() })}
+                      style={{ width: '100%', padding: '9px 12px', fontFamily: 'monospace', fontWeight: 700 }}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
+                      Reset PIN / Password
+                    </label>
+                    <input
+                      type="password"
+                      className="filter-select"
+                      placeholder="Leave blank to keep current"
+                      value={editPin}
+                      onChange={(e) => setEditPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                      style={{ width: '100%', padding: '9px 12px' }}
+                    />
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+                      4-8 digits (leave blank to keep unchanged)
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
+                      First Name <span style={{ color: 'var(--danger-text)' }}>*</span>
+                    </label>
+                    <input
+                      type="text"
+                      className="filter-select"
+                      value={editingUser.firstName}
+                      onChange={(e) => setEditingUser({ ...editingUser, firstName: e.target.value })}
+                      style={{ width: '100%', padding: '9px 12px' }}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
+                      Last Name <span style={{ color: 'var(--danger-text)' }}>*</span>
+                    </label>
+                    <input
+                      type="text"
+                      className="filter-select"
+                      value={editingUser.lastName}
+                      onChange={(e) => setEditingUser({ ...editingUser, lastName: e.target.value })}
+                      style={{ width: '100%', padding: '9px 12px' }}
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 2: Role, Status & Access */}
+              <div
+                style={{
+                  backgroundColor: 'var(--bg)',
+                  padding: 14,
+                  borderRadius: 10,
+                  border: '1px solid var(--border)',
+                }}
+              >
+                <div style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--accent)', marginBottom: 10 }}>
+                  2. Role & Status Settings
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                  <div>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
+                      Account Role <span style={{ color: 'var(--danger-text)' }}>*</span>
+                    </label>
+                    {isSuperAdmin ? (
+                      <select
+                        className="filter-select"
+                        value={editingUser.role}
+                        onChange={(e) => {
+                          const newRole = e.target.value as Role;
+                          setEditingUser({
+                            ...editingUser,
+                            role: newRole,
+                          });
+                        }}
+                        style={{ width: '100%', padding: '9px 12px', fontWeight: 600 }}
+                      >
+                        <option value="SUPER_ADMIN">Super Admin (Full Fleet Control)</option>
+                        <option value="ADMIN">Department Admin (Category Head)</option>
+                        <option value="EXECUTIVE">Executive (Category Staff)</option>
+                        <option value="DRIVER">Driver (Mobile App User)</option>
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        className="filter-select"
+                        value={editingUser.role}
+                        disabled
+                        style={{ width: '100%', padding: '9px 12px', opacity: 0.8 }}
+                      />
+                    )}
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
+                      Approval Status <span style={{ color: 'var(--danger-text)' }}>*</span>
+                    </label>
+                    {isSuperAdmin ? (
+                      <select
+                        className="filter-select"
+                        value={editingUser.approvalStatus ?? 'APPROVED'}
+                        onChange={(e) =>
+                          setEditingUser({
+                            ...editingUser,
+                            approvalStatus: e.target.value as ApprovalStatus,
+                          })
+                        }
+                        style={{ width: '100%', padding: '9px 12px', fontWeight: 600 }}
+                      >
+                        <option value="APPROVED">Approved (Active Access)</option>
+                        <option value="PENDING_APPROVAL">Pending Approval</option>
+                        <option value="REJECTED">Rejected (Disabled)</option>
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        className="filter-select"
+                        value={editingUser.approvalStatus ?? 'APPROVED'}
+                        disabled
+                        style={{ width: '100%', padding: '9px 12px', opacity: 0.8 }}
+                      />
+                    )}
+                  </div>
+                </div>
+
+                {/* Account Active Toggle */}
+                {isSuperAdmin && (
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      padding: '8px 12px',
+                      background: editingUser.isActive ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                      border: `1px solid ${editingUser.isActive ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.4)'}`,
+                      borderRadius: 8,
+                      cursor: 'pointer',
+                      fontSize: 13,
+                      fontWeight: 600,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={editingUser.isActive}
+                      onChange={(e) => setEditingUser({ ...editingUser, isActive: e.target.checked })}
+                    />
+                    <span style={{ color: editingUser.isActive ? 'var(--success-text)' : 'var(--danger-text)' }}>
+                      Account is {editingUser.isActive ? 'Active & Enabled' : 'Deactivated & Locked'}
+                    </span>
+                  </label>
+                )}
+              </div>
+
+              {/* Section 3: Driver Details (DL) */}
+              {(editingUser.role === 'DRIVER' || editingUser.licenseNumber) && (
+                <div
+                  style={{
+                    backgroundColor: 'var(--bg)',
+                    padding: 14,
+                    borderRadius: 10,
+                    border: '1px solid var(--border)',
+                  }}
+                >
                   <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                    First Name <span style={{ color: 'var(--danger-text)' }}>*</span>
+                    Driving License (DL) Number {editingUser.role === 'DRIVER' && <span style={{ color: 'var(--danger-text)' }}>*</span>}
                   </label>
                   <input
                     type="text"
                     className="filter-select"
-                    value={editingUser.firstName}
-                    onChange={(e) => setEditingUser({ ...editingUser, firstName: e.target.value })}
+                    placeholder="e.g. DL-0420110012345"
+                    value={editingUser.licenseNumber ?? ''}
+                    onChange={(e) => setEditingUser({ ...editingUser, licenseNumber: e.target.value.toUpperCase() })}
+                    style={{ width: '100%', padding: '9px 12px', textTransform: 'uppercase', fontFamily: 'monospace', fontWeight: 600 }}
+                    required={editingUser.role === 'DRIVER'}
+                  />
+                </div>
+              )}
+
+              {/* Section 4: Contact Details */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                <div>
+                  <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
+                    Phone Number <span style={{ color: 'var(--danger-text)' }}>*</span>
+                  </label>
+                  <input
+                    type="tel"
+                    className="filter-select"
+                    value={editingUser.phone ?? ''}
+                    onChange={(e) => setEditingUser({ ...editingUser, phone: e.target.value })}
                     style={{ width: '100%', padding: '9px 12px' }}
                     required
                   />
                 </div>
                 <div>
                   <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                    Last Name <span style={{ color: 'var(--danger-text)' }}>*</span>
+                    Email Address
                   </label>
                   <input
-                    type="text"
+                    type="email"
                     className="filter-select"
-                    value={editingUser.lastName}
-                    onChange={(e) => setEditingUser({ ...editingUser, lastName: e.target.value })}
+                    value={editingUser.email ?? ''}
+                    onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value })}
                     style={{ width: '100%', padding: '9px 12px' }}
-                    required
                   />
                 </div>
               </div>
 
-              {/* Department Head Category Settings */}
+              {/* Section 5: Department Head Category Settings */}
               {editingUser.role === 'ADMIN' && (
                 <div
                   style={{
@@ -1849,30 +2117,50 @@ export function UsersPage(): ReactElement {
                   }}
                 >
                   <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 4 }}>
-                    Assigned Department / Complaint Category <span style={{ color: 'var(--danger-text)' }}>*</span>
+                    Assigned Complaint Categories / Scope <span style={{ color: 'var(--danger-text)' }}>*</span>
                   </label>
                   <p style={{ fontSize: 12, color: 'var(--muted)', margin: '0 0 10px 0' }}>
-                    Driver complaints under this category will auto-route to this Department Head and their site executives.
+                    Select categories this Admin handles. Complaints & spare part requests matching these categories will be routed to this Admin.
                   </p>
-                  <select
-                    className="filter-select"
-                    value={editingUser.category ?? ''}
-                    onChange={(e) =>
-                      setEditingUser({ ...editingUser, category: (e.target.value as ComplaintCategory) || null })
-                    }
-                    style={{ width: '100%', padding: '9px 12px' }}
-                  >
-                    <option value="">-- Select Category / Department --</option>
-                    {APP_CATEGORY_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.icon} {opt.label}
-                      </option>
-                    ))}
-                  </select>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
+                    {APP_CATEGORY_OPTIONS.map((opt) => {
+                      const checked = adminAssignedCategories.includes(opt.value);
+                      return (
+                        <label
+                          key={opt.value}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                            padding: '8px 10px',
+                            borderRadius: 8,
+                            background: checked ? 'rgba(59, 130, 246, 0.15)' : 'var(--surface)',
+                            border: `1px solid ${checked ? 'var(--accent)' : 'var(--border)'}`,
+                            cursor: 'pointer',
+                            fontSize: 12,
+                            fontWeight: checked ? 700 : 500,
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setAdminAssignedCategories([...adminAssignedCategories, opt.value]);
+                              } else {
+                                setAdminAssignedCategories(adminAssignedCategories.filter((c) => c !== opt.value));
+                              }
+                            }}
+                          />
+                          <span>{opt.icon} {opt.label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
 
-              {/* Executive Supervision and Site Settings */}
+              {/* Section 6: Executive Supervision and Site Settings */}
               {editingUser.role === 'EXECUTIVE' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                   {isSuperAdmin && (
@@ -1920,69 +2208,43 @@ export function UsersPage(): ReactElement {
                       {getCategoryLabel(editingUser.category)}
                     </strong>
                   </div>
-
-                  <div>
-                    <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                      Operating Site / Hub Location
-                    </label>
-                    {sitesList.length > 0 ? (
-                      <select
-                        className="filter-select"
-                        value={editingUser.site ?? ''}
-                        onChange={(e) => setEditingUser({ ...editingUser, site: e.target.value || null })}
-                        style={{ width: '100%', padding: '9px 12px' }}
-                      >
-                        <option value="">-- Select Operating Site / Hub --</option>
-                        {editingUser.site && !sitesList.some((s) => s.name === editingUser.site) && (
-                          <option value={editingUser.site}>{editingUser.site} (Current)</option>
-                        )}
-                        {sitesList
-                          .filter((s) => s.isActive || s.name === editingUser.site)
-                          .map((s) => (
-                            <option key={s.id} value={s.name}>
-                              {s.name} {s.code ? `(${s.code})` : ''} {!s.isActive ? '(Inactive)' : ''}
-                            </option>
-                          ))}
-                      </select>
-                    ) : (
-                      <input
-                        type="text"
-                        className="filter-select"
-                        placeholder="e.g. Kolkata Hub, Site A, Plant 1"
-                        value={editingUser.site ?? ''}
-                        onChange={(e) => setEditingUser({ ...editingUser, site: e.target.value || null })}
-                        style={{ width: '100%', padding: '9px 12px' }}
-                      />
-                    )}
-                  </div>
                 </div>
               )}
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-                <div>
-                  <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                    Email
-                  </label>
-                  <input
-                    type="email"
+              {/* Section 7: Operating Site / Hub */}
+              <div>
+                <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
+                  Operating Site / Hub Location
+                </label>
+                {sitesList.length > 0 ? (
+                  <select
                     className="filter-select"
-                    value={editingUser.email ?? ''}
-                    onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value })}
+                    value={editingUser.site ?? ''}
+                    onChange={(e) => setEditingUser({ ...editingUser, site: e.target.value || null })}
+                    style={{ width: '100%', padding: '9px 12px' }}
+                  >
+                    <option value="">-- Select Operating Site / Hub --</option>
+                    {editingUser.site && !sitesList.some((s) => s.name === editingUser.site) && (
+                      <option value={editingUser.site}>{editingUser.site} (Current)</option>
+                    )}
+                    {sitesList
+                      .filter((s) => s.isActive || s.name === editingUser.site)
+                      .map((s) => (
+                        <option key={s.id} value={s.name}>
+                          {s.name} {s.code ? `(${s.code})` : ''} {!s.isActive ? '(Inactive)' : ''}
+                        </option>
+                      ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    className="filter-select"
+                    placeholder="e.g. Kolkata Hub, Site A, Plant 1"
+                    value={editingUser.site ?? ''}
+                    onChange={(e) => setEditingUser({ ...editingUser, site: e.target.value || null })}
                     style={{ width: '100%', padding: '9px 12px' }}
                   />
-                </div>
-                <div>
-                  <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                    Phone
-                  </label>
-                  <input
-                    type="tel"
-                    className="filter-select"
-                    value={editingUser.phone ?? ''}
-                    onChange={(e) => setEditingUser({ ...editingUser, phone: e.target.value })}
-                    style={{ width: '100%', padding: '9px 12px' }}
-                  />
-                </div>
+                )}
               </div>
 
               {/* Action Buttons */}

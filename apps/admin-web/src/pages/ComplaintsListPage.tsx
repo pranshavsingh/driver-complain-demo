@@ -16,7 +16,6 @@ import {
   RotateCw,
   Download,
   Search,
-  Zap,
   Truck,
   MapPin,
   AlertTriangle,
@@ -433,18 +432,36 @@ export function ComplaintsListPage(): ReactElement {
   const { slaMap } = useCategorySlaMap();
   const { user } = useAuth();
 
-  const { subscribe } = useRealtime();
-  const [pending, setPending] = useState(0);
-  useEffect(
-    () => subscribe(() => setPending((n) => n + 1)),
-    [subscribe],
-  );
+  const { subscribe, subscribeCustom } = useRealtime();
+  const listReloadRef = useRef(listRes.reload);
+  listReloadRef.current = listRes.reload;
+
+  // Real-time live auto-refresh on complaint updates
   useEffect(() => {
-    setPending(0);
-  }, [key]);
+    const handleLiveReload = () => {
+      listReloadRef.current();
+    };
+
+    const unsubSub = subscribe(() => handleLiveReload());
+    const unsubCreated = subscribeCustom('complaint:created', handleLiveReload);
+    const unsubStatus = subscribeCustom('complaint:status-changed', handleLiveReload);
+    const unsubAssigned = subscribeCustom('complaint:assigned', handleLiveReload);
+    const unsubNotif = subscribeCustom('notification:new', (payload: any) => {
+      if (payload?.type?.toLowerCase().includes('complaint')) {
+        handleLiveReload();
+      }
+    });
+
+    return () => {
+      unsubSub();
+      unsubCreated();
+      unsubStatus();
+      unsubAssigned();
+      unsubNotif();
+    };
+  }, [subscribe, subscribeCustom]);
 
   const refresh = (): void => {
-    setPending(0);
     listRes.reload();
   };
 
@@ -587,28 +604,6 @@ export function ComplaintsListPage(): ReactElement {
           </p>
         </div>
         <div className="header-action-group">
-          {pending > 0 && (
-            <button
-              type="button"
-              className="btn-accent"
-              onClick={refresh}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 6,
-                backgroundColor: 'var(--accent)',
-                color: '#fff',
-                padding: '8px 14px',
-                borderRadius: 8,
-                fontWeight: 700,
-                fontSize: 13,
-                border: 'none',
-                cursor: 'pointer',
-              }}
-            >
-              <Zap size={14} /> {pending} New Update{pending > 1 ? 's' : ''} (Refresh)
-            </button>
-          )}
           <button type="button" className="btn-secondary" onClick={refresh} title="Reload complaints">
             <RotateCw size={15} style={{ marginRight: 6 }} /> Refresh
           </button>

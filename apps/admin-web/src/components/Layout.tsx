@@ -18,29 +18,18 @@ interface NotificationItem {
   unread: boolean;
 }
 
-const INITIAL_NOTIFICATIONS: NotificationItem[] = [
-  {
-    id: 'n1',
-    msg: 'New complaint CMP-2026-004 registered by Dana Driver.',
-    time: '5 mins ago',
-    type: 'complaint',
-    unread: true,
-  },
-  {
-    id: 'n2',
-    msg: 'Driver reached loading point at Warehouse B.',
-    time: '12 mins ago',
-    type: 'loading',
-    unread: true,
-  },
-  {
-    id: 'n3',
-    msg: 'Trip completed successfully for vehicle ABC-1234.',
-    time: '1 hr ago',
-    type: 'trip',
-    unread: true,
-  },
-];
+function formatRelativeTime(dateStr: string): string {
+  if (!dateStr) return '';
+  const date = new Date(dateStr);
+  const diffMs = Date.now() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  if (diffMins < 1) return 'Just now';
+  if (diffMins < 60) return `${diffMins} min${diffMins > 1 ? 's' : ''} ago`;
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours} hr${diffHours > 1 ? 's' : ''} ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+}
 
 function getPageTitle(pathname: string): string {
   if (pathname.startsWith('/dashboard')) return 'Executive Dashboard';
@@ -73,7 +62,7 @@ export function Layout(): ReactElement {
   const [signingOut, setSigningOut] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
-  const [notifications, setNotifications] = useState<NotificationItem[]>(INITIAL_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
   const notifRef = useRef<HTMLDivElement>(null);
@@ -86,7 +75,13 @@ export function Layout(): ReactElement {
   const complaintsUnreadResource = useApiResource('complaints:unreadCount', () =>
     api.complaints.unreadCount(),
   );
-  const unreadComplaintsCount = complaintsUnreadResource.data?.unreadCount ?? 0;
+  const [complaintBadgeCount, setComplaintBadgeCount] = useState<number>(0);
+
+  useEffect(() => {
+    if (typeof complaintsUnreadResource.data?.unreadCount === 'number') {
+      setComplaintBadgeCount(complaintsUnreadResource.data.unreadCount);
+    }
+  }, [complaintsUnreadResource.data?.unreadCount]);
 
   const showToast = (title: string, message: string, type: 'info' | 'success' | 'warning' = 'info') => {
     const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -100,14 +95,14 @@ export function Layout(): ReactElement {
   useEffect(() => {
     if (!user) return;
     api.notifications
-      .list({ page: 1, pageSize: 15 })
+      .list({ page: 1, pageSize: 25 })
       .then((res: any) => {
-        if (res?.data && Array.isArray(res.data) && res.data.length > 0) {
+        if (res?.data && Array.isArray(res.data)) {
           setNotifications(
             res.data.map((n: any) => ({
               id: n.id,
               msg: n.body || n.title,
-              time: new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              time: formatRelativeTime(n.createdAt),
               type: n.type?.toLowerCase().includes('complaint') ? 'complaint' : 'trip',
               unread: !n.isRead,
             })),
@@ -168,6 +163,7 @@ export function Layout(): ReactElement {
 
     // Complaint Realtime Listeners for Live Unread Count Badge
     const unsubComplaintCreated = subscribeCustom('complaint:created', (payload: any) => {
+      setComplaintBadgeCount((prev) => prev + 1);
       reloadComplaintsCount();
       showToast(
         'New Complaint Registered',
@@ -195,9 +191,11 @@ export function Layout(): ReactElement {
             type: payload.type?.toLowerCase().includes('complaint') ? 'complaint' : 'trip',
             unread: true,
           },
-          ...prev,
+          ...prev.filter((p) => p.id !== payload.id),
         ]);
-        showToast(payload.title || 'Notification', payload.body || '', 'info');
+        if (payload.type !== 'COMPLAINT_CREATED') {
+          showToast(payload.title || 'Notification', payload.body || '', 'info');
+        }
       }
     });
 
@@ -214,6 +212,13 @@ export function Layout(): ReactElement {
       unsubNotif();
     };
   }, [subscribeCustom, user]);
+
+  // Keep unread count fresh when navigating to complaints page
+  useEffect(() => {
+    if (location.pathname === '/complaints') {
+      void complaintsRef.current.reload();
+    }
+  }, [location.pathname]);
 
   // Close notifications dropdown on click outside
   useEffect(() => {
@@ -405,7 +410,7 @@ export function Layout(): ReactElement {
               <ClipboardList size={18} className="nav-icon" />
               <span className="nav-label">Complaints</span>
             </div>
-            {unreadComplaintsCount > 0 ? (
+            {complaintBadgeCount > 0 ? (
               <span
                 style={{
                   backgroundColor: 'var(--danger-text)',
@@ -420,9 +425,9 @@ export function Layout(): ReactElement {
                   lineHeight: '13px',
                   boxShadow: '0 2px 5px rgba(239, 68, 68, 0.4)',
                 }}
-                title={`${unreadComplaintsCount} unread/new complaints waiting for review`}
+                title={`${complaintBadgeCount} unread/new complaints waiting for review`}
               >
-                {unreadComplaintsCount}
+                {complaintBadgeCount}
               </span>
             ) : null}
           </NavLink>
@@ -463,7 +468,7 @@ export function Layout(): ReactElement {
             <span className="nav-label">Spare Parts</span>
           </NavLink>
 
-          {!isExecutive(user) ? (
+          {isSuperAdmin(user) ? (
             <NavLink
               to="/support"
               className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}

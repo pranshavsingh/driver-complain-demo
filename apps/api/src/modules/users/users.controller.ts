@@ -86,3 +86,20 @@ export async function deleteUser(req: Request, res: Response): Promise<void> {
   await usersService.deleteUser(req.user, id);
   sendSuccess(res, { success: true, message: 'User deleted successfully' });
 }
+
+export async function getCategoryAssignments(req: Request, res: Response): Promise<void> {
+  const id = req.params.id as string;
+  const categories = await usersService.getAdminCategoryAssignments(id);
+  sendSuccess(res, { adminId: id, categories });
+}
+
+export async function setCategoryAssignments(req: Request, res: Response): Promise<void> {
+  const id = req.params.id as string;
+  const categories = req.body?.categories;
+  if (!Array.isArray(categories)) {
+    throw ApiError.badRequest('categories array is required');
+  }
+  const updatedCategories = await usersService.setAdminCategoryAssignments(id, categories);
+  sendSuccess(res, { adminId: id, categories: updatedCategories });
+}
+

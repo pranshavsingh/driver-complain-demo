@@ -32,6 +32,13 @@ import { Pagination } from '../components/Pagination';
 import { useApiResource } from '../hooks/useApiResource';
 import { formatDateTime } from '../lib/format';
 
+interface IssueProductItem {
+  id: string;
+  name: string;
+  quantity: number | string;
+  serialNumber: string;
+}
+
 export function SparePartsPage(): ReactElement {
   const { user: currentUser } = useAuth();
   const isSuper = isSuperAdmin(currentUser);
@@ -70,9 +77,9 @@ export function SparePartsPage(): ReactElement {
   // Propose / Issue Form State
   const [issueWarehouseId, setIssueWarehouseId] = useState('');
   const [issueType, setIssueType] = useState<SparePartType>('NEW');
-  const [issuePartName, setIssuePartName] = useState('');
-  const [issuePartNo, setIssuePartNo] = useState('');
-  const [issueQty, setIssueQty] = useState(1);
+  const [issueProductItems, setIssueProductItems] = useState<IssueProductItem[]>([
+    { id: '1', name: '', quantity: 1, serialNumber: '' },
+  ]);
   const [issueReturnedPartNo, setIssueReturnedPartNo] = useState('');
   const [issueReturnedCondition, setIssueReturnedCondition] = useState('');
   const [issueNotes, setIssueNotes] = useState('');
@@ -153,30 +160,80 @@ export function SparePartsPage(): ReactElement {
     setPage(1);
   };
 
+  const handleAddProductItem = () => {
+    setIssueProductItems((prev) => [
+      ...prev,
+      { id: String(Date.now() + Math.random()), name: '', quantity: 1, serialNumber: '' },
+    ]);
+  };
+
+  const handleUpdateProductItem = (
+    index: number,
+    field: keyof IssueProductItem,
+    value: any,
+  ) => {
+    setIssueProductItems((prev) => {
+      const copy = [...prev];
+      if (copy[index]) {
+        copy[index] = { ...copy[index], [field]: value };
+      }
+      return copy;
+    });
+  };
+
+  const handleDeleteProductItem = (index: number) => {
+    setIssueProductItems((prev) => {
+      if (prev.length <= 1) {
+        return [{ id: String(Date.now()), name: '', quantity: 1, serialNumber: '' }];
+      }
+      return prev.filter((_, i) => i !== index);
+    });
+  };
+
   const handleOpenProposeIssue = (req: SparePartRequestPublic): void => {
     setIssuingRequest(req);
-    setIssueType(req.type || 'NEW');
-    setIssuePartName(req.issuedPartName || req.partName || '');
-    setIssuePartNo(req.issuedPartNo || '');
-    setIssueQty(req.issuedQty || req.quantity || 1);
+    setIssueType(req.type === 'EXCHANGE' ? 'EXCHANGE' : 'NEW');
     setIssueWarehouseId(req.warehouseId || warehousesList.find((w) => w.isActive)?.id || '');
     setIssueReturnedPartNo(req.returnedPartNo || '');
     setIssueReturnedCondition(req.returnedPartCondition || 'Worn / Replaced');
     setIssueNotes(req.adminNotes || '');
     setActionError(null);
+
+    const initialName = req.issuedPartName || req.partName || '';
+    const initialQty = req.issuedQty || req.quantity || 1;
+    const initialSerial = req.issuedPartNo || '';
+
+    setIssueProductItems([
+      {
+        id: String(Date.now()),
+        name: initialName,
+        quantity: initialQty,
+        serialNumber: initialSerial,
+      },
+    ]);
   };
 
   const handleOpenApproveModal = (req: SparePartRequestPublic): void => {
     setApprovingRequest(req);
-    setIssueType(req.type || 'NEW');
-    setIssuePartName(req.issuedPartName || req.partName || 'Spare Part');
-    setIssuePartNo(req.issuedPartNo || 'N/A');
-    setIssueQty(req.issuedQty || req.quantity || 1);
+    setIssueType(req.type === 'EXCHANGE' ? 'EXCHANGE' : 'NEW');
     setIssueWarehouseId(req.warehouseId || warehousesList.find((w) => w.isActive)?.id || '');
     setIssueReturnedPartNo(req.returnedPartNo || '');
     setIssueReturnedCondition(req.returnedPartCondition || '');
     setIssueNotes(req.adminNotes || '');
     setActionError(null);
+
+    const initialName = req.issuedPartName || req.partName || 'Spare Part';
+    const initialQty = req.issuedQty || req.quantity || 1;
+    const initialSerial = req.issuedPartNo || '';
+
+    setIssueProductItems([
+      {
+        id: String(Date.now()),
+        name: initialName,
+        quantity: initialQty,
+        serialNumber: initialSerial,
+      },
+    ]);
   };
 
   const handleOpenReject = (req: SparePartRequestPublic): void => {
@@ -217,43 +274,56 @@ export function SparePartsPage(): ReactElement {
       setActionError('Please select a warehouse');
       return;
     }
-    if (!issuePartName.trim() || !issuePartNo.trim()) {
-      setActionError('Please enter the issued part name and serial/part number');
+
+    const validItems = issueProductItems.filter((i) => i.name.trim().length > 0);
+    if (validItems.length === 0) {
+      setActionError('Please enter at least one product name');
       return;
     }
 
-    const parsedQty = parseInt(String(issueQty), 10);
-    if (isNaN(parsedQty) || parsedQty <= 0) {
-      setActionError('Quantity must be at least 1');
-      return;
+    for (const item of validItems) {
+      const parsedQty = parseInt(String(item.quantity), 10);
+      if (isNaN(parsedQty) || parsedQty <= 0) {
+        setActionError(`Quantity for "${item.name}" must be at least 1`);
+        return;
+      }
     }
+
+    const payloadItems = validItems.map((item) => ({
+      name: item.name.trim(),
+      quantity: parseInt(String(item.quantity), 10) || 1,
+      serialNumber: item.serialNumber ? item.serialNumber.trim() : '',
+    }));
+
+    const summaryName = payloadItems
+      .map((i) => (i.quantity > 1 ? `${i.name} (x${i.quantity})` : i.name))
+      .join(', ');
+    const summarySerial = payloadItems
+      .map((i) => i.serialNumber)
+      .filter(Boolean)
+      .join(', ');
+    const summaryQty = payloadItems.reduce((acc, i) => acc + i.quantity, 0);
 
     try {
       setActionLoading(true);
       setActionError(null);
 
+      const payload = {
+        warehouseId: issueWarehouseId,
+        type: issueType,
+        issuedPartName: summaryName,
+        issuedPartNo: summarySerial || undefined,
+        issuedQty: summaryQty,
+        items: payloadItems,
+        returnedPartNo: issueType === 'EXCHANGE' ? issueReturnedPartNo.trim() : undefined,
+        returnedPartCondition: issueType === 'EXCHANGE' ? issueReturnedCondition.trim() : undefined,
+        adminNotes: issueNotes.trim() || undefined,
+      };
+
       if (isSuper) {
-        await api.spareParts.approveAndIssue(issuingRequest.id, {
-          warehouseId: issueWarehouseId,
-          type: issueType,
-          issuedPartName: issuePartName.trim(),
-          issuedPartNo: issuePartNo.trim(),
-          issuedQty: parsedQty,
-          returnedPartNo: issueType === 'EXCHANGE' ? issueReturnedPartNo.trim() : undefined,
-          returnedPartCondition: issueType === 'EXCHANGE' ? issueReturnedCondition.trim() : undefined,
-          adminNotes: issueNotes.trim() || undefined,
-        });
+        await api.spareParts.approveAndIssue(issuingRequest.id, payload);
       } else {
-        await api.spareParts.proposeIssue(issuingRequest.id, {
-          warehouseId: issueWarehouseId,
-          type: issueType,
-          issuedPartName: issuePartName.trim(),
-          issuedPartNo: issuePartNo.trim(),
-          issuedQty: parsedQty,
-          returnedPartNo: issueType === 'EXCHANGE' ? issueReturnedPartNo.trim() : undefined,
-          returnedPartCondition: issueType === 'EXCHANGE' ? issueReturnedCondition.trim() : undefined,
-          adminNotes: issueNotes.trim() || undefined,
-        });
+        await api.spareParts.proposeIssue(issuingRequest.id, payload);
       }
 
       setIssuingRequest(null);
@@ -275,10 +345,35 @@ export function SparePartsPage(): ReactElement {
       setActionError('Please select a warehouse');
       return;
     }
-    if (!issuePartName.trim()) {
-      setActionError('Please enter the part name');
+
+    const validItems = issueProductItems.filter((i) => i.name.trim().length > 0);
+    if (validItems.length === 0) {
+      setActionError('Please enter at least one product name');
       return;
     }
+
+    for (const item of validItems) {
+      const parsedQty = parseInt(String(item.quantity), 10);
+      if (isNaN(parsedQty) || parsedQty <= 0) {
+        setActionError(`Quantity for "${item.name}" must be at least 1`);
+        return;
+      }
+    }
+
+    const payloadItems = validItems.map((item) => ({
+      name: item.name.trim(),
+      quantity: parseInt(String(item.quantity), 10) || 1,
+      serialNumber: item.serialNumber ? item.serialNumber.trim() : '',
+    }));
+
+    const summaryName = payloadItems
+      .map((i) => (i.quantity > 1 ? `${i.name} (x${i.quantity})` : i.name))
+      .join(', ');
+    const summarySerial = payloadItems
+      .map((i) => i.serialNumber)
+      .filter(Boolean)
+      .join(', ');
+    const summaryQty = payloadItems.reduce((acc, i) => acc + i.quantity, 0);
 
     try {
       setActionLoading(true);
@@ -287,9 +382,10 @@ export function SparePartsPage(): ReactElement {
       await api.spareParts.approveAndIssue(approvingRequest.id, {
         warehouseId: issueWarehouseId,
         type: issueType,
-        issuedPartName: issuePartName.trim(),
-        issuedPartNo: issuePartNo.trim() || undefined,
-        issuedQty: issueQty,
+        issuedPartName: summaryName,
+        issuedPartNo: summarySerial || undefined,
+        issuedQty: summaryQty,
+        items: payloadItems,
         returnedPartNo: issueType === 'EXCHANGE' ? issueReturnedPartNo.trim() : undefined,
         returnedPartCondition: issueType === 'EXCHANGE' ? issueReturnedCondition.trim() : undefined,
         adminNotes: issueNotes.trim() || undefined,
@@ -738,21 +834,23 @@ export function SparePartsPage(): ReactElement {
           <div className="stat-card-footer">Successfully approved & issued</div>
         </div>
 
-        <div
-          className={`stat-card ${activeTab === 'warehouses' ? 'selected' : ''}`}
-          onClick={() => {
-            setActiveTab('warehouses');
-            setPage(1);
-          }}
-          title="View Warehouse Directory"
-        >
-          <div className="stat-card-header">
-            <span className="stat-card-title">Active Warehouses</span>
-            <WarehouseIcon size={20} color="var(--accent)" />
+        {isSuper && (
+          <div
+            className={`stat-card ${activeTab === 'warehouses' ? 'selected' : ''}`}
+            onClick={() => {
+              setActiveTab('warehouses');
+              setPage(1);
+            }}
+            title="View Warehouse Directory"
+          >
+            <div className="stat-card-header">
+              <span className="stat-card-title">Active Warehouses</span>
+              <WarehouseIcon size={20} color="var(--accent)" />
+            </div>
+            <div className="stat-card-value">{activeWarehousesCount}</div>
+            <div className="stat-card-footer">Inventory storage hubs</div>
           </div>
-          <div className="stat-card-value">{activeWarehousesCount}</div>
-          <div className="stat-card-footer">Inventory storage hubs</div>
-        </div>
+        )}
       </div>
 
       {/* Navigation Tabs Bar */}
@@ -786,34 +884,36 @@ export function SparePartsPage(): ReactElement {
           </span>
         </button>
 
-        <button
-          type="button"
-          className={`btn-${activeTab === 'warehouses' ? 'primary' : 'secondary'}`}
-          onClick={() => {
-            setActiveTab('warehouses');
-            setPage(1);
-          }}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
-        >
-          <WarehouseIcon size={16} />
-          <span>Warehouse Directory</span>
-          <span
-            style={{
-              marginLeft: 4,
-              fontSize: 12,
-              fontWeight: 700,
-              padding: '2px 8px',
-              borderRadius: 12,
-              backgroundColor:
-                activeTab === 'warehouses'
-                  ? 'rgba(255, 255, 255, 0.25)'
-                  : 'var(--bg)',
-              color: activeTab === 'warehouses' ? '#ffffff' : 'var(--muted)',
+        {isSuper && (
+          <button
+            type="button"
+            className={`btn-${activeTab === 'warehouses' ? 'primary' : 'secondary'}`}
+            onClick={() => {
+              setActiveTab('warehouses');
+              setPage(1);
             }}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
           >
-            {warehousesList.length}
-          </span>
-        </button>
+            <WarehouseIcon size={16} />
+            <span>Warehouse Directory</span>
+            <span
+              style={{
+                marginLeft: 4,
+                fontSize: 12,
+                fontWeight: 700,
+                padding: '2px 8px',
+                borderRadius: 12,
+                backgroundColor:
+                  activeTab === 'warehouses'
+                    ? 'rgba(255, 255, 255, 0.25)'
+                    : 'var(--bg)',
+                color: activeTab === 'warehouses' ? '#ffffff' : 'var(--muted)',
+              }}
+            >
+              {warehousesList.length}
+            </span>
+          </button>
+        )}
       </div>
 
       {/* =========================================================================
@@ -1249,7 +1349,7 @@ export function SparePartsPage(): ReactElement {
       {/* =========================================================================
           TAB 2: WAREHOUSE DIRECTORY VIEW
          ========================================================================= */}
-      {activeTab === 'warehouses' && (
+      {isSuper && activeTab === 'warehouses' && (
         <div className="table-card">
           <div className="table-card-header">
             <h3 className="table-card-title">
@@ -1900,61 +2000,116 @@ export function SparePartsPage(): ReactElement {
                 </select>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
-                <div>
-                  <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: 6 }}>Requisition Type *</label>
-                  <select
-                    className="filter-select"
-                    style={{ width: '100%', height: 38 }}
-                    value={issueType}
-                    onChange={(e) => setIssueType(e.target.value as SparePartType)}
-                  >
-                    <option value="NEW">New Part Issue</option>
-                    <option value="EXCHANGE">Exchange (Old Part Return)</option>
-                    <option value="REPAIR">Repair / Overhaul</option>
-                    <option value="OTHER">Other / Consumable</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: 6 }}>Quantity to Issue *</label>
-                  <input
-                    type="number"
-                    min={1}
-                    className="filter-select"
-                    style={{ width: '100%', height: 38 }}
-                    value={issueQty}
-                    onChange={(e) => setIssueQty(Number(e.target.value))}
-                    required
-                  />
-                </div>
+              <div style={{ marginBottom: 14 }}>
+                <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: 6 }}>Requisition Type *</label>
+                <select
+                  className="filter-select"
+                  style={{ width: '100%', height: 38 }}
+                  value={issueType}
+                  onChange={(e) => setIssueType(e.target.value as SparePartType)}
+                >
+                  <option value="NEW">NEW</option>
+                  <option value="EXCHANGE">Exchange</option>
+                </select>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
-                <div>
-                  <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: 6 }}>Part Name / Description *</label>
-                  <input
-                    type="text"
-                    className="filter-select"
-                    style={{ width: '100%', height: 38 }}
-                    placeholder="e.g. Brake Pad Set"
-                    value={issuePartName}
-                    onChange={(e) => setIssuePartName(e.target.value)}
-                    required
-                  />
+              {/* Multiple Products Section (Reference Box) */}
+              <div
+                style={{
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius)',
+                  padding: 14,
+                  marginBottom: 14,
+                  backgroundColor: 'var(--bg)',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <label style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--muted)', margin: 0 }}>
+                    Products & Quantity *
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleAddProductItem}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      padding: '4px 10px',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      borderRadius: 6,
+                      border: '1px solid var(--border)',
+                      backgroundColor: 'var(--surface)',
+                      color: 'var(--text)',
+                      cursor: 'pointer',
+                    }}
+                    title="Add Product"
+                  >
+                    <Plus size={14} /> Add Product
+                  </button>
                 </div>
 
-                <div>
-                  <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: 6 }}>Part / Serial Number *</label>
-                  <input
-                    type="text"
-                    className="filter-select"
-                    style={{ width: '100%', height: 38 }}
-                    placeholder="e.g. BP-2026-X991"
-                    value={issuePartNo}
-                    onChange={(e) => setIssuePartNo(e.target.value)}
-                    required
-                  />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {issueProductItems.map((item, idx) => (
+                    <div
+                      key={item.id}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'minmax(140px, 1.5fr) 70px minmax(130px, 1.2fr) 34px',
+                        gap: 8,
+                        alignItems: 'center',
+                      }}
+                    >
+                      <input
+                        type="text"
+                        className="filter-select"
+                        style={{ width: '100%', height: 36 }}
+                        placeholder="Product name *"
+                        value={item.name}
+                        onChange={(e) => handleUpdateProductItem(idx, 'name', e.target.value)}
+                        required
+                      />
+                      <input
+                        type="number"
+                        min={1}
+                        className="filter-select"
+                        style={{ width: '100%', height: 36, textAlign: 'center' }}
+                        placeholder="Qty"
+                        value={item.quantity}
+                        onChange={(e) => handleUpdateProductItem(idx, 'quantity', e.target.value)}
+                        required
+                      />
+                      <input
+                        type="text"
+                        className="filter-select"
+                        style={{ width: '100%', height: 36 }}
+                        placeholder="Serial number (optional)"
+                        value={item.serialNumber}
+                        onChange={(e) => handleUpdateProductItem(idx, 'serialNumber', e.target.value)}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteProductItem(idx)}
+                        disabled={issueProductItems.length === 1 && !item.name && !item.serialNumber}
+                        style={{
+                          width: 34,
+                          height: 36,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          borderRadius: 6,
+                          border: '1px solid var(--border)',
+                          backgroundColor: 'var(--surface)',
+                          color: issueProductItems.length > 1 || item.name ? 'var(--danger-text, #ef4444)' : 'var(--muted)',
+                          cursor: issueProductItems.length > 1 || item.name ? 'pointer' : 'default',
+                          opacity: issueProductItems.length === 1 && !item.name && !item.serialNumber ? 0.4 : 1,
+                        }}
+                        title="Delete Product"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  ))}
                 </div>
               </div>
 
@@ -2114,58 +2269,116 @@ export function SparePartsPage(): ReactElement {
                 </select>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
-                <div>
-                  <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: 6 }}>Requisition Type</label>
-                  <select
-                    className="filter-select"
-                    style={{ width: '100%', height: 38 }}
-                    value={issueType}
-                    onChange={(e) => setIssueType(e.target.value as SparePartType)}
-                  >
-                    <option value="NEW">New Part</option>
-                    <option value="EXCHANGE">Exchange</option>
-                    <option value="REPAIR">Repair</option>
-                    <option value="OTHER">Other</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: 6 }}>Quantity</label>
-                  <input
-                    type="number"
-                    min={1}
-                    className="filter-select"
-                    style={{ width: '100%', height: 38 }}
-                    value={issueQty}
-                    onChange={(e) => setIssueQty(Number(e.target.value))}
-                    required
-                  />
-                </div>
+              <div style={{ marginBottom: 14 }}>
+                <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: 6 }}>Requisition Type *</label>
+                <select
+                  className="filter-select"
+                  style={{ width: '100%', height: 38 }}
+                  value={issueType}
+                  onChange={(e) => setIssueType(e.target.value as SparePartType)}
+                >
+                  <option value="NEW">NEW</option>
+                  <option value="EXCHANGE">Exchange</option>
+                </select>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
-                <div>
-                  <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: 6 }}>Part Name *</label>
-                  <input
-                    type="text"
-                    className="filter-select"
-                    style={{ width: '100%', height: 38 }}
-                    value={issuePartName}
-                    onChange={(e) => setIssuePartName(e.target.value)}
-                    required
-                  />
+              {/* Multiple Products Section */}
+              <div
+                style={{
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius)',
+                  padding: 14,
+                  marginBottom: 14,
+                  backgroundColor: 'var(--bg)',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <label style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--muted)', margin: 0 }}>
+                    Products & Quantity *
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleAddProductItem}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      padding: '4px 10px',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      borderRadius: 6,
+                      border: '1px solid var(--border)',
+                      backgroundColor: 'var(--surface)',
+                      color: 'var(--text)',
+                      cursor: 'pointer',
+                    }}
+                    title="Add Product"
+                  >
+                    <Plus size={14} /> Add Product
+                  </button>
                 </div>
 
-                <div>
-                  <label className="form-label" style={{ fontWeight: 600, display: 'block', marginBottom: 6 }}>Part / Serial Number</label>
-                  <input
-                    type="text"
-                    className="filter-select"
-                    style={{ width: '100%', height: 38 }}
-                    value={issuePartNo}
-                    onChange={(e) => setIssuePartNo(e.target.value)}
-                  />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {issueProductItems.map((item, idx) => (
+                    <div
+                      key={item.id}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'minmax(140px, 1.5fr) 70px minmax(130px, 1.2fr) 34px',
+                        gap: 8,
+                        alignItems: 'center',
+                      }}
+                    >
+                      <input
+                        type="text"
+                        className="filter-select"
+                        style={{ width: '100%', height: 36 }}
+                        placeholder="Product name *"
+                        value={item.name}
+                        onChange={(e) => handleUpdateProductItem(idx, 'name', e.target.value)}
+                        required
+                      />
+                      <input
+                        type="number"
+                        min={1}
+                        className="filter-select"
+                        style={{ width: '100%', height: 36, textAlign: 'center' }}
+                        placeholder="Qty"
+                        value={item.quantity}
+                        onChange={(e) => handleUpdateProductItem(idx, 'quantity', e.target.value)}
+                        required
+                      />
+                      <input
+                        type="text"
+                        className="filter-select"
+                        style={{ width: '100%', height: 36 }}
+                        placeholder="Serial number (optional)"
+                        value={item.serialNumber}
+                        onChange={(e) => handleUpdateProductItem(idx, 'serialNumber', e.target.value)}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteProductItem(idx)}
+                        disabled={issueProductItems.length === 1 && !item.name && !item.serialNumber}
+                        style={{
+                          width: 34,
+                          height: 36,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          borderRadius: 6,
+                          border: '1px solid var(--border)',
+                          backgroundColor: 'var(--surface)',
+                          color: issueProductItems.length > 1 || item.name ? 'var(--danger-text, #ef4444)' : 'var(--muted)',
+                          cursor: issueProductItems.length > 1 || item.name ? 'pointer' : 'default',
+                          opacity: issueProductItems.length === 1 && !item.name && !item.serialNumber ? 0.4 : 1,
+                        }}
+                        title="Delete Product"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  ))}
                 </div>
               </div>
 

@@ -22,6 +22,7 @@ import { ErrorBanner } from '../components/ErrorBanner';
 import { Pagination } from '../components/Pagination';
 import { useApiResource } from '../hooks/useApiResource';
 import { useAuth, isSuperAdmin } from '../auth/AuthContext';
+import { useRealtime } from '../realtime/RealtimeProvider';
 
 const WHEEL_OPTIONS = [
   '4 Wheeler',
@@ -461,6 +462,49 @@ export function VehiclesPage(): ReactElement {
   const vehiclesResource = useApiResource('vehicles:list', () => api.vehicles.list());
   const driversResource = useApiResource('drivers:list', () => api.drivers.list());
   const usersResource = useApiResource('users:admins', () => api.users.list());
+  const { subscribeCustom } = useRealtime();
+
+  // Live Realtime Subscriptions for Vehicle Add/Edit/Delete/Assign & Driver updates
+  useEffect(() => {
+    const unsubCreated = subscribeCustom('vehicle:created', () => {
+      void vehiclesResource.reload();
+      void driversResource.reload();
+    });
+    const unsubUpdated = subscribeCustom('vehicle:updated', () => {
+      void vehiclesResource.reload();
+      void driversResource.reload();
+    });
+    const unsubDeleted = subscribeCustom('vehicle:deleted', () => {
+      void vehiclesResource.reload();
+      void driversResource.reload();
+    });
+    const unsubAssigned = subscribeCustom('vehicle:assigned', () => {
+      void vehiclesResource.reload();
+      void driversResource.reload();
+    });
+    const unsubUserCreated = subscribeCustom('user:created', () => {
+      void driversResource.reload();
+      void usersResource.reload();
+    });
+    const unsubUserApproved = subscribeCustom('user:approved', () => {
+      void driversResource.reload();
+      void usersResource.reload();
+    });
+    const unsubUserUpdated = subscribeCustom('user:updated', () => {
+      void driversResource.reload();
+      void usersResource.reload();
+      void vehiclesResource.reload();
+    });
+    return () => {
+      unsubCreated();
+      unsubUpdated();
+      unsubDeleted();
+      unsubAssigned();
+      unsubUserCreated();
+      unsubUserApproved();
+      unsubUserUpdated();
+    };
+  }, [subscribeCustom, vehiclesResource, driversResource, usersResource]);
 
   const rawVehicles: VehiclePublic[] = vehiclesResource.data ?? [];
   const vehiclesList: VehiclePublic[] = useMemo(() => {
@@ -832,15 +876,33 @@ export function VehiclesPage(): ReactElement {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <h2 className="table-card-title" style={{ margin: 0 }}>
+            <h2 className="table-card-title" style={{ margin: 0, fontSize: 16 }}>
               Fleet Vehicle Master <span className="badge-pill">{totalItems}</span>
             </h2>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', flex: '1 1 auto', justifyContent: 'flex-end' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              flexWrap: 'wrap',
+              flex: '1 1 auto',
+              justifyContent: 'flex-end',
+            }}
+          >
             {/* Search Input */}
-            <div style={{ position: 'relative', minWidth: 220, flex: '1 1 220px', maxWidth: 320 }}>
-              <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--muted)' }} />
+            <div style={{ position: 'relative', minWidth: 200, flex: '1 1 200px', maxWidth: 300 }}>
+              <Search
+                size={15}
+                style={{
+                  position: 'absolute',
+                  left: 10,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  color: 'var(--muted)',
+                }}
+              />
               <input
                 type="text"
                 className="filter-select"
@@ -884,7 +946,7 @@ export function VehiclesPage(): ReactElement {
                 setAssignmentFilter(e.target.value as any);
                 setPage(1);
               }}
-              style={{ width: 'auto', minWidth: 150 }}
+              style={{ width: 'auto', minWidth: 140, flex: '1 1 auto' }}
             >
               <option value="ALL">All Assignments</option>
               <option value="ASSIGNED">Assigned Only</option>
@@ -899,7 +961,7 @@ export function VehiclesPage(): ReactElement {
                 setStatusFilter(e.target.value);
                 setPage(1);
               }}
-              style={{ width: 'auto', minWidth: 170 }}
+              style={{ width: 'auto', minWidth: 160, flex: '1 1 auto' }}
             >
               <option value="ALL">All Agreements</option>
               {AGREEMENT_STATUS_OPTIONS.map((o) => (
@@ -917,7 +979,7 @@ export function VehiclesPage(): ReactElement {
                 setWheelFilter(e.target.value);
                 setPage(1);
               }}
-              style={{ width: 'auto', minWidth: 130 }}
+              style={{ width: 'auto', minWidth: 120, flex: '1 1 auto' }}
             >
               <option value="ALL">All Wheels</option>
               {WHEEL_OPTIONS.map((w) => (
@@ -938,7 +1000,7 @@ export function VehiclesPage(): ReactElement {
                   setAssignmentFilter('ALL');
                   setPage(1);
                 }}
-                style={{ padding: '6px 12px', fontSize: 12 }}
+                style={{ padding: '6px 12px', fontSize: 12, flexShrink: 0 }}
               >
                 Reset
               </button>
@@ -954,21 +1016,21 @@ export function VehiclesPage(): ReactElement {
           </div>
         ) : (
           <>
-            <div className="table-responsive" style={{ overflow: 'visible' }}>
-              <table className="admin-table">
+            <div className="table-responsive" style={{ width: '100%', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+              <table className="admin-table" style={{ minWidth: 1100, width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr>
-                    <th>Vehicle Number</th>
-                    <th>Vehicle Model</th>
-                    <th>Model No</th>
-                    <th>Registration Date</th>
-                    <th>Chassis No (VIN)</th>
-                    <th>Wheel</th>
-                    <th>Site In-charge</th>
-                    <th>Status of Agreements</th>
-                    <th>Assigned Driver</th>
-                    <th>Make & Year</th>
-                    {isSuperAdmin(user) && <th style={{ textAlign: 'right' }}>Actions</th>}
+                    <th style={{ minWidth: 140 }}>Vehicle Number</th>
+                    <th style={{ minWidth: 140 }}>Vehicle Model</th>
+                    <th style={{ minWidth: 110 }}>Model No</th>
+                    <th style={{ minWidth: 130 }}>Registration Date</th>
+                    <th style={{ minWidth: 160 }}>Chassis No (VIN)</th>
+                    <th style={{ minWidth: 110 }}>Wheel</th>
+                    <th style={{ minWidth: 170 }}>Site In-charge</th>
+                    <th style={{ minWidth: 170 }}>Status of Agreements</th>
+                    <th style={{ minWidth: 190 }}>Assigned Driver</th>
+                    <th style={{ minWidth: 120 }}>Make & Year</th>
+                    {isSuperAdmin(user) && <th style={{ textAlign: 'right', minWidth: 90 }}>Actions</th>}
                   </tr>
                 </thead>
                 <tbody>

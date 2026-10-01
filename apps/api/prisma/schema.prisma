@@ -133,6 +133,7 @@ model User {
   sentSupportMessages     SupportMessage[]      @relation("SentSupportMessages")
   receivedSupportMessages SupportMessage[]      @relation("ReceivedSupportMessages")
   siteInchargeVehicles    Vehicle[]             @relation("SiteInchargeVehicles")
+  adminCategoryAssignments AdminCategoryAssignment[] @relation("AdminCategories")
 
   @@index([role])
   @@index([approvalStatus])
@@ -497,6 +498,7 @@ model SparePartRequest {
   // Status & Type
   status                SparePartRequestStatus @default(PENDING_APPROVAL)
   type                  SparePartType          @default(NEW)
+  category              ComplaintCategory?
 
   // Executive / Admin Issue Proposal
   issueProposedById     String?                @db.Uuid
@@ -591,6 +593,18 @@ model CategorySla {
   slaHours  Float             @default(12.0)
   createdAt DateTime          @default(now())
   updatedAt DateTime          @updatedAt
+}
+
+model AdminCategoryAssignment {
+  id        String            @id @default(uuid(7)) @db.Uuid
+  adminId   String            @db.Uuid
+  admin     User              @relation("AdminCategories", fields: [adminId], references: [id], onDelete: Cascade)
+  category  ComplaintCategory
+  createdAt DateTime          @default(now())
+
+  @@unique([adminId, category])
+  @@index([adminId])
+  @@index([category])
 }
 
 

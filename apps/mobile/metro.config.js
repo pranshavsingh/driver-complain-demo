@@ -49,4 +49,31 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
   return context.resolveRequest(context, moduleName, platform);
 };
 
+// 4. Handle pnpm package paths with '+' in asset URLs.
+//    On Android/OkHttp, '%2B' in the asset URL query parameter is decoded to '+'.
+//    When Metro parses query parameters, '+' is interpreted as a space, causing
+//    paths like '@expo+vector-icons' to become '@expo vector-icons' and return 404.
+//    Re-encoding '+' back to '%2B' in rewriteRequestUrl and enhanceMiddleware restores the correct folder path on disk.
+const defaultRewriteRequestUrl = config.server?.rewriteRequestUrl;
+config.server = {
+  ...config.server,
+  rewriteRequestUrl: (url) => {
+    const rewritten = defaultRewriteRequestUrl ? defaultRewriteRequestUrl(url) : url;
+    if (rewritten && rewritten.includes('unstable_path=')) {
+      return rewritten.replace(/\+/g, '%2B');
+    }
+    return rewritten;
+  },
+  enhanceMiddleware: (middleware, server) => {
+    const defaultEnhance = config.server?.enhanceMiddleware;
+    const enhanced = defaultEnhance ? defaultEnhance(middleware, server) : middleware;
+    return (req, res, next) => {
+      if (req.url && req.url.includes('unstable_path=')) {
+        req.url = req.url.replace(/\+/g, '%2B');
+      }
+      return enhanced(req, res, next);
+    };
+  },
+};
+
 module.exports = config;

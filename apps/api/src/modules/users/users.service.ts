@@ -12,7 +12,8 @@ import { prisma } from '../../lib/prisma';
 import { toUserPublic, toAdminSummary } from '../../lib/serializers';
 import { ApiError } from '../../errors/api-error';
 import { hashPin } from '../../lib/password';
-import { emitToRoles, emitEventToUsers } from '../../realtime/socket';
+import { emitToRoles, emitEventToUsers, emitToAll } from '../../realtime/socket';
+import { logger } from '../../lib/logger';
 
 export interface Actor {
   id: string;
@@ -468,8 +469,28 @@ export async function rejectUser(userId: string): Promise<UserPublic> {
 }
 
 export async function updateUser(userId: string, input: UpdateUser): Promise<UserPublic> {
-  const user = await prisma.user.findUnique({ where: { id: userId } });
+  const user = await prisma.user.findUnique({ where: { id: userId }, include: { driver: true } });
   if (!user) throw ApiError.notFound('User not found');
+
+  // If employeeId is provided, check uniqueness
+  if (input.employeeId !== undefined && input.employeeId) {
+    const normEmp = input.employeeId.trim().toUpperCase();
+    if (normEmp !== user.employeeId) {
+      const dup = await prisma.user.findFirst({
+        where: {
+          employeeId: { equals: normEmp, mode: 'insensitive' },
+          id: { not: userId },
+        },
+      });
+      if (dup) throw ApiError.badRequest(`Employee ID "${normEmp}" is already registered.`);
+    }
+  }
+
+  // If pin is provided, hash it
+  let pinHash: string | undefined;
+  if (input.pin !== undefined && input.pin.trim()) {
+    pinHash = await hashPin(input.pin.trim());
+  }
 
   // If email is provided, check uniqueness
   if (input.email !== undefined && input.email) {
@@ -495,8 +516,27 @@ export async function updateUser(userId: string, input: UpdateUser): Promise<Use
     if (dup) throw ApiError.badRequest(`Phone number "${normPhone}" is already registered.`);
   }
 
+  // If licenseNumber is provided (or driver role is assigned)
+  const targetRole = input.role ?? user.role;
+  if (targetRole === 'DRIVER' && input.licenseNumber !== undefined && input.licenseNumber?.trim()) {
+    const normDl = input.licenseNumber.trim().toUpperCase();
+    const dupDl = await prisma.driver.findFirst({
+      where: {
+        licenseNumber: { equals: normDl, mode: 'insensitive' },
+        userId: { not: userId },
+      },
+    });
+    if (dupDl) throw ApiError.badRequest(`License Number "${normDl}" is already registered.`);
+
+    await prisma.driver.upsert({
+      where: { userId },
+      create: { userId, licenseNumber: normDl },
+      update: { licenseNumber: normDl },
+    });
+  }
+
   let targetCategory = input.category;
-  if (user.role === 'EXECUTIVE' && input.createdByAdminId !== undefined) {
+  if (targetRole === 'EXECUTIVE' && input.createdByAdminId !== undefined) {
     if (input.createdByAdminId) {
       const supAdmin = await prisma.user.findUnique({
         where: { id: input.createdByAdminId },
@@ -511,6 +551,10 @@ export async function updateUser(userId: string, input: UpdateUser): Promise<Use
   const updated = await prisma.user.update({
     where: { id: userId },
     data: {
+      ...(input.employeeId !== undefined && { employeeId: input.employeeId.trim().toUpperCase() }),
+      ...(pinHash !== undefined && { pinHash }),
+      ...(input.role !== undefined && { role: input.role }),
+      ...(input.approvalStatus !== undefined && { approvalStatus: input.approvalStatus }),
       ...(input.firstName !== undefined && { firstName: input.firstName.trim() }),
       ...(input.lastName !== undefined && { lastName: input.lastName.trim() }),
       ...(input.email !== undefined && { email: input.email ? input.email.trim().toLowerCase() : null }),
@@ -520,9 +564,12 @@ export async function updateUser(userId: string, input: UpdateUser): Promise<Use
       ...(input.createdByAdminId !== undefined && { createdByAdminId: input.createdByAdminId }),
       ...(input.isActive !== undefined && { isActive: input.isActive }),
     },
+    include: { driver: true },
   });
 
-  emitToRoles(['SUPER_ADMIN', 'ADMIN'], 'user:updated', {
+  const publicUser = toUserPublic(updated);
+
+  emitToAll('user:updated', {
     userId: updated.id,
     employeeId: updated.employeeId,
     name: `${updated.firstName} ${updated.lastName}`,
@@ -530,9 +577,14 @@ export async function updateUser(userId: string, input: UpdateUser): Promise<Use
     approvalStatus: updated.approvalStatus,
     action: 'UPDATED',
     at: new Date().toISOString(),
+    user: publicUser,
   });
 
-  return toUserPublic(updated);
+  if (updated.role === 'DRIVER') {
+    emitToAll('driver:updated', { userId: updated.id });
+  }
+
+  return publicUser;
 }
 
 export async function deleteUser(actor: Actor, targetUserId: string): Promise<void> {
@@ -553,74 +605,121 @@ export async function deleteUser(actor: Actor, targetUserId: string): Promise<vo
     throw ApiError.notFound('User not found');
   }
 
-  await prisma.$transaction(async (tx) => {
-    // 1. Unassign createdByAdminId reference for any users created by this admin
-    await tx.user.updateMany({
-      where: { createdByAdminId: targetUserId },
-      data: { createdByAdminId: null },
-    });
+  try {
+    await prisma.$transaction(async (tx) => {
+      // 1. Unassign createdByAdminId reference for any users created by this admin
+      await tx.user.updateMany({
+        where: { createdByAdminId: targetUserId },
+        data: { createdByAdminId: null },
+      });
 
-    // 2. Unassign assignedToId / pendingAssigneeId on Complaints
-    await tx.complaint.updateMany({
-      where: { assignedToId: targetUserId },
-      data: { assignedToId: null, assignmentStatus: 'NONE' },
-    });
+      // 2. Clear admin category assignments
+      await tx.adminCategoryAssignment.deleteMany({
+        where: { adminId: targetUserId },
+      });
 
-    await tx.complaint.updateMany({
-      where: { pendingAssigneeId: targetUserId },
-      data: { pendingAssigneeId: null },
-    });
-
-    // 3. Handle Driver relations if the user is a driver
-    if (target.driver) {
-      const driverId = target.driver.id;
-
-      // Unassign driver from any vehicles
+      // 3. Unassign from Vehicles (site incharge)
       await tx.vehicle.updateMany({
-        where: { driverId },
-        data: { driverId: null },
+        where: { siteInchargeId: targetUserId },
+        data: { siteInchargeId: null },
       });
 
-      // Find complaints created for this driver
-      const driverComplaints = await tx.complaint.findMany({
-        where: { driverId },
-        select: { id: true },
+      // 4. Unassign assignedToId / pendingAssigneeId on Complaints
+      await tx.complaint.updateMany({
+        where: { assignedToId: targetUserId },
+        data: { assignedToId: null, assignmentStatus: 'NONE' },
       });
 
-      const complaintIds = driverComplaints.map((c) => c.id);
+      await tx.complaint.updateMany({
+        where: { pendingAssigneeId: targetUserId },
+        data: { pendingAssigneeId: null },
+      });
 
-      if (complaintIds.length > 0) {
-        await tx.notification.deleteMany({ where: { complaintId: { in: complaintIds } } });
-        await tx.complaintAttachment.deleteMany({ where: { complaintId: { in: complaintIds } } });
-        await tx.complaintUpdate.deleteMany({ where: { complaintId: { in: complaintIds } } });
-        await tx.loadingRecord.deleteMany({ where: { complaintId: { in: complaintIds } } });
-        await tx.complaint.deleteMany({ where: { id: { in: complaintIds } } });
+      // 5. Unassign spare parts request admin/executive relations
+      await tx.sparePartRequest.updateMany({
+        where: { issueProposedById: targetUserId },
+        data: { issueProposedById: null },
+      });
+      await tx.sparePartRequest.updateMany({
+        where: { approvedById: targetUserId },
+        data: { approvedById: null },
+      });
+      await tx.sparePartRequest.updateMany({
+        where: { issuedById: targetUserId },
+        data: { issuedById: null },
+      });
+
+      // 6. Delete complaint attachments uploaded by this user
+      await tx.complaintAttachment.deleteMany({
+        where: { uploadedById: targetUserId },
+      });
+
+      // 7. Delete complaint updates authored by this user
+      await tx.complaintUpdate.deleteMany({
+        where: { authorId: targetUserId },
+      });
+
+      // 8. Handle Driver relations if the user is a driver (or has driver profile)
+      const driver = target.driver ?? (await tx.driver.findUnique({ where: { userId: targetUserId } }));
+      if (driver) {
+        const driverId = driver.id;
+
+        // Unassign driver from any vehicles
+        await tx.vehicle.updateMany({
+          where: { driverId },
+          data: { driverId: null },
+        });
+
+        // Find complaints created for this driver
+        const driverComplaints = await tx.complaint.findMany({
+          where: { driverId },
+          select: { id: true },
+        });
+
+        const complaintIds = driverComplaints.map((c) => c.id);
+
+        if (complaintIds.length > 0) {
+          await tx.supportMessage.updateMany({
+            where: { linkedComplaintId: { in: complaintIds } },
+            data: { linkedComplaintId: null },
+          });
+          await tx.notification.deleteMany({ where: { complaintId: { in: complaintIds } } });
+          await tx.complaintAttachment.deleteMany({ where: { complaintId: { in: complaintIds } } });
+          await tx.complaintUpdate.deleteMany({ where: { complaintId: { in: complaintIds } } });
+          await tx.loadingRecord.deleteMany({ where: { complaintId: { in: complaintIds } } });
+          await tx.complaint.deleteMany({ where: { id: { in: complaintIds } } });
+        }
+
+        // Delete driver-specific records
+        await tx.loadingRecord.deleteMany({ where: { driverId } });
+        await tx.fuelRecord.deleteMany({ where: { driverId } });
+        await tx.maintenanceRecord.deleteMany({ where: { driverId } });
+        await tx.sparePartRequest.deleteMany({ where: { driverId } });
+        await tx.driver.deleteMany({ where: { id: driverId } });
       }
 
-      // Delete driver-specific records
-      await tx.loadingRecord.deleteMany({ where: { driverId } });
-      await tx.fuelRecord.deleteMany({ where: { driverId } });
-      await tx.maintenanceRecord.deleteMany({ where: { driverId } });
-      await tx.sparePartRequest.deleteMany({ where: { driverId } });
-      await tx.driver.delete({ where: { id: driverId } });
-    }
+      // 9. Delete user-level relations
+      await tx.notification.deleteMany({ where: { userId: targetUserId } });
+      await tx.deviceToken.deleteMany({ where: { userId: targetUserId } });
+      await tx.refreshToken.deleteMany({ where: { userId: targetUserId } });
+      await tx.supportMessage.deleteMany({
+        where: {
+          OR: [{ senderId: targetUserId }, { receiverId: targetUserId }],
+        },
+      });
 
-    // 4. Delete user-level relations
-    await tx.notification.deleteMany({ where: { userId: targetUserId } });
-    await tx.deviceToken.deleteMany({ where: { userId: targetUserId } });
-    await tx.refreshToken.deleteMany({ where: { userId: targetUserId } });
-    await tx.supportMessage.deleteMany({
-      where: {
-        OR: [{ senderId: targetUserId }, { receiverId: targetUserId }],
-      },
-    });
+      // 10. Delete the User record
+      await tx.user.delete({ where: { id: targetUserId } });
+    }, { timeout: 20000 });
+  } catch (err: unknown) {
+    logger.error({ err, targetUserId }, 'deleteUser failed');
+    if (err instanceof ApiError) throw err;
+    const msg = err instanceof Error ? err.message : String(err);
+    throw ApiError.badRequest(`Failed to delete user: ${msg}`);
+  }
 
-    // 5. Delete the User record
-    await tx.user.delete({ where: { id: targetUserId } });
-  });
-
-  // 6. Broadcast Realtime Delete Event
-  emitToRoles(['SUPER_ADMIN', 'ADMIN'], 'user:deleted', {
+  // 11. Broadcast Realtime Delete Event to all clients
+  emitToAll('user:deleted', {
     userId: targetUserId,
     employeeId: target.employeeId,
     name: `${target.firstName} ${target.lastName}`,
@@ -630,7 +729,7 @@ export async function deleteUser(actor: Actor, targetUserId: string): Promise<vo
     at: new Date().toISOString(),
   });
 
-  emitToRoles(['SUPER_ADMIN', 'ADMIN'], 'user:updated', {
+  emitToAll('user:updated', {
     userId: targetUserId,
     employeeId: target.employeeId,
     name: `${target.firstName} ${target.lastName}`,
@@ -639,4 +738,44 @@ export async function deleteUser(actor: Actor, targetUserId: string): Promise<vo
     action: 'UPDATED',
     at: new Date().toISOString(),
   });
+
+  emitToAll('driver:updated', { userId: targetUserId });
+  emitToAll('vehicle:updated', {});
 }
+
+export async function getAdminCategoryAssignments(adminId: string): Promise<ComplaintCategory[]> {
+  const assignments = await prisma.adminCategoryAssignment.findMany({
+    where: { adminId },
+    select: { category: true },
+  });
+  return assignments.map((a) => a.category as ComplaintCategory);
+}
+
+export async function setAdminCategoryAssignments(
+  adminId: string,
+  categories: ComplaintCategory[],
+): Promise<ComplaintCategory[]> {
+  const user = await prisma.user.findUnique({ where: { id: adminId } });
+  if (!user) throw ApiError.notFound('Admin user not found');
+  if (user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN') {
+    throw ApiError.badRequest('Category assignments can only be set for ADMIN or SUPER_ADMIN users');
+  }
+
+  await prisma.$transaction(async (tx) => {
+    // Clear existing assignments
+    await tx.adminCategoryAssignment.deleteMany({ where: { adminId } });
+
+    // Create new assignments
+    if (categories.length > 0) {
+      await tx.adminCategoryAssignment.createMany({
+        data: categories.map((cat) => ({
+          adminId,
+          category: cat as any,
+        })),
+      });
+    }
+  });
+
+  return getAdminCategoryAssignments(adminId);
+}
+

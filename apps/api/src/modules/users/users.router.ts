@@ -74,3 +74,20 @@ usersRouter.delete(
   requireRole('SUPER_ADMIN'),
   usersController.deleteUser,
 );
+
+usersRouter.get(
+  '/:id/categories',
+  authenticate,
+  validateUuidParam('id'),
+  requireRole('SUPER_ADMIN', 'ADMIN'),
+  usersController.getCategoryAssignments,
+);
+
+usersRouter.post(
+  '/:id/categories',
+  authenticate,
+  validateUuidParam('id'),
+  requireRole('SUPER_ADMIN'),
+  usersController.setCategoryAssignments,
+);
+

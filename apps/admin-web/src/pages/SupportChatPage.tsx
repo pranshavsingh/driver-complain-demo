@@ -17,7 +17,7 @@ import {
   Link2,
 } from '../components/Icons';
 import * as api from '../api/endpoints';
-import { useAuth } from '../auth/AuthContext';
+import { isSuperAdmin, useAuth } from '../auth/AuthContext';
 import { useRealtime } from '../realtime/RealtimeProvider';
 import type {
   SupportConversationSummary,
@@ -30,6 +30,20 @@ type RoleFilter = 'ALL' | 'DRIVER' | 'ADMIN' | 'EXECUTIVE';
 export function SupportChatPage(): ReactElement {
   const { user } = useAuth();
   const { subscribeCustom } = useRealtime();
+
+  if (user && !isSuperAdmin(user)) {
+    return (
+      <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
+        <Headphones size={48} style={{ opacity: 0.5, marginBottom: 16 }} />
+        <h2 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 8px 0', color: 'var(--text)' }}>
+          Access Restricted
+        </h2>
+        <p style={{ fontSize: 14, margin: 0 }}>
+          The Support Helpline is managed exclusively by SuperAdmin users.
+        </p>
+      </div>
+    );
+  }
 
   const [conversations, setConversations] = useState<SupportConversationSummary[]>([]);
   const [loadingConversations, setLoadingConversations] = useState(true);

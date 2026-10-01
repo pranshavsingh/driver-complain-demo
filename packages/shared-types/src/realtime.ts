@@ -21,6 +21,10 @@ export const REALTIME_EVENTS = {
   userRejected: 'user:rejected',
   userUpdated: 'user:updated',
   userDeleted: 'user:deleted',
+  vehicleCreated: 'vehicle:created',
+  vehicleUpdated: 'vehicle:updated',
+  vehicleDeleted: 'vehicle:deleted',
+  vehicleAssigned: 'vehicle:assigned',
   notificationNew: 'notification:new',
 } as const;
 export type RealtimeEvent = (typeof REALTIME_EVENTS)[keyof typeof REALTIME_EVENTS];

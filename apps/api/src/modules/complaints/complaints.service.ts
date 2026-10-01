@@ -22,6 +22,7 @@ import { getActiveAdminUserIds } from '../../lib/admin-cache';
 import { logger } from '../../lib/logger';
 import { ApiError } from '../../errors/api-error';
 import { emitToRoles } from '../../realtime/socket';
+import { resolveUserScope } from '../../lib/user-scope';
 
 async function findLeastLoadedAdmin(
   category: string,
@@ -119,7 +120,10 @@ async function findLeastLoadedAdmin(
       role: 'ADMIN',
       isActive: true,
       approvalStatus: 'APPROVED',
-      category: category as Prisma.EnumComplaintCategoryFilter,
+      OR: [
+        { category: category as Prisma.EnumComplaintCategoryFilter },
+        { adminCategoryAssignments: { some: { category: category as any } } },
+      ],
     },
     select: { id: true },
   });
@@ -294,18 +298,34 @@ export async function create(
         siteIncharge: { select: { site: true } },
       },
     });
-    siteInchargeIdForVehicle = vRecord?.siteInchargeId ?? null;
-    vehicleSite = vRecord?.siteIncharge?.site ?? null;
+    if (vRecord) {
+      siteInchargeIdForVehicle = vRecord.siteInchargeId;
+      vehicleSite = vRecord.siteIncharge?.site ?? null;
+    }
+  }
+
+  // Fallback: Check if driver has an assigned vehicle with site incharge
+  if (!siteInchargeIdForVehicle) {
+    const driverV = await prisma.vehicle.findFirst({
+      where: { driverId: driver.id, siteInchargeId: { not: null } },
+      select: { id: true, siteInchargeId: true },
+    });
+    if (driverV) {
+      if (!vehicleIdToUse) vehicleIdToUse = driverV.id;
+      siteInchargeIdForVehicle = driverV.siteInchargeId;
+    }
   }
 
   const categoryToUse = input.category ?? 'BREAKDOWN';
 
-  // Duplicate Check: If driver has an open/unresolved complaint in this category, append as update/evidence
+  // Duplicate Check: Only merge if driver submitted an identical unresolved complaint within the last 5 minutes (prevents accidental double-taps)
+  const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
   const existingOpenComplaint = await prisma.complaint.findFirst({
     where: {
       driverId: driver.id,
       category: categoryToUse,
       status: { notIn: ['RESOLVED', 'CLOSED'] },
+      createdAt: { gte: fiveMinutesAgo },
     },
     orderBy: { createdAt: 'desc' },
   });
@@ -530,11 +550,26 @@ export async function create(
       },
     });
 
+    const categoryExecs = await tx.user.findMany({
+      where: {
+        role: 'EXECUTIVE',
+        isActive: true,
+        approvalStatus: 'APPROVED',
+        OR: [
+          { category: categoryToUse },
+          ...(siteInchargeIdForVehicle ? [{ id: siteInchargeIdForVehicle }] : []),
+          ...(vehicleSite ? [{ site: { equals: vehicleSite, mode: 'insensitive' as const } }] : []),
+        ],
+      },
+      select: { id: true },
+    });
+
     const notifyUserIds = Array.from(
       new Set([
         ...adminIds,
         ...(autoAssignedToId ? [autoAssignedToId] : []),
         ...(siteInchargeIdForVehicle ? [siteInchargeIdForVehicle] : []),
+        ...categoryExecs.map((e) => e.id),
       ]),
     );
 
@@ -557,13 +592,27 @@ export async function create(
     });
   }, { timeout: 15000, maxWait: 10000 });
 
-  // Live + push delivery, post-commit and best-effort — the admins' Notification rows
-  // (written in the transaction above) are the durable record if this fails.
+  // Post-commit delivery to all target users
+  const categoryExecsAfter = await prisma.user.findMany({
+    where: {
+      role: 'EXECUTIVE',
+      isActive: true,
+      approvalStatus: 'APPROVED',
+      OR: [
+        { category: categoryToUse },
+        ...(siteInchargeIdForVehicle ? [{ id: siteInchargeIdForVehicle }] : []),
+        ...(vehicleSite ? [{ site: { equals: vehicleSite, mode: 'insensitive' as const } }] : []),
+      ],
+    },
+    select: { id: true },
+  });
+
   const notifyUserIds = Array.from(
     new Set([
       ...adminIds,
       ...(autoAssignedToId ? [autoAssignedToId] : []),
       ...(siteInchargeIdForVehicle ? [siteInchargeIdForVehicle] : []),
+      ...categoryExecsAfter.map((e) => e.id),
     ]),
   );
 
@@ -589,6 +638,7 @@ export async function create(
     complaintNo: created.complaintNo,
     title: created.title,
     status: created.status,
+    category: created.category,
     at: new Date().toISOString(),
   });
 
@@ -597,6 +647,8 @@ export async function create(
     type: 'COMPLAINT_CREATED',
     title: `New complaint ${created.complaintNo}`,
     body: created.title,
+    complaintId: created.id,
+    complaintNo: created.complaintNo,
     isRead: false,
     createdAt: new Date().toISOString(),
     data: { complaintId: created.id, type: 'COMPLAINT_CREATED' },
@@ -605,79 +657,136 @@ export async function create(
   return toComplaintPublic(created);
 }
 
-/** Build the Prisma filter for list/export. Drivers are hard-scoped to their own rows; Admins and Executives are hard-scoped to complaints assigned to them. */
-function buildWhere(
+/**
+ * Build the Prisma filter for list/export.
+ *
+ * Visibility rules (matching the reference diagram):
+ *   DRIVER      → own complaints only
+ *   ADMIN       → complaints in their category list (OR directly assigned / site-scoped).
+ *                 If no categories are configured (null), falls back to direct assignment
+ *                 and site-incharge relations only.
+ *   EXECUTIVE   → category is a hard AND gate: they only see complaints that belong to
+ *                 their department category. Within that category, they see complaints
+ *                 assigned to them or on their site vehicles.
+ *   SUPER_ADMIN → no restriction applied here (no andConditions pushed)
+ */
+async function buildWhere(
   actor: Actor,
   actorDriverId: string | undefined,
   query: ComplaintFilter,
-): Prisma.ComplaintWhereInput {
-  const where: Prisma.ComplaintWhereInput = {};
+): Promise<Prisma.ComplaintWhereInput> {
+  const andConditions: Prisma.ComplaintWhereInput[] = [];
 
   if (actor.role === 'DRIVER') {
-    where.driverId = actorDriverId;
+    andConditions.push({ driverId: actorDriverId });
   } else if (actor.role === 'ADMIN') {
-    where.OR = [
-      { assignedToId: actor.id },
-      { vehicle: { siteInchargeId: actor.id } },
-      { assignedTo: { createdByAdminId: actor.id } },
-    ];
+    const scope = await resolveUserScope(actor.id, actor.role);
+
+    if (scope.categories && scope.categories.length > 0) {
+      // ── Category is a hard AND gate for admins with department assignments ──────
+      // Per the flow: Driver complaint → check category → Dept Admin.
+      // A BREAKDOWN admin must NEVER see FUEL_DEF complaints, even if one happens
+      // to be assigned to someone they created or a vehicle they incharge.
+      andConditions.push({
+        category: { in: scope.categories as import('@prisma/client').ComplaintCategory[] },
+      });
+
+      // Within their category, they see all complaints (no further OR restriction needed —
+      // a dept head sees the full picture of their department).
+    } else {
+      // Admin with no explicit category assignment: fall back to direct-assignment
+      // and site-incharge relations (they are not a department head).
+      const adminOrConditions: Prisma.ComplaintWhereInput[] = [
+        { assignedToId: actor.id },
+        { vehicle: { siteInchargeId: actor.id } },
+        { assignedTo: { createdByAdminId: actor.id } },
+      ];
+      if (scope.site) {
+        adminOrConditions.push({
+          vehicle: { siteIncharge: { site: { equals: scope.site, mode: 'insensitive' } } },
+        });
+      }
+      andConditions.push({ OR: adminOrConditions });
+    }
   } else if (actor.role === 'EXECUTIVE') {
-    where.OR = [
+    const scope = await resolveUserScope(actor.id, actor.role);
+
+    // ── Category is a hard AND gate for executives ──────────────────────────────
+    // Per the flow: Driver complaint → check category → Dept Admin → Site Executive.
+    // An executive in "BREAKDOWN" must NEVER see "FUEL_DEF" complaints, even if they
+    // are the site incharge for a vehicle that filed one.
+    if (scope.categories && scope.categories.length > 0) {
+      andConditions.push({ category: { in: scope.categories as import('@prisma/client').ComplaintCategory[] } });
+    }
+
+    // ── Within their category, narrow by assignment / site ───────────────────────
+    const execOrConditions: Prisma.ComplaintWhereInput[] = [
       { assignedToId: actor.id },
       { vehicle: { siteInchargeId: actor.id } },
       { driver: { vehicles: { some: { siteInchargeId: actor.id } } } },
     ];
+
+    if (scope.site) {
+      execOrConditions.push({
+        vehicle: { siteIncharge: { site: { equals: scope.site, mode: 'insensitive' } } },
+      });
+    }
+
+    andConditions.push({ OR: execOrConditions });
   } else if (query.driverId) {
-    where.driverId = query.driverId;
+    andConditions.push({ driverId: query.driverId });
   }
 
-  if (query.status) where.status = query.status;
-  if (query.priority) where.priority = query.priority;
-  if (query.category) where.category = query.category;
-  if (query.vehicleId) where.vehicleId = query.vehicleId;
+  if (query.status) andConditions.push({ status: query.status });
+  if (query.priority) andConditions.push({ priority: query.priority });
+  if (query.category) andConditions.push({ category: query.category });
+  if (query.vehicleId) andConditions.push({ vehicleId: query.vehicleId });
   if (actor.role === 'SUPER_ADMIN' && query.assignedToId) {
-    where.assignedToId = query.assignedToId;
+    andConditions.push({ assignedToId: query.assignedToId });
   }
 
   if (query.needsAction) {
-    where.status = 'NEW';
-    where.assignedToId = null;
+    andConditions.push({ status: 'NEW', assignedToId: null });
   }
 
   if (query.tripPhase) {
     if (query.tripPhase === 'AT_LOADING_PLANT') {
-      where.loadingRecords = { some: { status: { in: ['REACHED', 'COMPLETED'] } } };
+      andConditions.push({ loadingRecords: { some: { status: { in: ['REACHED', 'COMPLETED'] } } } });
     } else if (query.tripPhase === 'IN_TRANSIT') {
-      where.loadingRecords = { some: { status: 'TRIP_STARTED' } };
+      andConditions.push({ loadingRecords: { some: { status: 'TRIP_STARTED' } } });
     } else if (query.tripPhase === 'AT_UNLOADING_POINT') {
-      where.loadingRecords = { some: { status: 'UNLOADING' } };
+      andConditions.push({ loadingRecords: { some: { status: 'UNLOADING' } } });
     } else if (query.tripPhase === 'YARD_IDLE') {
-      where.loadingRecords = { none: { status: { in: ['REACHED', 'COMPLETED', 'TRIP_STARTED', 'UNLOADING'] } } };
+      andConditions.push({ loadingRecords: { none: { status: { in: ['REACHED', 'COMPLETED', 'TRIP_STARTED', 'UNLOADING'] } } } });
     }
   }
 
   if (query.createdFrom || query.createdTo) {
-    where.createdAt = {
-      ...(query.createdFrom ? { gte: query.createdFrom } : {}),
-      ...(query.createdTo ? { lte: query.createdTo } : {}),
-    };
+    andConditions.push({
+      createdAt: {
+        ...(query.createdFrom ? { gte: query.createdFrom } : {}),
+        ...(query.createdTo ? { lte: query.createdTo } : {}),
+      },
+    });
   }
 
   if (query.search) {
-    where.OR = [
-      { complaintNo: { contains: query.search, mode: 'insensitive' } },
-      { title: { contains: query.search, mode: 'insensitive' } },
-      { description: { contains: query.search, mode: 'insensitive' } },
-      { driver: { user: { OR: [
-        { firstName: { contains: query.search, mode: 'insensitive' } },
-        { lastName: { contains: query.search, mode: 'insensitive' } },
-        { employeeId: { contains: query.search, mode: 'insensitive' } },
-      ] } } },
-      { vehicle: { plateNumber: { contains: query.search, mode: 'insensitive' } } },
-    ];
+    andConditions.push({
+      OR: [
+        { complaintNo: { contains: query.search, mode: 'insensitive' } },
+        { title: { contains: query.search, mode: 'insensitive' } },
+        { description: { contains: query.search, mode: 'insensitive' } },
+        { driver: { user: { OR: [
+          { firstName: { contains: query.search, mode: 'insensitive' } },
+          { lastName: { contains: query.search, mode: 'insensitive' } },
+          { employeeId: { contains: query.search, mode: 'insensitive' } },
+        ] } } },
+        { vehicle: { plateNumber: { contains: query.search, mode: 'insensitive' } } },
+      ],
+    });
   }
 
-  return where;
+  return andConditions.length > 0 ? { AND: andConditions } : {};
 }
 
 export async function list(
@@ -700,7 +809,7 @@ export async function list(
     actorDriverId = driver.id;
   }
 
-  const where = buildWhere(actor, actorDriverId, query);
+  const where = await buildWhere(actor, actorDriverId, query);
   const skip = (query.page - 1) * query.pageSize;
 
   const [rows, total] = await prisma.$transaction([
@@ -781,7 +890,7 @@ export async function* iterateForExport(
     scopedDriverId = driver.id;
   }
 
-  const where = buildWhere(actorObj, scopedDriverId, filter);
+  const where = await buildWhere(actorObj, scopedDriverId, filter);
   let cursor: string | undefined;
 
   for (;;) {
@@ -819,15 +928,29 @@ export async function getOne(actor: Actor, id: string): Promise<ComplaintDetail>
     const isDriverVehicleIncharge = complaint.driver?.vehicles?.some(
       (v: any) => v.siteInchargeId === actor.id,
     );
+    let isCategoryMatch = false;
     if (!isAssigned && !isVehicleIncharge && !isDriverVehicleIncharge) {
-      throw ApiError.forbidden('You can only view complaints assigned to you or your vehicles');
+      const execUser = await prisma.user.findUnique({ where: { id: actor.id }, select: { category: true } });
+      if (execUser?.category && execUser.category === complaint.category) {
+        isCategoryMatch = true;
+      }
+    }
+    if (!isAssigned && !isVehicleIncharge && !isDriverVehicleIncharge && !isCategoryMatch) {
+      throw ApiError.forbidden('You can only view complaints assigned to you, your department, or your vehicles');
     }
   } else if (actor.role === 'ADMIN') {
     const isAssigned = complaint.assignedToId === actor.id;
     const isVehicleIncharge = complaint.vehicle?.siteInchargeId === actor.id;
     const isSubordinate = complaint.assignedTo?.createdByAdminId === actor.id;
+    let isCategoryMatch = false;
     if (!isAssigned && !isVehicleIncharge && !isSubordinate) {
-      throw ApiError.forbidden('You can only view complaints assigned to you or your site');
+      const adminUser = await prisma.user.findUnique({ where: { id: actor.id }, select: { category: true } });
+      if (adminUser?.category && adminUser.category === complaint.category) {
+        isCategoryMatch = true;
+      }
+    }
+    if (!isAssigned && !isVehicleIncharge && !isSubordinate && !isCategoryMatch) {
+      throw ApiError.forbidden('You can only view complaints assigned to you, your department, or your site');
     }
   }
 
@@ -854,19 +977,35 @@ export async function updateStatus(
     const isDriverVehicleIncharge = existing.driver?.vehicles?.some(
       (v) => v.siteInchargeId === actorObj.id,
     );
+    let isCategoryMatch = false;
     if (!isAssigned && !isVehicleIncharge && !isDriverVehicleIncharge) {
-      throw ApiError.forbidden('You can only update complaints assigned to you or your vehicles');
+      const execUser = await prisma.user.findUnique({ where: { id: actorObj.id }, select: { category: true } });
+      if (execUser?.category && execUser.category === existing.category) {
+        isCategoryMatch = true;
+      }
+    }
+    if (!isAssigned && !isVehicleIncharge && !isDriverVehicleIncharge && !isCategoryMatch) {
+      throw ApiError.forbidden('You can only update complaints assigned to you, your department, or your vehicles');
     }
   } else if (actorObj.role === 'ADMIN') {
     const isAssigned = existing.assignedToId === actorObj.id;
     const isVehicleIncharge = existing.vehicle?.siteInchargeId === actorObj.id;
+    let isCategoryOrSubordinateMatch = false;
     if (!isAssigned && !isVehicleIncharge) {
-      const assignedToUser = existing.assignedToId
-        ? await prisma.user.findUnique({ where: { id: existing.assignedToId }, select: { createdByAdminId: true } })
-        : null;
-      if (assignedToUser?.createdByAdminId !== actorObj.id) {
-        throw ApiError.forbidden('You can only update complaints assigned to you or your site');
+      const adminUser = await prisma.user.findUnique({ where: { id: actorObj.id }, select: { category: true } });
+      if (adminUser?.category && adminUser.category === existing.category) {
+        isCategoryOrSubordinateMatch = true;
+      } else {
+        const assignedToUser = existing.assignedToId
+          ? await prisma.user.findUnique({ where: { id: existing.assignedToId }, select: { createdByAdminId: true } })
+          : null;
+        if (assignedToUser?.createdByAdminId === actorObj.id) {
+          isCategoryOrSubordinateMatch = true;
+        }
       }
+    }
+    if (!isAssigned && !isVehicleIncharge && !isCategoryOrSubordinateMatch) {
+      throw ApiError.forbidden('You can only update complaints assigned to you, your department, or your site');
     }
   }
 
@@ -1294,7 +1433,7 @@ export async function getUnreadCount(actor: Actor): Promise<{ unreadCount: numbe
     actorDriverId = driver.id;
   }
 
-  const where = buildWhere(actor, actorDriverId, { status: 'NEW' });
+  const where = await buildWhere(actor, actorDriverId, { status: 'NEW' });
   const unreadCount = await prisma.complaint.count({ where });
   return { unreadCount };
 }

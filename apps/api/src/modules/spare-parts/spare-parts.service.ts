@@ -5,6 +5,7 @@ import { transcribeAudio } from '../../lib/transcribe';
 import { env } from '../../config/env';
 import { pushToUsers } from '../../lib/fcm';
 import { logger } from '../../lib/logger';
+import { resolveUserScope } from '../../lib/user-scope';
 import type {
   CreateSparePartRequestInput,
   ProposeIssueSparePartInput,
@@ -316,6 +317,20 @@ export async function listRequests(actor: Actor, query: SparePartListQuery) {
       return { data: [], total: 0, page, limit, totalPages: 0 };
     }
     where.driverId = driver.id;
+  } else if (actor.role === 'ADMIN' || actor.role === 'EXECUTIVE') {
+    const scope = await resolveUserScope(actor.id, actor.role);
+    // scope.categories === null means ADMIN with no explicit category assignments —
+    // they see all spare-part requests (scoped to their direct assignments elsewhere).
+    // A non-empty array means they're restricted to those specific categories.
+    if (scope.categories !== null && scope.categories.length > 0) {
+      where.OR = [
+        { category: { in: scope.categories as import('@prisma/client').ComplaintCategory[] } },
+        { category: null },
+      ];
+    }
+    if (query.driverId) {
+      where.driverId = query.driverId;
+    }
   } else if (query.driverId) {
     where.driverId = query.driverId;
   }
@@ -434,6 +449,28 @@ export async function proposeIssueRequest(
   });
   if (!warehouse) throw ApiError.badRequest('Selected warehouse does not exist');
 
+  let finalPartName = input.issuedPartName?.trim() || '';
+  let finalPartNo = input.issuedPartNo ? input.issuedPartNo.trim() : null;
+  let finalQty = input.issuedQty ?? 1;
+
+  if (input.items && input.items.length > 0) {
+    const validItems = input.items.filter((i) => i.name && i.name.trim().length > 0);
+    if (validItems.length > 0) {
+      finalPartName = validItems
+        .map((i) => (Number(i.quantity) > 1 ? `${i.name.trim()} (x${i.quantity})` : i.name.trim()))
+        .join(', ');
+      const serials = validItems
+        .map((i) => i.serialNumber?.trim())
+        .filter((s): s is string => Boolean(s && s.length > 0));
+      finalPartNo = serials.length > 0 ? serials.join(', ') : (input.issuedPartNo ? input.issuedPartNo.trim() : null);
+      finalQty = validItems.reduce((acc, i) => acc + (Number(i.quantity) || 1), 0);
+    }
+  }
+
+  if (!finalPartName) {
+    throw ApiError.badRequest('Please enter at least one product name');
+  }
+
   const now = new Date();
 
   const updated = await prisma.$transaction(async (tx) => {
@@ -445,9 +482,9 @@ export async function proposeIssueRequest(
         issueProposedById: actorUserId,
         issueProposedAt: now,
         warehouseId: input.warehouseId,
-        issuedPartName: input.issuedPartName.trim(),
-        issuedPartNo: input.issuedPartNo.trim(),
-        issuedQty: input.issuedQty ?? 1,
+        issuedPartName: finalPartName,
+        issuedPartNo: finalPartNo,
+        issuedQty: finalQty,
         returnedPartNo: input.returnedPartNo ? input.returnedPartNo.trim() : null,
         returnedPartCondition: input.returnedPartCondition ? input.returnedPartCondition.trim() : null,
         adminNotes: input.adminNotes ? input.adminNotes.trim() : null,
@@ -467,7 +504,7 @@ export async function proposeIssueRequest(
           userId: sa.id,
           type: 'SPARE_PART_ISSUE_PROPOSED' as const,
           title: `Spare Part Issue Prepared: ${existing.requestNo}`,
-          body: `Issuance for ${input.issuedPartName} (Qty: ${input.issuedQty ?? 1}, Type: ${input.type}) requires SuperAdmin approval.`,
+          body: `Issuance for ${finalPartName} (Qty: ${finalQty}, Type: ${input.type}) requires SuperAdmin approval.`,
           data: { requestId: id, requestNo: existing.requestNo, type: 'SPARE_PART_ISSUE_PROPOSED' },
         })),
       });
@@ -504,9 +541,30 @@ export async function approveAndIssueRequest(
   });
   if (!warehouse) throw ApiError.badRequest('Selected warehouse does not exist');
 
-  const finalPartName = input?.issuedPartName?.trim() || existing.issuedPartName || existing.partName || 'Spare Part';
-  const finalPartNo = input?.issuedPartNo?.trim() || existing.issuedPartNo || 'N/A';
-  const finalQty = input?.issuedQty ?? existing.issuedQty ?? existing.quantity ?? 1;
+  let finalPartName = input?.issuedPartName?.trim();
+  let finalPartNo = input?.issuedPartNo !== undefined ? (input.issuedPartNo?.trim() || null) : existing.issuedPartNo;
+  let finalQty = input?.issuedQty;
+
+  if (input?.items && input.items.length > 0) {
+    const validItems = input.items.filter((i) => i.name && i.name.trim().length > 0);
+    if (validItems.length > 0) {
+      finalPartName = validItems
+        .map((i) => (Number(i.quantity) > 1 ? `${i.name.trim()} (x${i.quantity})` : i.name.trim()))
+        .join(', ');
+      const serials = validItems
+        .map((i) => i.serialNumber?.trim())
+        .filter((s): s is string => Boolean(s && s.length > 0));
+      finalPartNo = serials.length > 0 ? serials.join(', ') : (input?.issuedPartNo?.trim() || null);
+      finalQty = validItems.reduce((acc, i) => acc + (Number(i.quantity) || 1), 0);
+    }
+  }
+
+  if (!finalPartName) {
+    finalPartName = existing.issuedPartName || existing.partName || 'Spare Part';
+  }
+  if (finalQty === undefined || finalQty === null) {
+    finalQty = existing.issuedQty ?? existing.quantity ?? 1;
+  }
   const finalType = input?.type || existing.type;
   const finalReturnedPartNo = input?.returnedPartNo !== undefined ? (input.returnedPartNo?.trim() || null) : existing.returnedPartNo;
   const finalReturnedCondition = input?.returnedPartCondition !== undefined ? (input.returnedPartCondition?.trim() || null) : existing.returnedPartCondition;

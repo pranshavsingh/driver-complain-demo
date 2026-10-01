@@ -24,6 +24,14 @@ export const supportRouter = Router();
 
 supportRouter.use(authenticate);
 
+// Restrict support helpline: managed exclusively by SUPER_ADMIN on admin side
+supportRouter.use((req, res, next) => {
+  if (req.user?.role === 'ADMIN' || req.user?.role === 'EXECUTIVE') {
+    return res.status(403).json({ message: 'Support helpline is restricted to Super Admin.' });
+  }
+  next();
+});
+
 supportRouter.get('/conversations', getConversations);
 supportRouter.get('/unread-count', getUnreadCount);
 supportRouter.get('/default-admin', getDefaultAdmin);
