@@ -49,7 +49,18 @@ export function toUserPublic(user: User): UserPublic {
     site?: string | null;
     createdByAdminId?: string | null;
     driver?: Driver | null;
+    adminCategoryAssignments?: { category: string }[];
   };
+
+  const categoriesSet = new Set<string>();
+  if (u.category) categoriesSet.add(u.category);
+  if (u.adminCategoryAssignments && Array.isArray(u.adminCategoryAssignments)) {
+    for (const a of u.adminCategoryAssignments) {
+      if (a.category) categoriesSet.add(a.category);
+    }
+  }
+  const categoriesList = Array.from(categoriesSet) as UserPublic['category'][];
+
   return {
     id: user.id,
     employeeId: user.employeeId,
@@ -62,6 +73,7 @@ export function toUserPublic(user: User): UserPublic {
     isActive: user.isActive,
     approvalStatus: u.approvalStatus ?? 'APPROVED',
     category: (u.category as UserPublic['category']) ?? null,
+    categories: categoriesList as any,
     site: u.site ?? null,
     createdByAdminId: u.createdByAdminId ?? null,
     createdAt: user.createdAt.toISOString(),

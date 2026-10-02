@@ -28,6 +28,7 @@ import {
 import * as api from '../api/endpoints';
 import { EMPTY_FILTER, type ComplaintFilterInput } from '../api/endpoints';
 import { useAuth } from '../auth/AuthContext';
+import { getUserCategories } from '../auth/permissions';
 import { useApiResource } from '../hooks/useApiResource';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { useCategorySlaMap } from '../hooks/useCategorySlaMap';
@@ -432,6 +433,14 @@ export function ComplaintsListPage(): ReactElement {
   const { slaMap } = useCategorySlaMap();
   const { user } = useAuth();
 
+  const userCategories = useMemo(() => getUserCategories(user), [user]);
+  const categoryOptions = useMemo(() => {
+    if (user?.role === 'SUPER_ADMIN' || userCategories.length === 0) {
+      return COMPLAINT_CATEGORIES;
+    }
+    return COMPLAINT_CATEGORIES.filter((c) => userCategories.includes(c as ComplaintCategory));
+  }, [user, userCategories]);
+
   const { subscribe, subscribeCustom } = useRealtime();
   const listReloadRef = useRef(listRes.reload);
   listReloadRef.current = listRes.reload;
@@ -759,8 +768,8 @@ export function ComplaintsListPage(): ReactElement {
               onChange={(e) => setFilter({ category: e.target.value })}
               style={{ width: '100%', fontSize: 13, padding: '7px 10px', height: 38 }}
             >
-              <option value="">All Categories</option>
-              {COMPLAINT_CATEGORIES.map((cat) => (
+              <option value="">{categoryOptions.length > 1 ? 'All Categories' : 'Assigned Category'}</option>
+              {categoryOptions.map((cat) => (
                 <option key={cat} value={cat}>
                   {formatEnum(cat)}
                 </option>

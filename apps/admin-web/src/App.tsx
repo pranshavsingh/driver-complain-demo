@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
-import { RequireAdmin, RequireNonExecutive } from './auth/RequireAdmin';
+import { RequireAdmin, RequireNonExecutive, RequirePageAccess } from './auth/RequireAdmin';
 import { Layout } from './components/Layout';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
@@ -45,29 +45,82 @@ export function App(): ReactElement {
             </RequireNonExecutive>
           }
         />
-        <Route path="/complaints" element={<ComplaintsListPage />} />
-        <Route path="/complaints/:id" element={<ComplaintDetailPage />} />
-        <Route path="/loading" element={<LoadingTrackerPage />} />
+        <Route
+          path="/complaints"
+          element={
+            <RequirePageAccess path="/complaints">
+              <ComplaintsListPage />
+            </RequirePageAccess>
+          }
+        />
+        <Route
+          path="/complaints/:id"
+          element={
+            <RequirePageAccess path="/complaints">
+              <ComplaintDetailPage />
+            </RequirePageAccess>
+          }
+        />
+        <Route
+          path="/loading"
+          element={
+            <RequirePageAccess path="/loading">
+              <LoadingTrackerPage />
+            </RequirePageAccess>
+          }
+        />
         <Route path="/loading-tracker" element={<Navigate to="/loading" replace />} />
-        <Route path="/trips" element={<TripDetailsPage />} />
+        <Route
+          path="/trips"
+          element={
+            <RequirePageAccess path="/trips">
+              <TripDetailsPage />
+            </RequirePageAccess>
+          }
+        />
         <Route path="/fuel-logs" element={<Navigate to="/maintenance?tab=fuel" replace />} />
-        <Route path="/maintenance" element={<MaintenancePage />} />
-        <Route path="/spare-parts" element={<SparePartsPage />} />
+        <Route
+          path="/maintenance"
+          element={
+            <RequirePageAccess path="/maintenance">
+              <MaintenancePage />
+            </RequirePageAccess>
+          }
+        />
+        <Route
+          path="/spare-parts"
+          element={
+            <RequirePageAccess path="/spare-parts">
+              <SparePartsPage />
+            </RequirePageAccess>
+          }
+        />
         <Route
           path="/support"
           element={
-            <RequireNonExecutive>
-              <SupportChatPage />
-            </RequireNonExecutive>
+            <RequirePageAccess path="/support">
+              <RequireNonExecutive>
+                <SupportChatPage />
+              </RequireNonExecutive>
+            </RequirePageAccess>
           }
         />
-        <Route path="/reports" element={<ReportsPage />} />
+        <Route
+          path="/reports"
+          element={
+            <RequirePageAccess path="/reports">
+              <ReportsPage />
+            </RequirePageAccess>
+          }
+        />
         <Route
           path="/settings"
           element={
-            <RequireNonExecutive>
-              <SettingsPage />
-            </RequireNonExecutive>
+            <RequirePageAccess path="/settings">
+              <RequireNonExecutive>
+                <SettingsPage />
+              </RequireNonExecutive>
+            </RequirePageAccess>
           }
         />
         <Route path="*" element={<NotFoundPage />} />

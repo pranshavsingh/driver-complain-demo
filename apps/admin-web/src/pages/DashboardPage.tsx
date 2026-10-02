@@ -29,6 +29,7 @@ import { Pagination } from '../components/Pagination';
 import { useApiResource } from '../hooks/useApiResource';
 import { describeVehicle, formatDateTime, fullName } from '../lib/format';
 import { useAuth, isSuperAdmin } from '../auth/AuthContext';
+import { getUserCategories, canAccessPath } from '../auth/permissions';
 import { useRealtime } from '../realtime/RealtimeProvider';
 import { APP_CATEGORY_OPTIONS, getCategoryLabel } from './UsersPage';
 
@@ -38,6 +39,14 @@ type DashboardTab = 'complaints' | 'loading' | 'spare-parts' | 'fleet';
 export function DashboardPage(): ReactElement {
   const { user } = useAuth();
   const { connected, subscribeCustom } = useRealtime();
+
+  const userCategories = useMemo(() => getUserCategories(user), [user]);
+  const visibleCategoryOptions = useMemo(() => {
+    if (user?.role === 'SUPER_ADMIN' || userCategories.length === 0) {
+      return APP_CATEGORY_OPTIONS;
+    }
+    return APP_CATEGORY_OPTIONS.filter((c) => userCategories.includes(c.value));
+  }, [user, userCategories]);
 
   // Tab & Filter States
   const [activeTab, setActiveTab] = useState<DashboardTab>('complaints');
@@ -256,8 +265,10 @@ export function DashboardPage(): ReactElement {
               >
                 {user.role === 'SUPER_ADMIN'
                   ? 'SUPER ADMIN'
+                  : userCategories.length > 0
+                  ? `DEPT ADMIN: ${userCategories.map((c) => getCategoryLabel(c)).join(', ')}`
                   : user.role === 'ADMIN'
-                  ? `DEPT HEAD: ${getCategoryLabel(user.category)}`
+                  ? 'GENERAL ADMIN'
                   : `EXECUTIVE: ${user.site || 'General Site'}`}
               </span>
             ) : null}
@@ -316,14 +327,16 @@ export function DashboardPage(): ReactElement {
             Complaints Hub
           </Link>
 
-          <Link
-            to="/loading"
-            className="btn-secondary"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600, textDecoration: 'none' }}
-          >
-            <Truck size={16} />
-            Loading Tracker
-          </Link>
+          {canAccessPath(user, '/loading') && (
+            <Link
+              to="/loading"
+              className="btn-secondary"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600, textDecoration: 'none' }}
+            >
+              <Truck size={16} />
+              Loading Tracker
+            </Link>
+          )}
         </div>
       </div>
 
@@ -584,148 +597,152 @@ export function DashboardPage(): ReactElement {
         </button>
 
         {/* Card 4: Loading & Detention Radar */}
-        <button
-          type="button"
-          onClick={() => {
-            setActiveTab('loading');
-          }}
+        {canAccessPath(user, '/loading') && (
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('loading');
+            }}
+            style={{
+              padding: 18,
+              backgroundColor: 'var(--surface)',
+              border: activeTab === 'loading' ? '2px solid var(--warning-border)' : '1px solid var(--border)',
+              borderRadius: 14,
+              textAlign: 'left',
+              cursor: 'pointer',
+              boxShadow: 'var(--shadow-sm)',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                Loading & Trips
+              </span>
+              <div style={{ width: 34, height: 34, borderRadius: 8, backgroundColor: 'rgba(245, 158, 11, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--warning-text)' }}>
+                <Clock size={18} />
+              </div>
+            </div>
+            <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text)', marginTop: 8 }}>
+              {activeTrips.length}
+            </div>
+            <div style={{ display: 'flex', gap: 12, marginTop: 10, fontSize: 12, fontWeight: 600 }}>
+              <span style={{ color: 'var(--warning-text)' }}>{activeTrips.length} Active / In-Transit</span>
+              <span style={{ color: 'var(--success-text)' }}>{completedTrips} Trips Done</span>
+            </div>
+          </button>
+        )}
+      </div>
+
+      {/* 4. Department & Category Matrix (Only shown to SuperAdmin) */}
+      {isSuperAdmin(user) && (
+        <div
           style={{
-            padding: 18,
             backgroundColor: 'var(--surface)',
-            border: activeTab === 'loading' ? '2px solid var(--warning-border)' : '1px solid var(--border)',
-            borderRadius: 14,
-            textAlign: 'left',
-            cursor: 'pointer',
+            border: '1px solid var(--border)',
+            borderRadius: 16,
+            padding: '20px 24px',
+            marginBottom: 24,
             boxShadow: 'var(--shadow-sm)',
-            transition: 'all 0.15s ease',
           }}
         >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-              Loading & Trips
-            </span>
-            <div style={{ width: 34, height: 34, borderRadius: 8, backgroundColor: 'rgba(245, 158, 11, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--warning-text)' }}>
-              <Clock size={18} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
+            <div>
+              <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: 'var(--text)' }}>
+                Department & Category Workload Distribution
+              </h3>
+              <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--muted)' }}>
+                Click any department category to filter complaints and view assigned team tasks.
+              </p>
             </div>
-          </div>
-          <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text)', marginTop: 8 }}>
-            {activeTrips.length}
-          </div>
-          <div style={{ display: 'flex', gap: 12, marginTop: 10, fontSize: 12, fontWeight: 600 }}>
-            <span style={{ color: 'var(--warning-text)' }}>{activeTrips.length} Active / In-Transit</span>
-            <span style={{ color: 'var(--success-text)' }}>{completedTrips} Trips Done</span>
-          </div>
-        </button>
-      </div>
-
-      {/* 4. Department & Category Matrix (6 Mobile App Categories) */}
-      <div
-        style={{
-          backgroundColor: 'var(--surface)',
-          border: '1px solid var(--border)',
-          borderRadius: 16,
-          padding: '20px 24px',
-          marginBottom: 24,
-          boxShadow: 'var(--shadow-sm)',
-        }}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
-          <div>
-            <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0, color: 'var(--text)' }}>
-              Department & Category Workload Distribution
-            </h3>
-            <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--muted)' }}>
-              Click any department category to filter complaints and view assigned team tasks.
-            </p>
-          </div>
-          {selectedCategory !== 'ALL' && (
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={() => setSelectedCategory('ALL')}
-              style={{ fontSize: 12, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 4 }}
-            >
-              <X size={13} /> Reset Filter ({getCategoryLabel(selectedCategory)})
-            </button>
-          )}
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
-          {APP_CATEGORY_OPTIONS.map((cat) => {
-            const count = categoryCounts[cat.value] || 0;
-            const isSelected = selectedCategory === cat.value;
-            const pct = totalComplaints > 0 ? Math.round((count / totalComplaints) * 100) : 0;
-
-            return (
+            {selectedCategory !== 'ALL' && (
               <button
-                key={cat.value}
                 type="button"
-                onClick={() => {
-                  setSelectedCategory(isSelected ? 'ALL' : cat.value);
-                  setActiveTab('complaints');
-                  setPage(1);
-                }}
-                style={{
-                  padding: '12px 14px',
-                  borderRadius: 10,
-                  border: isSelected ? '2px solid var(--accent)' : '1px solid var(--border)',
-                  backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.15)' : 'var(--bg)',
-                  textAlign: 'left',
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                }}
+                className="btn-secondary"
+                onClick={() => setSelectedCategory('ALL')}
+                style={{ fontSize: 12, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 4 }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: 18 }}>{cat.icon}</span>
-                  <span
-                    style={{
-                      fontSize: 14,
-                      fontWeight: 800,
-                      color: count > 0 ? 'var(--text)' : 'var(--muted)',
-                    }}
-                  >
-                    {count}
-                  </span>
-                </div>
-                <div
-                  style={{
-                    fontSize: 12,
-                    fontWeight: 700,
-                    marginTop: 6,
-                    color: isSelected ? 'var(--accent)' : 'var(--text)',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
+                <X size={13} /> Reset Filter ({getCategoryLabel(selectedCategory)})
+              </button>
+            )}
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+            {visibleCategoryOptions.map((cat) => {
+              const count = categoryCounts[cat.value] || 0;
+              const isSelected = selectedCategory === cat.value;
+              const pct = totalComplaints > 0 ? Math.round((count / totalComplaints) * 100) : 0;
+
+              return (
+                <button
+                  key={cat.value}
+                  type="button"
+                  onClick={() => {
+                    setSelectedCategory(isSelected ? 'ALL' : cat.value);
+                    setActiveTab('complaints');
+                    setPage(1);
                   }}
-                  title={cat.label}
-                >
-                  {cat.label}
-                </div>
-                {/* Visual Progress Bar */}
-                <div
                   style={{
-                    width: '100%',
-                    height: 4,
-                    backgroundColor: 'var(--border)',
-                    borderRadius: 2,
-                    marginTop: 8,
-                    overflow: 'hidden',
+                    padding: '12px 14px',
+                    borderRadius: 10,
+                    border: isSelected ? '2px solid var(--accent)' : '1px solid var(--border)',
+                    backgroundColor: isSelected ? 'rgba(59, 130, 246, 0.15)' : 'var(--bg)',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
                   }}
                 >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 18 }}>{cat.icon}</span>
+                    <span
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 800,
+                        color: count > 0 ? 'var(--text)' : 'var(--muted)',
+                      }}
+                    >
+                      {count}
+                    </span>
+                  </div>
                   <div
                     style={{
-                      width: `${pct}%`,
-                      height: '100%',
-                      backgroundColor: isSelected ? 'var(--accent)' : 'var(--muted)',
-                      borderRadius: 2,
+                      fontSize: 12,
+                      fontWeight: 700,
+                      marginTop: 6,
+                      color: isSelected ? 'var(--accent)' : 'var(--text)',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
                     }}
-                  />
-                </div>
-              </button>
-            );
-          })}
+                    title={cat.label}
+                  >
+                    {cat.label}
+                  </div>
+                  {/* Visual Progress Bar */}
+                  <div
+                    style={{
+                      width: '100%',
+                      height: 4,
+                      backgroundColor: 'var(--border)',
+                      borderRadius: 2,
+                      marginTop: 8,
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: `${pct}%`,
+                        height: '100%',
+                        backgroundColor: isSelected ? 'var(--accent)' : 'var(--muted)',
+                        borderRadius: 2,
+                      }}
+                    />
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* 5. Main Multi-Tab Operations Console */}
       <div
@@ -787,73 +804,77 @@ export function DashboardPage(): ReactElement {
               </span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => setActiveTab('loading')}
-              style={{
-                padding: '8px 16px',
-                borderRadius: 8,
-                border: 'none',
-                fontSize: 13,
-                fontWeight: activeTab === 'loading' ? 700 : 500,
-                cursor: 'pointer',
-                backgroundColor: activeTab === 'loading' ? 'var(--accent)' : 'transparent',
-                color: activeTab === 'loading' ? '#ffffff' : 'var(--text)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-              }}
-            >
-              <Clock size={16} />
-              <span>Loading & Detention Radar</span>
-              <span
+            {canAccessPath(user, '/loading') && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('loading')}
                 style={{
-                  padding: '1px 6px',
-                  borderRadius: 10,
-                  fontSize: 11,
-                  fontWeight: 800,
-                  backgroundColor: activeTab === 'loading' ? 'rgba(255, 255, 255, 0.25)' : 'rgba(128,128,128,0.15)',
-                  color: activeTab === 'loading' ? '#ffffff' : 'inherit',
+                  padding: '8px 16px',
+                  borderRadius: 8,
+                  border: 'none',
+                  fontSize: 13,
+                  fontWeight: activeTab === 'loading' ? 700 : 500,
+                  cursor: 'pointer',
+                  backgroundColor: activeTab === 'loading' ? 'var(--accent)' : 'transparent',
+                  color: activeTab === 'loading' ? '#ffffff' : 'var(--text)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
                 }}
               >
-                {activeTrips.length}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab('spare-parts')}
-              style={{
-                padding: '8px 16px',
-                borderRadius: 8,
-                border: 'none',
-                fontSize: 13,
-                fontWeight: activeTab === 'spare-parts' ? 700 : 500,
-                cursor: 'pointer',
-                backgroundColor: activeTab === 'spare-parts' ? 'var(--accent)' : 'transparent',
-                color: activeTab === 'spare-parts' ? '#ffffff' : 'var(--text)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-              }}
-            >
-              <Package size={16} />
-              <span>Spare Parts Requests</span>
-              {pendingSpareParts > 0 && (
+                <Clock size={16} />
+                <span>Loading & Detention Radar</span>
                 <span
                   style={{
                     padding: '1px 6px',
                     borderRadius: 10,
                     fontSize: 11,
                     fontWeight: 800,
-                    backgroundColor: 'var(--danger-text)',
-                    color: '#ffffff',
+                    backgroundColor: activeTab === 'loading' ? 'rgba(255, 255, 255, 0.25)' : 'rgba(128,128,128,0.15)',
+                    color: activeTab === 'loading' ? '#ffffff' : 'inherit',
                   }}
                 >
-                  {pendingSpareParts}
+                  {activeTrips.length}
                 </span>
-              )}
-            </button>
+              </button>
+            )}
+
+            {canAccessPath(user, '/spare-parts') && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('spare-parts')}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: 8,
+                  border: 'none',
+                  fontSize: 13,
+                  fontWeight: activeTab === 'spare-parts' ? 700 : 500,
+                  cursor: 'pointer',
+                  backgroundColor: activeTab === 'spare-parts' ? 'var(--accent)' : 'transparent',
+                  color: activeTab === 'spare-parts' ? '#ffffff' : 'var(--text)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                }}
+              >
+                <Package size={16} />
+                <span>Spare Parts Requests</span>
+                {pendingSpareParts > 0 && (
+                  <span
+                    style={{
+                      padding: '1px 6px',
+                      borderRadius: 10,
+                      fontSize: 11,
+                      fontWeight: 800,
+                      backgroundColor: 'var(--danger-text)',
+                      color: '#ffffff',
+                    }}
+                  >
+                    {pendingSpareParts}
+                  </span>
+                )}
+              </button>
+            )}
 
             <button
               type="button"

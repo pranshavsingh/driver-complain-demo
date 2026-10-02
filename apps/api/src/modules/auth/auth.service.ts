@@ -51,7 +51,10 @@ export async function login(
   pin: string,
   ctx: ClientContext,
 ): Promise<LoginResponse> {
-  const user = await prisma.user.findUnique({ where: { employeeId } });
+  const user = await prisma.user.findUnique({
+    where: { employeeId },
+    include: { driver: true, adminCategoryAssignments: true },
+  });
   // Uniform message on the not-found and bad-PIN paths to avoid user enumeration.
   if (!user) throw ApiError.unauthorized('Invalid credentials');
   if (!user.isActive) throw ApiError.forbidden('Account is disabled');

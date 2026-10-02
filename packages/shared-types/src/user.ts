@@ -14,6 +14,7 @@ export const UserPublicSchema = z.object({
   isActive: z.boolean(),
   approvalStatus: ApprovalStatusSchema.optional(),
   category: ComplaintCategorySchema.nullable().optional(),
+  categories: z.array(ComplaintCategorySchema).optional(),
   site: z.string().nullable().optional(),
   createdByAdminId: z.string().nullable().optional(),
   createdAt: z.string(),

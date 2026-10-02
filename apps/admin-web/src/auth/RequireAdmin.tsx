@@ -1,6 +1,7 @@
 import type { ReactElement, ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { isAdmin, isSuperAdmin, useAuth } from './AuthContext';
+import { canAccessPath } from './permissions';
 
 /**
  * Route guard for every authenticated screen.
@@ -59,3 +60,21 @@ export function RequireNonExecutive({ children }: { children: ReactNode }): Reac
 
   return <>{children}</>;
 }
+
+/**
+ * Route guard for category-restricted pages based on the user's assigned domain categories.
+ */
+export function RequirePageAccess({ path, children }: { path: string; children: ReactNode }): ReactElement {
+  const { status, user } = useAuth();
+
+  if (status === 'loading') {
+    return <div className="page-message">Restoring your session…</div>;
+  }
+
+  if (status !== 'authenticated' || !canAccessPath(user, path)) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return <>{children}</>;
+}
+

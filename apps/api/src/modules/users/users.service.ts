@@ -21,7 +21,10 @@ export interface Actor {
 }
 
 export async function getById(id: string): Promise<UserPublic> {
-  const user = await prisma.user.findUnique({ where: { id }, include: { driver: true } });
+  const user = await prisma.user.findUnique({
+    where: { id },
+    include: { driver: true, adminCategoryAssignments: true },
+  });
   if (!user) throw ApiError.notFound('User not found');
   return toUserPublic(user);
 }

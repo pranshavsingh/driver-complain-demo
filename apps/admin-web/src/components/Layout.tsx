@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { Truck, LayoutDashboard, Users, ClipboardList, LogOut, Bell, Menu, X, Trash2, CheckCircle2, Wrench, FileSpreadsheet, Package, Headphones, Settings } from './Icons';
 
 import { isAdmin, isSuperAdmin, isExecutive, useAuth } from '../auth/AuthContext';
+import { canAccessPath } from '../auth/permissions';
 import { useRealtime } from '../realtime/RealtimeProvider';
 import { ThemeSwitcher } from './ThemeSwitcher';
 import { PageErrorBoundary } from './ErrorBoundary';
@@ -348,25 +349,29 @@ export function Layout(): ReactElement {
         </div>
 
         <nav className="sidebar-nav">
-          <NavLink
-            to="/dashboard"
-            className={({ isActive }) =>
-              isActive || location.pathname === '/' ? 'nav-item active' : 'nav-item'
-            }
-          >
-            <LayoutDashboard size={18} className="nav-icon" />
-            <span className="nav-label">Dashboard</span>
-          </NavLink>
+          {canAccessPath(user, '/dashboard') && (
+            <NavLink
+              to="/dashboard"
+              className={({ isActive }) =>
+                isActive || location.pathname === '/' ? 'nav-item active' : 'nav-item'
+              }
+            >
+              <LayoutDashboard size={18} className="nav-icon" />
+              <span className="nav-label">Dashboard</span>
+            </NavLink>
+          )}
 
-          <NavLink
-            to="/vehicles"
-            className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
-          >
-            <Truck size={18} className="nav-icon" />
-            <span className="nav-label">{isSuperAdmin(user) ? 'Vehicle Entry' : 'Vehicles'}</span>
-          </NavLink>
+          {canAccessPath(user, '/vehicles') && (
+            <NavLink
+              to="/vehicles"
+              className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
+            >
+              <Truck size={18} className="nav-icon" />
+              <span className="nav-label">{isSuperAdmin(user) ? 'Vehicle Entry' : 'Vehicles'}</span>
+            </NavLink>
+          )}
 
-          {isAdmin(user) && !isExecutive(user) ? (
+          {canAccessPath(user, '/users') && isAdmin(user) && !isExecutive(user) ? (
             <NavLink
               to="/users"
               className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
@@ -401,74 +406,84 @@ export function Layout(): ReactElement {
             </NavLink>
           ) : null}
 
-          <NavLink
-            to="/complaints"
-            className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <ClipboardList size={18} className="nav-icon" />
-              <span className="nav-label">Complaints</span>
-            </div>
-            {complaintBadgeCount > 0 ? (
-              <span
-                style={{
-                  backgroundColor: 'var(--danger-text)',
-                  color: '#ffffff',
-                  fontSize: 10,
-                  fontWeight: 800,
-                  padding: '2px 7px',
-                  borderRadius: 10,
-                  marginLeft: 'auto',
-                  minWidth: 18,
-                  textAlign: 'center',
-                  lineHeight: '13px',
-                  boxShadow: '0 2px 5px rgba(239, 68, 68, 0.4)',
-                }}
-                title={`${complaintBadgeCount} unread/new complaints waiting for review`}
-              >
-                {complaintBadgeCount}
-              </span>
-            ) : null}
-          </NavLink>
+          {canAccessPath(user, '/complaints') && (
+            <NavLink
+              to="/complaints"
+              className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <ClipboardList size={18} className="nav-icon" />
+                <span className="nav-label">Complaints</span>
+              </div>
+              {complaintBadgeCount > 0 ? (
+                <span
+                  style={{
+                    backgroundColor: 'var(--danger-text)',
+                    color: '#ffffff',
+                    fontSize: 10,
+                    fontWeight: 800,
+                    padding: '2px 7px',
+                    borderRadius: 10,
+                    marginLeft: 'auto',
+                    minWidth: 18,
+                    textAlign: 'center',
+                    lineHeight: '13px',
+                    boxShadow: '0 2px 5px rgba(239, 68, 68, 0.4)',
+                  }}
+                  title={`${complaintBadgeCount} unread/new complaints waiting for review`}
+                >
+                  {complaintBadgeCount}
+                </span>
+              ) : null}
+            </NavLink>
+          )}
 
-          <NavLink
-            to="/loading"
-            className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
-          >
-            <Truck size={18} className="nav-icon" />
-            <span className="nav-label">Loading & Detention</span>
-          </NavLink>
+          {canAccessPath(user, '/loading') && (
+            <NavLink
+              to="/loading"
+              className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
+            >
+              <Truck size={18} className="nav-icon" />
+              <span className="nav-label">Loading & Detention</span>
+            </NavLink>
+          )}
 
-          <NavLink
-            to="/trips"
-            className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
-          >
-            <Truck size={18} className="nav-icon" />
-            <span className="nav-label">Trip Analytics & Logs</span>
-          </NavLink>
+          {canAccessPath(user, '/trips') && (
+            <NavLink
+              to="/trips"
+              className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
+            >
+              <Truck size={18} className="nav-icon" />
+              <span className="nav-label">Trip Analytics & Logs</span>
+            </NavLink>
+          )}
 
-          <NavLink
-            to="/maintenance"
-            className={({ isActive }) =>
-              isActive || location.pathname.startsWith('/fuel-logs')
-                ? 'nav-item active'
-                : 'nav-item'
-            }
-          >
-            <Wrench size={18} className="nav-icon" />
-            <span className="nav-label">Vehicle Maintenance</span>
-          </NavLink>
+          {canAccessPath(user, '/maintenance') && (
+            <NavLink
+              to="/maintenance"
+              className={({ isActive }) =>
+                isActive || location.pathname.startsWith('/fuel-logs')
+                  ? 'nav-item active'
+                  : 'nav-item'
+              }
+            >
+              <Wrench size={18} className="nav-icon" />
+              <span className="nav-label">Vehicle Maintenance</span>
+            </NavLink>
+          )}
 
-          <NavLink
-            to="/spare-parts"
-            className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
-          >
-            <Package size={18} className="nav-icon" />
-            <span className="nav-label">Spare Parts</span>
-          </NavLink>
+          {canAccessPath(user, '/spare-parts') && (
+            <NavLink
+              to="/spare-parts"
+              className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
+            >
+              <Package size={18} className="nav-icon" />
+              <span className="nav-label">Spare Parts</span>
+            </NavLink>
+          )}
 
-          {isSuperAdmin(user) ? (
+          {canAccessPath(user, '/support') && isSuperAdmin(user) ? (
             <NavLink
               to="/support"
               className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
@@ -478,15 +493,17 @@ export function Layout(): ReactElement {
             </NavLink>
           ) : null}
 
-          <NavLink
-            to="/reports"
-            className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
-          >
-            <FileSpreadsheet size={18} className="nav-icon" />
-            <span className="nav-label">Vehicle Reports</span>
-          </NavLink>
+          {canAccessPath(user, '/reports') && (
+            <NavLink
+              to="/reports"
+              className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
+            >
+              <FileSpreadsheet size={18} className="nav-icon" />
+              <span className="nav-label">Vehicle Reports</span>
+            </NavLink>
+          )}
 
-          {isSuperAdmin(user) || user?.role === 'ADMIN' ? (
+          {canAccessPath(user, '/settings') && (isSuperAdmin(user) || user?.role === 'ADMIN') ? (
             <NavLink
               to="/settings"
               className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
