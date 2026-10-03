@@ -19,6 +19,9 @@ export const CreateComplaintSchema = z.object({
   priority: PrioritySchema.optional(),
   category: ComplaintCategorySchema.optional(),
   tripPhase: TripPhaseSchema.optional(),
+  latitude: z.coerce.number().optional(),
+  longitude: z.coerce.number().optional(),
+  locationName: z.string().optional(),
 });
 export type CreateComplaint = z.infer<typeof CreateComplaintSchema>;
 
@@ -81,6 +84,9 @@ export const ComplaintPublicSchema = z.object({
   loadingStatus: LoadingStatusSchema.nullable().optional(),
   loadingRecordId: z.string().nullable().optional(),
   tripLocationName: z.string().nullable().optional(),
+  latitude: z.number().nullable().optional(),
+  longitude: z.number().nullable().optional(),
+  locationName: z.string().nullable().optional(),
   needsAction: z.boolean().optional(),
   updatesCount: z.number().int().optional(),
   assignedToId: z.string().nullable().optional(),

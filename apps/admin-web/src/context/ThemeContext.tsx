@@ -14,9 +14,15 @@ const ThemeContext = createContext<ThemeContextValue>({
 
 export function ThemeProvider({ children }: { children: ReactNode }): ReactElement {
   const [theme, setTheme] = useState<Theme>(() => {
+    const hasInitialized = localStorage.getItem('fleetops_theme_v2');
+    if (!hasInitialized) {
+      localStorage.setItem('fleetops_theme_v2', 'true');
+      localStorage.setItem('admin_theme', 'dark');
+      return 'dark';
+    }
     const saved = localStorage.getItem('admin_theme');
     if (saved === 'dark' || saved === 'light') return saved;
-    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    return 'dark';
   });
 
   useEffect(() => {
@@ -35,6 +41,7 @@ export function ThemeProvider({ children }: { children: ReactNode }): ReactEleme
     }
 
     localStorage.setItem('admin_theme', theme);
+    localStorage.setItem('fleetops_theme_v2', 'true');
   }, [theme]);
 
   const toggleTheme = () => {

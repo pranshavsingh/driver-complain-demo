@@ -15,6 +15,7 @@ import {
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
 import {
   CreateComplaintSchema,
   type ComplaintCategory,
@@ -176,7 +177,7 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
   const activeVehicleNumber =
     manualVehicleInput.trim() || (selectedVehicle ? describeVehicle(selectedVehicle) : '');
 
-  const submitComplaint = (): void => {
+  const submitComplaint = async (): Promise<void> => {
     if (!activeVehicleNumber) {
       Alert.alert(
         'Vehicle Number Mandatory',
@@ -195,6 +196,38 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
       return;
     }
 
+    setError(null);
+    setSubmitting(true);
+    const hasFiles = Boolean(evidence.photo || evidence.voice || evidence.video);
+    setSubmitStatus('Acquiring location…');
+
+    let latitude: number | undefined;
+    let longitude: number | undefined;
+    let locationName: string | undefined;
+
+    try {
+      const locPerm = await Location.requestForegroundPermissionsAsync();
+      if (locPerm.granted) {
+        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        latitude = pos.coords.latitude;
+        longitude = pos.coords.longitude;
+        try {
+          const geo = await Location.reverseGeocodeAsync({ latitude, longitude });
+          if (geo && geo.length > 0 && geo[0]) {
+            const item = geo[0];
+            const addrStr = [item.name, item.street, item.city, item.region].filter(Boolean).join(', ');
+            if (addrStr) locationName = addrStr;
+          }
+        } catch {
+          // Geocode fails gracefully
+        }
+      }
+    } catch {
+      // GPS skipped gracefully if unavailable
+    }
+
+    setSubmitStatus(hasFiles ? 'Connecting to server…' : 'Sending…');
+
     const lines = trimmed.split('\n');
     const titleText =
       lines[0]?.trim() ||
@@ -211,17 +244,17 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
       priority,
       category: category ? (category as ComplaintCategory) : 'BREAKDOWN',
       vehicleNumber: activeVehicleNumber,
+      latitude,
+      longitude,
+      locationName,
     });
 
     if (!parsed.success) {
+      setSubmitting(false);
+      setSubmitStatus(null);
       setError(new Error(parsed.error.issues.map((i) => i.message).join('\n')));
       return;
     }
-
-    setError(null);
-    setSubmitting(true);
-    const hasFiles = Boolean(evidence.photo || evidence.voice || evidence.video);
-    setSubmitStatus(hasFiles ? 'Connecting to server…' : 'Sending…');
 
     api.complaints
       .create(parsed.data, toEvidenceUpload(evidence))

@@ -197,6 +197,10 @@ model Complaint {
   category          ComplaintCategory @default(BREAKDOWN)
   status            ComplaintStatus   @default(NEW)
   priority          Priority          @default(MEDIUM)
+  tripPhase         String?
+  latitude          Float?
+  longitude         Float?
+  locationName      String?
   assignedToId      String?           @db.Uuid
   assignedTo        User?             @relation("AssignedAdmin", fields: [assignedToId], references: [id])
   pendingAssigneeId String?           @db.Uuid

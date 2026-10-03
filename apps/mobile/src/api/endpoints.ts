@@ -131,6 +131,9 @@ export const complaints = {
     if (input.priority) form.append('priority', input.priority);
     if (input.category) form.append('category', input.category);
     if (input.tripPhase) form.append('tripPhase', input.tripPhase);
+    if (input.latitude != null) form.append('latitude', String(input.latitude));
+    if (input.longitude != null) form.append('longitude', String(input.longitude));
+    if (input.locationName) form.append('locationName', input.locationName);
 
     if (evidence?.photo) appendFile(form, 'photo', evidence.photo);
     if (evidence?.voice) appendFile(form, 'voice', evidence.voice);

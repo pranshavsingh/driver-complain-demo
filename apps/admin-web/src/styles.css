@@ -37,24 +37,24 @@
 }
 
 [data-theme="dark"] {
-  --bg: #0b0f19;
-  --surface: #151c2c;
-  --card-bg: #151c2c;
-  --input-bg: #151c2c;
-  --table-header-bg: #0f1523;
-  --border: #232d42;
-  --border-color: #232d42;
+  --bg: #031427;
+  --surface: #0b1c30;
+  --card-bg: #0b1c30;
+  --input-bg: #102034;
+  --table-header-bg: #07192e;
+  --border: #1e293b;
+  --border-color: #1e293b;
   --text: #f1f5f9;
   --text-main: #f1f5f9;
-  --muted: #94a3b8;
-  --text-muted: #94a3b8;
+  --muted: #8c909f;
+  --text-muted: #8c909f;
   --accent: #3b82f6;
   --primary: #3b82f6;
   --accent-hover: #2563eb;
   --accent-text: #ffffff;
-  --sidebar-bg: #090d16;
-  --sidebar-text: #64748b;
-  --sidebar-active: #1e293b;
+  --sidebar-bg: #07192e;
+  --sidebar-text: #8c909f;
+  --sidebar-active: #0f2b48;
   --sidebar-active-text: #38bdf8;
   --danger-bg: #2d1517;
   --danger-border: #991b1b;
@@ -571,6 +571,56 @@ a:hover {
 .workspace-body {
   flex: 1;
   padding: 28px 36px;
+}
+
+/* FleetOps Tactical Workspace - Flush edge-to-edge canvas with zero white margins */
+.workspace-body.fleetops-body,
+.workspace-body:has(.fleetops-view) {
+  padding: 0 !important;
+  background: var(--fo-canvas, #031427) !important;
+}
+
+.main-content.fleetops-active,
+.main-content:has(.fleetops-view),
+.admin-app-container.fleetops-active {
+  background: var(--fo-canvas, #031427) !important;
+}
+
+[data-theme="dark"] .workspace-header,
+.fleetops-active .workspace-header {
+  background: #07192e !important;
+  border-bottom: 1px solid #1e293b !important;
+}
+
+[data-theme="dark"] .breadcrumb-title,
+.fleetops-active .breadcrumb-title {
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .btn-toggle-sidebar-mobile,
+.fleetops-active .btn-toggle-sidebar-mobile {
+  border-color: #1e293b !important;
+  color: #ffffff !important;
+}
+
+[data-theme="dark"] .connection-badge,
+.fleetops-active .connection-badge {
+  background: #031427 !important;
+  border-color: #1e293b !important;
+  color: #94a3b8 !important;
+}
+
+[data-theme="dark"] .notif-bell-btn,
+.fleetops-active .notif-bell-btn {
+  background: #0b1c30 !important;
+  border-color: #1e293b !important;
+  color: #d3e4fe !important;
+}
+
+[data-theme="dark"] .theme-toggle-container,
+.fleetops-active .theme-toggle-container {
+  background: #031427 !important;
+  border-color: #1e293b !important;
 }
 
 @media (max-width: 768px) {

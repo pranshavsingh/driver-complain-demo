@@ -1,1414 +1,1460 @@
-import { useEffect, useState, useRef, type FormEvent, type ReactElement } from 'react';
+import { useEffect, useState, useRef, useMemo, type FormEvent, type ReactElement } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import {
-  COMPLAINT_STATUSES,
-  type AdminSummary,
-  type ComplaintDetail,
-  type ComplaintStatus,
-  type TripPhase,
+import type {
+  AdminSummary,
+  ComplaintDetail,
+  ComplaintStatus,
 } from '@driver-complaint/shared-types';
-import {
-  ArrowLeft,
-  FileText,
-  MessageSquare,
-  Paperclip,
-  Mic,
-  Video,
-  History,
-  CheckSquare,
-  UserCheck,
-  Check,
-  X,
-  Clock,
-  Truck,
-  MapPin,
-  Phone,
-  AlertTriangle,
-  ExternalLink,
-  Zap,
-} from '../components/Icons';
 import * as api from '../api/endpoints';
-import { useAuth } from '../auth/AuthContext';
 import { useApiResource } from '../hooks/useApiResource';
 import { useCategorySlaMap } from '../hooks/useCategorySlaMap';
 import { useRealtime } from '../realtime/RealtimeProvider';
 import { ErrorBanner } from '../components/ErrorBanner';
-import { PriorityBadge, StatusBadge, SlaBadge, CategoryBadge } from '../components/Badges';
-import { formatBytes, formatDateTime, formatDuration, formatEnum, fullName, computeSlaInfo } from '../lib/format';
+import { formatDateTime, computeSlaInfo } from '../lib/format';
 
-const TERMINAL_STATUSES: ComplaintStatus[] = ['RESOLVED', 'CLOSED'];
-
-/** Journey phase step configuration */
-const JOURNEY_STEPS: { key: TripPhase; label: string; icon: string; desc: string }[] = [
-  {
-    key: 'AT_LOADING_PLANT',
-    label: 'At Loading Plant',
-    icon: '🏭',
-    desc: 'At factory or warehouse loading dock',
-  },
-  {
-    key: 'IN_TRANSIT',
-    label: 'In Transit',
-    icon: '🚚',
-    desc: 'Actively in motion on highway / route',
-  },
-  {
-    key: 'AT_UNLOADING_POINT',
-    label: 'At Unloading Point',
-    icon: '📦',
-    desc: 'At destination undergoing cargo unloading',
-  },
-  {
-    key: 'YARD_IDLE',
-    label: 'Parking / Yard',
-    icon: '🅿️',
-    desc: 'Stationary in parking / yard',
-  },
-];
+function formatRelativeTime(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
 
 export function ComplaintDetailPage(): ReactElement {
-  const { user } = useAuth();
   const { id = '' } = useParams<{ id: string }>();
+
+  // Resources
   const detailRes = useApiResource<ComplaintDetail>(`complaint:${id}`, () =>
     api.complaints.get(id),
   );
   const reload = detailRes.reload;
   const adminsRes = useApiResource<AdminSummary[]>('admins', () => api.users.admins());
-
+  const { slaMap } = useCategorySlaMap();
   const { subscribe } = useRealtime();
-  useEffect(
-    () =>
-      subscribe((message) => {
-        if (message.payload.complaintId === id) reload();
-      }),
-    [subscribe, id, reload],
-  );
+
+  // Live Realtime Subscriptions
+  useEffect(() => {
+    return subscribe((message) => {
+      if (message.payload.complaintId === id) reload();
+    });
+  }, [subscribe, id, reload]);
 
   const complaint = detailRes.data;
-  const { slaMap } = useCategorySlaMap();
 
-  const [status, setStatus] = useState<ComplaintStatus | ''>('');
-  const [note, setNote] = useState('');
-  const [statusError, setStatusError] = useState<unknown>(null);
-  const [savingStatus, setSavingStatus] = useState(false);
-  const noteTextareaRef = useRef<HTMLTextAreaElement>(null);
-  const [actionTab, setActionTab] = useState<'status' | 'assign'>('status');
+  // Audio Playback & Waveform State
+  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+  const [playbackRate, setPlaybackRate] = useState<number>(1.0);
+  const [audioCurrentTime, setAudioCurrentTime] = useState<number>(0);
+  const [audioDuration, setAudioDuration] = useState<number>(0);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const [voiceLang, setVoiceLang] = useState<'en-IN' | 'hi-IN' | 'bn-IN'>('en-IN');
-  const [isListening, setIsListening] = useState(false);
+  // AI Speech Forensics Language Toggle
+  const [selectedLang, setSelectedLang] = useState<'HI' | 'EN' | 'BN'>('HI');
+  const [translationsCache, setTranslationsCache] = useState<Record<string, string>>({});
+  const [translating, setTranslating] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+
+  // Photographic Dossier Lightbox
+  const [activePhoto, setActivePhoto] = useState<string | null>(null);
+
+  // Operational Note Composer State
+  const [noteContent, setNoteContent] = useState('');
+  const [postingNote, setPostingNote] = useState(false);
+  const [isListeningVoice, setIsListeningVoice] = useState(false);
   const recognitionRef = useRef<any>(null);
 
+  // Workflow Action States
+  const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [showReassignModal, setShowReassignModal] = useState(false);
+  const [selectedAssignee, setSelectedAssignee] = useState('');
+  const [assigning, setAssigning] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  // Cleanup speech recognition on unmount
   useEffect(() => {
     return () => {
       if (recognitionRef.current) {
         try {
           recognitionRef.current.stop();
-        } catch {
-          // ignore
-        }
+        } catch {}
       }
     };
   }, []);
 
-  const toggleVoiceRecording = (langToUse?: 'en-IN' | 'hi-IN' | 'bn-IN') => {
-    const targetLang = langToUse || voiceLang;
-    const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+  // Voice note attachment if available
+  const voiceNoteAttachment = useMemo(() => {
+    return complaint?.attachments?.find((a) => a.kind === 'VOICE');
+  }, [complaint?.attachments]);
 
-    if (!SpeechRecognition) {
-      alert('Voice dictation is not supported by your browser. Please use Google Chrome, Microsoft Edge, or Safari.');
-      return;
+  // Real photo attachments only
+  const photoAttachments = useMemo(() => {
+    return complaint?.attachments?.filter((a) => a.kind === 'PHOTO') ?? [];
+  }, [complaint?.attachments]);
+
+  // Dynamically resolve complaint origin phase from real complaint data
+  // Do NOT guess phase from category — a BREAKDOWN can happen in any phase
+  const activeOriginPhase = useMemo(() => {
+    // 1. Prefer the stored tripPhase (set at complaint creation from actual vehicle state)
+    if (complaint?.tripPhase) {
+      return complaint.tripPhase;
     }
+    // 2. Fall back to loading record status (for older complaints without stored tripPhase)
+    if (complaint?.loadingStatus) {
+      if (complaint.loadingStatus === 'REACHED' || complaint.loadingStatus === 'COMPLETED') {
+        return 'AT_LOADING_PLANT';
+      }
+      if (complaint.loadingStatus === 'TRIP_STARTED') {
+        return 'IN_TRANSIT';
+      }
+      if (complaint.loadingStatus === 'UNLOADING') {
+        return 'AT_UNLOADING_POINT';
+      }
+    }
+    // 3. Default: no active trip = vehicle is in yard/parking
+    return 'YARD_IDLE';
+  }, [complaint?.tripPhase, complaint?.loadingStatus]);
 
-    if (isListening) {
+
+  // SLA Calculation
+  const slaTargetHours = slaMap[complaint?.category || ''] || 4;
+  const slaInfo = useMemo(() => {
+    if (!complaint) return null;
+    return computeSlaInfo(
+      complaint.createdAt,
+      complaint.category,
+      complaint.resolvedAt,
+      slaMap,
+      complaint.priority,
+    );
+  }, [complaint, slaMap]);
+
+  const slaTargetMs = slaTargetHours * 60 * 60 * 1000;
+  const createdAtMs = complaint ? new Date(complaint.createdAt).getTime() : Date.now();
+  const elapsedMs = Math.max(
+    0,
+    (complaint?.resolvedAt ? new Date(complaint.resolvedAt).getTime() : Date.now()) - createdAtMs,
+  );
+  const remainingMs = slaTargetMs - elapsedMs;
+  const deadlineIso = complaint ? new Date(createdAtMs + slaTargetMs).toISOString() : '';
+  const isSlaBreached = slaInfo?.isOverdue ?? remainingMs <= 0;
+  const elapsedMinutes = Math.floor(elapsedMs / 60000);
+  const remainingMinutes = Math.max(0, Math.floor(remainingMs / 60000));
+  const slaFraction = Math.min(1, Math.max(0, elapsedMs / slaTargetMs));
+
+  // Handle Play/Pause
+  const togglePlayAudio = () => {
+    if (audioRef.current && voiceNoteAttachment) {
+      if (isPlayingAudio) {
+        audioRef.current.pause();
+      } else {
+        void audioRef.current.play();
+      }
+    }
+    setIsPlayingAudio((prev) => !prev);
+  };
+
+  const changePlaybackRate = (rate: number) => {
+    setPlaybackRate(rate);
+    if (audioRef.current) {
+      audioRef.current.playbackRate = rate;
+    }
+  };
+
+  // AI Translation Handler
+  const handleTranslateLang = (target: 'HI' | 'EN' | 'BN') => {
+    setSelectedLang(target);
+    if (translationsCache[target] || !complaint) return;
+
+    const sourceText = complaint.transcription || complaint.description;
+    if (!sourceText) return;
+
+    setTranslating(true);
+    const langKey = target === 'HI' ? 'HINDI' : target === 'BN' ? 'BENGALI' : 'ENGLISH';
+    api.complaints
+      .translate(sourceText, langKey)
+      .then((res) => {
+        setTranslationsCache((prev) => ({ ...prev, [target]: res.translatedText }));
+      })
+      .catch(() => {})
+      .finally(() => setTranslating(false));
+  };
+
+  // Web Speech API Voice Recording for Note Composer
+  const toggleVoiceRecording = () => {
+    if (isListeningVoice) {
       if (recognitionRef.current) {
         try {
           recognitionRef.current.stop();
-        } catch {
-          // ignore
-        }
+        } catch {}
       }
-      setIsListening(false);
+      setIsListeningVoice(false);
+      return;
+    }
+
+    const windowSpeech = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!windowSpeech) {
+      setActionError('Browser does not support Speech Recognition.');
       return;
     }
 
     try {
-      const recognition = new SpeechRecognition();
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.lang = targetLang;
+      const recognition = new windowSpeech();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = selectedLang === 'HI' ? 'hi-IN' : 'en-US';
 
-      let accumulated = note;
-
-      recognition.onstart = () => {
-        setIsListening(true);
-      };
-
+      recognition.onstart = () => setIsListeningVoice(true);
       recognition.onresult = (event: any) => {
-        let interim = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const transcript = event.results[i][0].transcript;
-          if (event.results[i].isFinal) {
-            accumulated += (accumulated && !accumulated.endsWith(' ') ? ' ' : '') + transcript.trim();
-          } else {
-            interim += transcript;
-          }
+        const transcript = event.results[0][0].transcript;
+        if (transcript) {
+          setNoteContent((prev) => (prev ? `${prev} ${transcript}` : transcript));
         }
-        const full = accumulated + (interim ? (accumulated && !accumulated.endsWith(' ') ? ' ' : '') + interim : '');
-        setNote(full);
       };
-
-      recognition.onerror = (event: any) => {
-        console.error('Speech recognition error:', event);
-        setIsListening(false);
-      };
-
-      recognition.onend = () => {
-        setIsListening(false);
-      };
+      recognition.onerror = () => setIsListeningVoice(false);
+      recognition.onend = () => setIsListeningVoice(false);
 
       recognitionRef.current = recognition;
       recognition.start();
-    } catch (err) {
-      console.error('Failed to start speech recognition:', err);
-      setIsListening(false);
+    } catch {
+      setIsListeningVoice(false);
     }
   };
 
-  const [assignee, setAssignee] = useState('');
-  const [assignError, setAssignError] = useState<unknown>(null);
-  const [savingAssignee, setSavingAssignee] = useState(false);
-
-  const [acceptingAssignment, setAcceptingAssignment] = useState(false);
-  const [rejectingAssignment, setRejectingAssignment] = useState(false);
-  const [rejectError, setRejectError] = useState<unknown>(null);
-  const [rejectNote, setRejectNote] = useState('');
-  const [showRejectBox, setShowRejectBox] = useState(false);
-
-  const [transcribing, setTranscribing] = useState(false);
-  const [transcribeError, setTranscribeError] = useState<unknown>(null);
-
-  const [selectedLang, setSelectedLang] = useState<'ENGLISH' | 'BENGALI' | 'HINDI'>('ENGLISH');
-  const [translationsCache, setTranslationsCache] = useState<
-    Record<string, { description?: string; transcription?: string }>
-  >({});
-  const [translatingLang, setTranslatingLang] = useState<string | null>(null);
-
-  const handleLanguageChange = (lang: 'ENGLISH' | 'BENGALI' | 'HINDI'): void => {
-    setSelectedLang(lang);
-    if (!complaint || lang === 'ENGLISH' || translationsCache[lang]) return;
-
-    const isDescPlaceholder =
-      !complaint.description ||
-      complaint.description === 'Photo attached' ||
-      complaint.description === 'Voice note attached';
-    const textToTranslateDesc = !isDescPlaceholder ? complaint.description : null;
-    const textToTranslateTrans = complaint.transcription || null;
-
-    if (!textToTranslateDesc && !textToTranslateTrans) return;
-
-    setTranslatingLang(lang);
-    const promises: Promise<void>[] = [];
-    let newDescTrans: string | undefined;
-    let newAudioTrans: string | undefined;
-
-    if (textToTranslateDesc) {
-      promises.push(
-        api.complaints.translate(textToTranslateDesc, lang).then((res) => {
-          newDescTrans = res.translatedText;
-        }),
-      );
-    }
-
-    if (textToTranslateTrans) {
-      promises.push(
-        api.complaints.translate(textToTranslateTrans, lang).then((res) => {
-          newAudioTrans = res.translatedText;
-        }),
-      );
-    }
-
-    Promise.all(promises).then(
-      () => {
-        setTranslationsCache((prev) => ({
-          ...prev,
-          [lang]: { description: newDescTrans, transcription: newAudioTrans },
-        }));
-        setTranslatingLang(null);
-      },
-      () => {
-        setTranslatingLang(null);
-      },
-    );
-  };
-
-  const handleTranscribe = (): void => {
+  // Status Transitions
+  const handleUpdateStatus = (newStatus: ComplaintStatus) => {
     if (!complaint) return;
-    setTranscribeError(null);
-    setTranscribing(true);
-    api.complaints.transcribe(complaint.id).then(
-      () => {
-        setTranscribing(false);
-        reload();
-      },
-      (err: unknown) => {
-        setTranscribeError(err);
-        setTranscribing(false);
-      },
-    );
-  };
-
-  useEffect(() => {
-    if (!complaint) return;
-    setStatus(complaint.status);
-    setAssignee(complaint.assignedToId ?? '');
-  }, [complaint]);
-
-  const handleAcceptAssignment = (): void => {
-    if (!complaint) return;
-    setRejectError(null);
-    setAcceptingAssignment(true);
-    api.complaints.acceptAssignment(complaint.id).then(
-      () => {
-        setAcceptingAssignment(false);
-        reload();
-      },
-      (err: unknown) => {
-        setRejectError(err);
-        setAcceptingAssignment(false);
-      },
-    );
-  };
-
-  const handleRejectAssignment = (e: FormEvent): void => {
-    e.preventDefault();
-    if (!complaint) return;
-    setRejectError(null);
-    setRejectingAssignment(true);
-    api.complaints.rejectAssignment(complaint.id, rejectNote.trim()).then(
-      () => {
-        setRejectingAssignment(false);
-        setShowRejectBox(false);
-        setRejectNote('');
-        reload();
-      },
-      (err: unknown) => {
-        setRejectError(err);
-        setRejectingAssignment(false);
-      },
-    );
-  };
-
-  const applyPresetNote = (presetText: string) => {
-    setNote(presetText);
-    if (noteTextareaRef.current) {
-      noteTextareaRef.current.focus();
-    }
-  };
-
-  const submitStatus = (event: FormEvent<HTMLFormElement>): void => {
-    event.preventDefault();
-    if (!complaint || !status) return;
-
-    if (TERMINAL_STATUSES.includes(status) && status !== complaint.status) {
-      const ok = window.confirm(
-        `Mark ${complaint.complaintNo} as ${formatEnum(status)}? The driver will be notified immediately.`,
-      );
-      if (!ok) return;
-    }
-
-    setStatusError(null);
-    setSavingStatus(true);
+    setActionError(null);
+    setUpdatingStatus(true);
     api.complaints
-      .updateStatus(complaint.id, { status, ...(note.trim() ? { note: note.trim() } : {}) })
-      .then(
-        () => {
-          setNote('');
-          setSavingStatus(false);
-          reload();
-        },
-        (err: unknown) => {
-          setStatusError(err);
-          setSavingStatus(false);
-        },
-      );
+      .updateStatus(complaint.id, { status: newStatus })
+      .then(() => reload())
+      .catch((err) => setActionError(err instanceof Error ? err.message : 'Failed to update status'))
+      .finally(() => setUpdatingStatus(false));
   };
 
-  const submitAssignee = (event: FormEvent<HTMLFormElement>): void => {
-    event.preventDefault();
-    if (!complaint || !assignee) return;
+  // Escalate Action
+  const handleEscalate = () => {
+    if (!complaint) return;
+    setActionError(null);
+    setUpdatingStatus(true);
+    api.complaints
+      .updateStatus(complaint.id, {
+        status: complaint.status === 'NEW' ? 'IN_PROGRESS' : complaint.status,
+        note: '🚨 ESCALATED to Regional Head & Priority Response Dispatch.',
+      })
+      .then(() => reload())
+      .catch((err) => setActionError(err instanceof Error ? err.message : 'Failed to escalate incident'))
+      .finally(() => setUpdatingStatus(false));
+  };
 
-    setAssignError(null);
-    setSavingAssignee(true);
-    api.complaints.assign(complaint.id, assignee).then(
-      () => {
-        setSavingAssignee(false);
+  // Post Note Action
+  const handlePostNote = (e?: FormEvent) => {
+    if (e) e.preventDefault();
+    if (!complaint || !noteContent.trim()) return;
+    setPostingNote(true);
+    api.complaints
+      .updateStatus(complaint.id, { status: complaint.status, note: noteContent.trim() })
+      .then(() => {
+        setNoteContent('');
         reload();
-      },
-      (err: unknown) => {
-        setAssignError(err);
-        setSavingAssignee(false);
-      },
-    );
+      })
+      .catch((err) => setActionError(err instanceof Error ? err.message : 'Failed to post note'))
+      .finally(() => setPostingNote(false));
   };
 
-  if (detailRes.loading && !complaint) {
+  // Reassign Tech
+  const handleAssignTech = () => {
+    if (!complaint || !selectedAssignee) return;
+    setAssigning(true);
+    api.complaints
+      .assign(complaint.id, selectedAssignee)
+      .then(() => {
+        setShowReassignModal(false);
+        reload();
+      })
+      .catch((err) => setActionError(err instanceof Error ? err.message : 'Failed to assign'))
+      .finally(() => setAssigning(false));
+  };
+
+  // Generate AI Transcription
+  const handleTranscribe = () => {
+    if (!complaint) return;
+    setTranscribing(true);
+    api.complaints
+      .transcribe(complaint.id)
+      .then(() => reload())
+      .catch((err) => setActionError(err instanceof Error ? err.message : 'Transcription failed'))
+      .finally(() => setTranscribing(false));
+  };
+
+  if (detailRes.error) {
     return (
-      <div className="page-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '50vh' }}>
-        <div style={{ textAlign: 'center', color: 'var(--muted)' }}>
-          <div style={{ fontSize: 32, marginBottom: 12 }}>⚡</div>
-          <div style={{ fontSize: 16, fontWeight: 700 }}>Loading complaint file…</div>
+      <div className="fleetops-view">
+        <ErrorBanner error={detailRes.error} />
+      </div>
+    );
+  }
+
+  if (!complaint) {
+    return (
+      <div className="fleetops-view">
+        <div style={{ padding: 40, textAlign: 'center', color: '#8c909f' }}>
+          <span className="material-symbols-outlined fo-spin-slow" style={{ fontSize: 32, color: '#38bdf8' }}>
+            sync
+          </span>
+          <p style={{ marginTop: 12, fontFamily: 'Outfit', fontSize: 16 }}>Loading Investigation Room Telemetry…</p>
         </div>
       </div>
     );
   }
-  if (!complaint) {
-    return (
-      <div className="page-container">
-        <ErrorBanner error={detailRes.error} />
-        <Link to="/complaints" className="back-link" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <ArrowLeft size={16} /> Back to complaints
-        </Link>
-      </div>
-    );
-  }
 
-  const currentPhase: TripPhase = complaint.tripPhase || 'YARD_IDLE';
-  const isNeedsAction =
-    complaint.status === 'NEW' &&
-    (!complaint.assignedToId || (complaint.updates?.length ?? 0) <= 1);
-  const sla = computeSlaInfo(complaint.createdAt, complaint.category, complaint.resolvedAt, slaMap, complaint.priority);
+  // Pure dynamic values from real database object
+  const vehiclePlate = complaint.vehiclePlateNumber || complaint.vehicle?.plateNumber || 'Unassigned Vehicle';
+  const driverName = complaint.driverName || (complaint.driver ? `${complaint.driver.firstName} ${complaint.driver.lastName}`.trim() : 'Unassigned Driver');
+  const driverPhone = complaint.driverPhone || '';
+  const driverEmpId = complaint.driverEmployeeId || complaint.driver?.employeeId || complaint.driverId || '—';
+  const assignedTechName = complaint.assignedToName || (complaint.assignedTo ? `${complaint.assignedTo.firstName} ${complaint.assignedTo.lastName}`.trim() : 'Unassigned');
 
-  // Driver Initials
-  const driverInitials = `${complaint.driver.firstName?.[0] || ''}${complaint.driver.lastName?.[0] || ''}`.toUpperCase() || 'D';
+  // Active transcript text based on selected language
+  const displayedTranscript =
+    translationsCache[selectedLang] ||
+    complaint.transcription ||
+    (voiceNoteAttachment?.transcription) ||
+    complaint.description ||
+    'No description or transcription logged for this incident.';
 
   return (
-    <div className="page-container" style={{ maxWidth: 1400, margin: '0 auto', paddingBottom: 60 }}>
-      {/* Navigation Breadcrumb */}
-      <div style={{ marginBottom: 16 }}>
-        <Link
-          to="/complaints"
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-            fontSize: 13,
-            fontWeight: 700,
-            color: 'var(--muted)',
-            padding: '6px 12px',
-            borderRadius: 8,
-            backgroundColor: 'var(--surface)',
-            border: '1px solid var(--border)',
-            transition: 'all 0.2s ease',
-          }}
-        >
-          <ArrowLeft size={14} /> Back to Complaints Queue
-        </Link>
-      </div>
+    <div className="fleetops-view">
+      <div className="fo-inv-container">
+        {actionError && <ErrorBanner error={actionError} />}
 
-      {/* 2-Column Responsive Layout */}
-      <div className="detail-layout-grid">
-        {/* Left Main Column */}
-        <div className="detail-main-column">
-          {/* Hero Header Card */}
-          <div className="detail-header-hero">
-            <div className="detail-hero-top">
-              <div className="detail-badge-cluster">
-                <span className="detail-complaint-id">{complaint.complaintNo}</span>
-                <CategoryBadge category={complaint.category} />
-                <StatusBadge status={complaint.status} />
-                <PriorityBadge priority={complaint.priority} />
-                <SlaBadge sla={sla} />
-                {isNeedsAction && (
+        {/* ==========================================================================
+            1. TOP CONTEXT & INVESTIGATION HEADER
+            ========================================================================== */}
+        <section className="fo-inv-header">
+          <div className="fo-inv-top-row">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
+              <div className="fo-inv-breadcrumbs">
+                <Link to="/complaints" style={{ color: '#8c909f', textDecoration: 'none' }}>
+                  Complaints Queue
+                </Link>
+                <span>/</span>
+                <span style={{ color: '#4cd7f6', fontWeight: 800 }}>ROOM #{complaint.complaintNo}</span>
+                <span>/</span>
+                <span style={{ color: '#ffffff' }}>Forensic Investigation</span>
+              </div>
+
+              <div className="fo-inv-title-wrap">
+                <h1 className="fo-inv-title">
+                  {vehiclePlate}: {complaint.title}
+                </h1>
+                <span className="fo-inv-badge-urgent">
+                  <span className="fo-ping-dot" style={{ background: '#ef4444', boxShadow: '0 0 8px #ef4444' }} />
+                  {complaint.priority} Priority
+                </span>
+                <span className="fo-inv-badge-cat">Category: {complaint.category || 'General'}</span>
+                <span className="fo-inv-timestamp">
+                  <span className="material-symbols-outlined" style={{ fontSize: 13, color: '#8c909f' }}>
+                    schedule
+                  </span>
+                  Created: {formatDateTime(complaint.createdAt)} ({formatRelativeTime(complaint.createdAt)})
+                </span>
+              </div>
+            </div>
+
+            {/* Circular SLA Escalation Pill */}
+            <div className="fo-inv-sla-pill">
+              <div style={{ position: 'relative', width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <svg style={{ width: 34, height: 34, transform: 'rotate(-90deg)' }}>
+                  <circle cx="17" cy="17" r="13" fill="transparent" stroke="#26364a" strokeWidth="3" />
+                  <circle
+                    cx="17"
+                    cy="17"
+                    r="13"
+                    fill="transparent"
+                    stroke={isSlaBreached ? '#ef4444' : '#93ccff'}
+                    strokeWidth="3"
+                    strokeDasharray="81.6"
+                    strokeDashoffset={81.6 * (1 - slaFraction)}
+                  />
+                </svg>
+                <span
+                  className="material-symbols-outlined"
+                  style={{
+                    position: 'absolute',
+                    fontSize: 14,
+                    color: isSlaBreached ? '#ef4444' : '#93ccff',
+                  }}
+                >
+                  timer
+                </span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span style={{ fontFamily: 'var(--fo-font-mono)', fontSize: 9, fontWeight: 700, color: '#8c909f', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  {isSlaBreached ? 'SLA Breached By' : 'SLA Target'}
+                </span>
+                <span style={{ fontFamily: 'var(--fo-font-mono)', fontSize: 14, fontWeight: 800, color: isSlaBreached ? '#ffb4ab' : '#93ccff' }}>
+                  {isSlaBreached ? `${Math.abs(Math.floor((elapsedMs - slaTargetMs) / 60000))}m overdue` : `${remainingMinutes}m left`}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Workflow Action Bar */}
+          <div className="fo-inv-workflow-bar">
+            <div className="fo-inv-action-group">
+              <button
+                type="button"
+                className={`fo-btn-workflow ${complaint.status === 'IN_PROGRESS' ? 'in-progress' : 'secondary'}`}
+                onClick={() => handleUpdateStatus('IN_PROGRESS')}
+                disabled={updatingStatus || complaint.status === 'IN_PROGRESS'}
+              >
+                <span className="fo-ping-dot" style={{ background: '#ffffff', boxShadow: '0 0 6px #ffffff' }} />
+                <span>{complaint.status.replace('_', ' ')}</span>
+              </button>
+
+              <button
+                type="button"
+                className="fo-btn-workflow danger"
+                onClick={handleEscalate}
+                disabled={updatingStatus}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: 14 }}>
+                  report
+                </span>
+                <span>Escalate to Regional Head</span>
+              </button>
+
+              <button
+                type="button"
+                className="fo-btn-workflow secondary"
+                onClick={() => setShowReassignModal(true)}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: 14 }}>
+                  swap_horiz
+                </span>
+                <span>Transfer Hub / Reassign</span>
+              </button>
+            </div>
+
+            <div className="fo-inv-action-group">
+              {complaint.status !== 'RESOLVED' && complaint.status !== 'CLOSED' ? (
+                <button
+                  type="button"
+                  className="fo-btn-workflow resolve"
+                  onClick={() => handleUpdateStatus('RESOLVED')}
+                  disabled={updatingStatus}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: 15 }}>
+                    check_circle
+                  </span>
+                  <span>Resolve Complaint</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="fo-btn-workflow secondary"
+                  onClick={() => handleUpdateStatus('IN_PROGRESS')}
+                  disabled={updatingStatus}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: 14 }}>
+                    replay
+                  </span>
+                  <span>Reopen Case</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                className="fo-btn-workflow secondary"
+                style={{ padding: '0 8px' }}
+                title="Refresh Case Telemetry"
+                onClick={() => reload()}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
+                  sync
+                </span>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {/* ==========================================================================
+            2. INCIDENT PHASE TRACKER (STITCH STAGE FLOW COMPONENT)
+            ========================================================================== */}
+        <section className="fo-inv-card" style={{ marginBottom: 16 }}>
+          <div className="fo-inv-card-head" style={{ marginBottom: 12 }}>
+            <div className="fo-inv-card-title-group">
+              <div className="fo-inv-card-icon" style={{ color: '#ef4444' }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
+                  error
+                </span>
+              </div>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <h3 className="fo-inv-card-title" style={{ fontSize: 14 }}>INCIDENT PHASE TRACKER</h3>
                   <span
                     style={{
+                      fontFamily: 'var(--fo-font-mono)',
+                      fontSize: 10,
+                      fontWeight: 800,
+                      color: '#ffb4ab',
+                      background: 'rgba(239, 68, 68, 0.2)',
+                      border: '1px solid rgba(239, 68, 68, 0.35)',
+                      padding: '2px 8px',
+                      borderRadius: 4,
                       display: 'inline-flex',
                       alignItems: 'center',
                       gap: 4,
-                      padding: '4px 9px',
-                      borderRadius: 6,
-                      backgroundColor: 'rgba(239, 68, 68, 0.18)',
-                      color: '#ef4444',
-                      border: '1px solid rgba(239, 68, 68, 0.45)',
-                      fontSize: 11,
-                      fontWeight: 800,
-                      letterSpacing: '0.02em',
-                    }}
-                    title="Newly filed complaint awaiting team assignment and first response."
-                  >
-                    <AlertTriangle size={13} /> Needs Action
-                  </span>
-                )}
-              </div>
-
-              <div className="detail-hero-actions">
-                {complaint.driverPhone && (
-                  <a
-                    href={`tel:${complaint.driverPhone}`}
-                    className="btn-call-driver"
-                    title={`Call driver directly on ${complaint.driverPhone}`}
-                  >
-                    <Phone size={14} /> Call Driver ({complaint.driverPhone})
-                  </a>
-                )}
-
-                {complaint.loadingRecordId && (
-                  <Link
-                    to="/loading"
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      padding: '8px 14px',
-                      borderRadius: 10,
-                      fontSize: 13,
-                      fontWeight: 700,
-                      backgroundColor: 'var(--surface)',
-                      border: '1px solid var(--border)',
-                      color: 'var(--text)',
                     }}
                   >
-                    <Truck size={15} color="var(--accent)" /> Live Trip Tracker <ExternalLink size={13} color="var(--muted)" />
-                  </Link>
-                )}
-              </div>
-            </div>
-
-            <h1 className="detail-hero-title">{complaint.title}</h1>
-
-            <div className="detail-hero-meta">
-              <span>🕒 Logged {sla.elapsedText} ({formatDateTime(complaint.createdAt)})</span>
-              {complaint.resolvedAt && (
-                <span style={{ color: '#10b981', fontWeight: 700 }}>
-                  ✓ Resolved at {formatDateTime(complaint.resolvedAt)}
-                </span>
-              )}
-              {complaint.tripLocationName && (
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                  <MapPin size={13} color="var(--muted)" /> {complaint.tripLocationName}
-                </span>
-              )}
-            </div>
-          </div>
-
-          <ErrorBanner error={detailRes.error} />
-
-          {/* Live Trip Phase Progress Stepper */}
-          <div className="journey-context-card">
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--muted)' }}>
-                  Operational Trip Progression Phase
-                </span>
-                <span
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 700,
-                    padding: '2px 8px',
-                    borderRadius: 6,
-                    backgroundColor: 'rgba(59, 130, 246, 0.12)',
-                    color: '#3b82f6',
-                  }}
-                >
-                  Live Status
-                </span>
-              </div>
-              {complaint.tripLocationName && (
-                <span style={{ fontSize: 12, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <MapPin size={12} /> Point: <strong>{complaint.tripLocationName}</strong>
-                </span>
-              )}
-            </div>
-
-            <div className="journey-step-bar">
-              {JOURNEY_STEPS.map((step) => {
-                const isActive = currentPhase === step.key;
-                return (
-                  <div key={step.key} className={`journey-step-item ${isActive ? 'active' : ''}`}>
-                    <span className="step-icon">{step.icon}</span>
-                    <div className="step-info">
-                      <span className="step-name">{step.label}</span>
-                      <span className="step-status">{isActive ? 'Current Phase' : '—'}</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Pending SuperAdmin Acceptance Banner */}
-          {complaint.assignmentStatus === 'PENDING' && complaint.pendingAssignee ? (
-            <div className="pending-assignment-banner" style={{ marginBottom: 24, borderRadius: 14 }}>
-              <div className="banner-content">
-                <div className="banner-icon">
-                  <Clock size={24} color="#d97706" />
-                </div>
-                <div>
-                  <h3 className="banner-title">Pending SuperAdmin Acceptance</h3>
-                  <p className="banner-desc">
-                    {user?.role === 'SUPER_ADMIN' && complaint.pendingAssignee.id === user.id ? (
-                      <>An admin has requested to assign this complaint to you. Please review and accept or reject below.</>
-                    ) : (
-                      <>
-                        Requested assignment to SuperAdmin <strong>{fullName(complaint.pendingAssignee)}</strong>. Awaiting their acceptance.
-                      </>
-                    )}
-                  </p>
-                </div>
-              </div>
-
-              {user?.role === 'SUPER_ADMIN' ? (
-                <div className="banner-actions">
-                  <ErrorBanner error={rejectError} />
-                  {!showRejectBox ? (
-                    <div className="banner-btn-group">
-                      <button
-                        type="button"
-                        className="btn-success-banner"
-                        onClick={handleAcceptAssignment}
-                        disabled={acceptingAssignment}
-                      >
-                        <Check size={16} style={{ marginRight: 6 }} />
-                        {acceptingAssignment ? 'Accepting…' : 'Accept Assignment'}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn-danger-outline-banner"
-                        onClick={() => setShowRejectBox(true)}
-                        disabled={acceptingAssignment}
-                      >
-                        <X size={16} style={{ marginRight: 6 }} />
-                        Reject Assignment
-                      </button>
-                    </div>
-                  ) : (
-                    <form className="reject-form-box" onSubmit={handleRejectAssignment}>
-                      <textarea
-                        className="form-textarea"
-                        rows={2}
-                        placeholder="Reason for rejecting assignment..."
-                        value={rejectNote}
-                        onChange={(e) => setRejectNote(e.target.value)}
-                      />
-                      <div className="banner-btn-group" style={{ marginTop: 8 }}>
-                        <button
-                          type="submit"
-                          className="btn-danger-banner"
-                          disabled={rejectingAssignment}
-                        >
-                          {rejectingAssignment ? 'Rejecting…' : 'Confirm Rejection'}
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-secondary"
-                          onClick={() => setShowRejectBox(false)}
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </form>
-                  )}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-          {/* Card 1: Driver & Vehicle Profile Overview */}
-          <div className="table-card detail-card" style={{ borderRadius: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-              <h2 className="card-section-title" style={{ margin: 0 }}>
-                <FileText size={18} color="var(--accent)" /> Driver & Fleet Assignment Details
-              </h2>
-            </div>
-
-            <div className="profile-overview-grid">
-              {/* Driver Profile */}
-              <div className="profile-sub-box">
-                <div className="profile-avatar-row">
-                  <div className="profile-avatar-circle">{driverInitials}</div>
-                  <div>
-                    <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>
-                      {fullName(complaint.driver)}
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600 }}>
-                      ID: {complaint.driver.employeeId} · License: {complaint.driver.licenseNumber}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="profile-data-row">
-                  <span className="profile-data-label">Contact Phone</span>
-                  <span className="profile-data-val">
-                    {complaint.driverPhone ? (
-                      <a href={`tel:${complaint.driverPhone}`} style={{ color: '#10b981', fontWeight: 700 }}>
-                        📞 {complaint.driverPhone}
-                      </a>
-                    ) : (
-                      '— Not on file'
-                    )}
+                    <span className="fo-ping-dot" style={{ background: '#ef4444' }} />
+                    Complaint Origin: {activeOriginPhase === 'YARD_IDLE' ? 'PARKING / SAFE YARD' : activeOriginPhase.replace(/_/g, ' ')}
                   </span>
                 </div>
-
-                <div className="profile-data-row">
-                  <span className="profile-data-label">Driver Profile</span>
-                  <span className="profile-data-val" style={{ color: '#38bdf8' }}>
-                    Verified Driver
-                  </span>
-                </div>
-              </div>
-
-              {/* Vehicle Profile */}
-              <div className="profile-sub-box">
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div className="vehicle-plate-pill">
-                    <span className="ind-tag">IND</span>
-                    <span>{complaint.vehicle?.plateNumber || complaint.vehiclePlateNumber || 'UNLINKED'}</span>
-                  </div>
-                  {complaint.vehicle?.agreementStatus && (
-                    <span
-                      style={{
-                        fontSize: 11,
-                        fontWeight: 800,
-                        padding: '2px 8px',
-                        borderRadius: 6,
-                        backgroundColor: 'rgba(16, 185, 129, 0.12)',
-                        color: '#10b981',
-                        border: '1px solid rgba(16, 185, 129, 0.3)',
-                      }}
-                    >
-                      {complaint.vehicle.agreementStatus}
-                    </span>
-                  )}
-                </div>
-
-                <div className="profile-data-row">
-                  <span className="profile-data-label">Chassis No (VIN)</span>
-                  <span className="profile-data-val">
-                    {complaint.vehicle?.chassisNumber || complaint.vehicle?.vin || 'N/A'}
-                  </span>
-                </div>
-
-                <div className="profile-data-row">
-                  <span className="profile-data-label">Wheel</span>
-                  <span className="profile-data-val">
-                    {complaint.vehicle?.wheels ? `${complaint.vehicle.wheels} Wheeler` : 'N/A'}
-                  </span>
-                </div>
-
-                <div className="profile-data-row">
-                  <span className="profile-data-label">Status of Agreements</span>
-                  <span className="profile-data-val">
-                    {complaint.vehicle?.agreementStatus || 'ACTIVE'}
-                  </span>
+                <div className="fo-inv-card-subtitle" style={{ fontSize: 11, color: '#8c909f' }}>
+                  Identifies the exact operational trip phase at which the driver reported the breakdown
                 </div>
               </div>
             </div>
 
-            {/* Assignment & Timestamps summary strip */}
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-                gap: 12,
-                marginTop: 16,
-                paddingTop: 16,
-                borderTop: '1px solid var(--border)',
-              }}
-            >
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 4 }}>
-                  Assigned Team / Lead
-                </div>
-                <div>
-                  {complaint.assignmentStatus === 'PENDING' && complaint.pendingAssignee ? (
-                    <span className="pending-assignee-badge">
-                      Pending SuperAdmin Approval ({fullName(complaint.pendingAssignee)})
-                    </span>
-                  ) : complaint.assignedTo ? (
-                    <span className="assignee-tag" style={{ fontSize: 12 }}>
-                      👤 {fullName(complaint.assignedTo)} ({complaint.assignedTo.employeeId})
-                    </span>
-                  ) : (
-                    <span style={{ color: 'var(--danger-text)', fontWeight: 800, fontSize: 12 }}>
-                      ⚠️ Unassigned (Action Required)
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 4 }}>
-                  Resolution Target SLA
-                </div>
-                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>
-                  {sla.isNoSla || sla.status === 'NO_SLA'
-                    ? 'N/A (No SLA Target)'
-                    : sla.targetHours
-                      ? `${sla.targetHours} Hours Target (${formatEnum(complaint.category || '')})`
-                      : '12 Hours Target'}
-                </div>
-              </div>
-
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 4 }}>
-                  Reported Date & Time
-                </div>
-                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>
-                  {formatDateTime(complaint.createdAt)}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Card 2: Driver Report & Voice Note Player */}
-          <div className="table-card detail-card" style={{ borderRadius: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
-              <h2 className="card-section-title" style={{ margin: 0 }}>
-                <MessageSquare size={18} color="var(--accent)" /> What the Driver Reported
-              </h2>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                {complaint.transcription || complaint.attachments.some((a) => a.kind === 'VOICE' && a.transcription) ? (
-                  <span className="transcription-badge">
-                    <Mic size={13} style={{ marginRight: 4 }} /> Transcribed Voice Note
-                  </span>
-                ) : complaint.attachments.some((a) => a.kind === 'VOICE') ? (
-                  <button
-                    type="button"
-                    className="btn-secondary btn-sm"
-                    onClick={handleTranscribe}
-                    disabled={transcribing}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, padding: '4px 10px' }}
-                  >
-                    <Mic size={14} color="var(--accent)" />
-                    {transcribing ? 'Transcribing…' : 'Convert Voice Note to Text'}
-                  </button>
-                ) : null}
-              </div>
-            </div>
-
-            <ErrorBanner error={transcribeError} />
-
-            {/* Language Switcher Bar */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 14, marginBottom: 12 }}>
-              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>Translate:</span>
-              {(['ENGLISH', 'BENGALI', 'HINDI'] as const).map((lang) => (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {photoAttachments.length > 0 && (
                 <button
-                  key={lang}
                   type="button"
-                  onClick={() => handleLanguageChange(lang)}
-                  disabled={translatingLang === lang}
-                  style={{
-                    padding: '4px 14px',
-                    borderRadius: 20,
-                    fontSize: 12,
-                    fontWeight: 700,
-                    border: selectedLang === lang ? '1px solid #3b82f6' : '1px solid var(--border)',
-                    background: selectedLang === lang ? '#3b82f6' : 'var(--surface)',
-                    color: selectedLang === lang ? '#ffffff' : 'var(--text)',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                  }}
+                  className="fo-btn-workflow secondary"
+                  style={{ fontSize: 11, padding: '4px 10px' }}
+                  onClick={() => photoAttachments[0]?.url && setActivePhoto(photoAttachments[0].url)}
                 >
-                  {translatingLang === lang ? `Translating…` : lang === 'BENGALI' ? 'বাংলা Bengali' : lang === 'HINDI' ? 'हिंदी Hindi' : 'English'}
+                  <span className="material-symbols-outlined" style={{ fontSize: 13 }}>
+                    collections
+                  </span>
+                  <span>View All Phase Photos ({photoAttachments.length})</span>
                 </button>
-              ))}
-            </div>
-
-            {/* Audio Voice Note Player Card if attached */}
-            {complaint.attachments.some((a) => a.kind === 'VOICE') && (
-              <div className="audio-card-container">
-                <div className="audio-header-bar">
-                  <span style={{ fontSize: 12, fontWeight: 800, color: '#38bdf8', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <Mic size={15} /> Driver's Original Voice Note
-                  </span>
-                  <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>
-                    High Quality Audio
-                  </span>
-                </div>
-                {complaint.attachments
-                  .filter((a) => a.kind === 'VOICE')
-                  .map((a) => (
-                    <audio key={a.id} controls preload="none" src={a.url} className="audio-native-custom" />
-                  ))}
-              </div>
-            )}
-
-            {/* Driver Statement Box */}
-            <div className="driver-statement-box" style={{ backgroundColor: 'var(--bg)', border: '1px solid var(--border)', marginTop: 12, borderRadius: 12, padding: 16 }}>
-              {(() => {
-                const rawDesc = complaint.description || '';
-                const pattern = /\[Linked Support Chat • ([^\]]+)\]:\s*/g;
-                const parts = rawDesc.split(pattern);
-
-                const baseText = parts[0]?.trim() ?? '';
-                const linkedChats: { date: string; text: string }[] = [];
-
-                for (let i = 1; i < parts.length; i += 2) {
-                  const date = parts[i]?.trim();
-                  const text = parts[i + 1]?.trim();
-                  if (date && text) {
-                    linkedChats.push({ date, text });
-                  }
-                }
-
-                const isPlaceholder =
-                  !baseText ||
-                  baseText === 'Photo attached' ||
-                  baseText === 'Voice note attached';
-                const hasBaseText = !isPlaceholder;
-                const hasTranscription = Boolean(complaint.transcription);
-                const isPhotoOnly = baseText === 'Photo attached' && !hasTranscription && linkedChats.length === 0;
-
-                const getDisplayText = (
-                  text: string,
-                  type: 'description' | 'transcription' = 'description',
-                ): string => {
-                  if (selectedLang === 'ENGLISH') return text;
-                  const cached = translationsCache[selectedLang]?.[type];
-                  return cached ?? (translatingLang === selectedLang ? 'Translating…' : text);
-                };
-
-                return (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                    {/* 1. Base Complaint Description */}
-                    {hasBaseText && (
-                      <p className="statement-text" style={{ margin: 0, fontSize: 14, lineHeight: 1.6, color: 'var(--text)' }}>
-                        {getDisplayText(baseText, 'description')}
-                      </p>
-                    )}
-
-                    {/* 2. Photo-only placeholder */}
-                    {isPhotoOnly && (
-                      <p className="statement-text" style={{ margin: 0, color: 'var(--muted)', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: 8 }}>
-                        📷 Photo attached with no written note.
-                      </p>
-                    )}
-
-                    {/* 3. Voice Note Transcription */}
-                    {hasTranscription && (
-                      <div style={{ borderTop: hasBaseText ? '1px dashed var(--border)' : 'none', paddingTop: hasBaseText ? 12 : 0 }}>
-                        <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 4, marginBottom: 6 }}>
-                          <Mic size={13} color="var(--accent)" /> Voice Note AI Transcription:
-                        </span>
-                        <p className="statement-text" style={{ margin: 0, fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>
-                          {getDisplayText(complaint.transcription!, 'transcription')}
-                        </p>
-                      </div>
-                    )}
-
-                    {/* 4. Linked Support Chat Timeline */}
-                    {linkedChats.length > 0 && (
-                      <div style={{ borderTop: hasBaseText || hasTranscription ? '1px dashed var(--border)' : 'none', paddingTop: hasBaseText || hasTranscription ? 14 : 0 }}>
-                        <div style={{
-                          fontSize: 12,
-                          fontWeight: 700,
-                          color: 'var(--accent)',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 6,
-                          marginBottom: 10,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.5px'
-                        }}>
-                          <MessageSquare size={14} /> Linked Support Chat ({linkedChats.length})
-                        </div>
-
-                        <div className="linked-chats-timeline" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                          {linkedChats.map((chat, idx) => (
-                            <div
-                              key={idx}
-                              style={{
-                                background: 'var(--card-bg, #ffffff)',
-                                border: '1px solid var(--border)',
-                                borderLeft: '4px solid var(--accent)',
-                                borderRadius: '8px',
-                                padding: '10px 14px',
-                                boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
-                              }}
-                            >
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                                  <Clock size={11} /> {chat.date}
-                                </span>
-                                <span style={{ fontSize: 10, fontWeight: 700, background: 'rgba(59, 130, 246, 0.1)', color: '#2563eb', padding: '1px 6px', borderRadius: '4px' }}>
-                                  Driver Chat
-                                </span>
-                              </div>
-                              <p style={{ margin: 0, fontSize: 13, color: 'var(--text)', lineHeight: 1.5, fontWeight: 400 }}>
-                                {chat.text}
-                              </p>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
+              )}
             </div>
           </div>
 
-          {/* Card 3: Evidence & Attachments */}
-          <div className="table-card detail-card" style={{ borderRadius: 14 }}>
-            <h2 className="card-section-title">
-              <Paperclip size={18} color="var(--accent)" /> Evidence & Media Attachments{' '}
-              <span className="badge-pill">{complaint.attachments.length}</span>
-            </h2>
+          {/* 4 Phase Stage Grid */}
+          <div className="fo-phase-tracker-grid">
+            {/* PHASE 1: AT_LOADING_PLANT */}
+            <div className={`fo-phase-box ${activeOriginPhase === 'AT_LOADING_PLANT' ? 'active-origin' : ''}`}>
+              <div className="fo-phase-head">
+                <span className={`fo-phase-badge ${activeOriginPhase === 'AT_LOADING_PLANT' ? 'alert' : 'success'}`}>
+                  {activeOriginPhase === 'AT_LOADING_PLANT' ? '● COMPLAINT RAISED HERE' : '✓ PHASE 1: PRE-INCIDENT'}
+                </span>
+                <span className="fo-phase-time">{formatDateTime(complaint.createdAt)}</span>
+              </div>
+              <div className="fo-phase-body">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span className="material-symbols-outlined" style={{ fontSize: 22, color: activeOriginPhase === 'AT_LOADING_PLANT' ? '#ef4444' : '#6ee7b7' }}>
+                    factory
+                  </span>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span style={{ fontWeight: 700, fontSize: 13, color: '#ffffff' }}>At Loading Plant</span>
+                    <span style={{ fontSize: 10, color: activeOriginPhase === 'AT_LOADING_PLANT' ? '#ffb4ab' : '#8c909f' }}>
+                      {activeOriginPhase === 'AT_LOADING_PLANT' ? `SOS: ${complaint.category || 'Loading'}` : 'Completed Prior to Incident'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div className="fo-phase-foot">
+                <span style={{ fontSize: 10, color: '#8c909f', fontFamily: 'var(--fo-font-mono)' }}>
+                  {complaint.vehiclePlateNumber || 'Loading Inspection'}
+                </span>
+              </div>
+            </div>
 
-            {complaint.attachments.length === 0 ? (
-              <p className="empty-text">No photo or video evidence attached.</p>
-            ) : (
-              <div className="attachments-grid">
-                {complaint.attachments.map((a) => (
-                  <div key={a.id} className={`attachment-card attachment-${a.kind.toLowerCase()}`}>
-                    {a.kind === 'PHOTO' ? (
-                      <a href={a.url} target="_blank" rel="noreferrer" className="photo-link">
-                        <img src={a.url} alt={a.originalName ?? 'Complaint photo'} className="attachment-photo" />
-                      </a>
-                    ) : a.kind === 'VOICE' ? (
-                      <div className="audio-wrapper">
-                        <span className="media-kind-tag" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <Mic size={14} color="var(--accent)" /> Voice Note
-                        </span>
-                        <audio controls preload="none" src={a.url} className="audio-player">
-                          <a href={a.url} target="_blank" rel="noreferrer">
-                            Download voice note
-                          </a>
-                        </audio>
-                      </div>
-                    ) : (
-                      <div className="video-wrapper">
-                        <span className="media-kind-tag" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <Video size={14} color="var(--accent)" /> Video Clip
-                        </span>
-                        <video controls preload="none" playsInline src={a.url} className="video-player">
-                          <a href={a.url} target="_blank" rel="noreferrer">
-                            Download video
-                          </a>
-                        </video>
-                      </div>
-                    )}
-                    <div className="attachment-meta">
-                      <span>{formatEnum(a.kind)}</span>
-                      {a.durationSec ? <span> · {formatDuration(a.durationSec)}</span> : null}
-                      {a.bytes ? <span> · {formatBytes(a.bytes)}</span> : null}
-                      {a.createdAt ? <span> · {formatDateTime(a.createdAt)}</span> : null}
+            {/* PHASE 2: IN_TRANSIT */}
+            <div className={`fo-phase-box ${activeOriginPhase === 'IN_TRANSIT' ? 'active-origin' : ''}`}>
+              <div className="fo-phase-head">
+                <span className={`fo-phase-badge ${activeOriginPhase === 'IN_TRANSIT' ? 'alert' : 'muted'}`}>
+                  {activeOriginPhase === 'IN_TRANSIT' ? '● COMPLAINT RAISED HERE' : 'PHASE 2: IN TRANSIT'}
+                </span>
+                <span className="fo-phase-time">{formatDateTime(complaint.createdAt)}</span>
+              </div>
+              <div className="fo-phase-body">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ width: 28, height: 28, borderRadius: 6, background: activeOriginPhase === 'IN_TRANSIT' ? '#ef4444' : '#1b2b3f', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ffffff', flexShrink: 0 }}>
+                    <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
+                      {activeOriginPhase === 'IN_TRANSIT' ? 'emergency' : 'directions_bus'}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span style={{ fontWeight: 800, fontSize: 13, color: '#ffffff' }}>
+                      Phase 2: In Transit
+                    </span>
+                    <span style={{ fontSize: 10, color: activeOriginPhase === 'IN_TRANSIT' ? '#ffb4ab' : '#8c909f' }}>
+                      {activeOriginPhase === 'IN_TRANSIT' ? `Driver SOS: ${complaint.category || 'Breakdown'}` : 'Highway Movement'}
+                    </span>
+                    {complaint.tripLocationName ? (
+                      <span style={{ fontSize: 10, color: '#8c909f', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>
+                        {complaint.tripLocationName}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+              <div className="fo-phase-foot">
+                <span style={{ fontSize: 10, color: activeOriginPhase === 'IN_TRANSIT' ? '#ffb4ab' : '#8c909f', fontFamily: 'var(--fo-font-mono)' }}>
+                  {photoAttachments.length} Evidence Photo(s) Attached
+                </span>
+              </div>
+            </div>
+
+            {/* PHASE 3: AT_UNLOADING_POINT */}
+            <div className={`fo-phase-box ${activeOriginPhase === 'AT_UNLOADING_POINT' ? 'active-origin' : ''}`}>
+              <div className="fo-phase-head">
+                <span className={`fo-phase-badge ${activeOriginPhase === 'AT_UNLOADING_POINT' ? 'alert' : 'muted'}`}>
+                  {activeOriginPhase === 'AT_UNLOADING_POINT' ? '● COMPLAINT RAISED HERE' : 'PHASE 3: IMPACTED'}
+                </span>
+                <span className="fo-phase-time">{activeOriginPhase === 'AT_UNLOADING_POINT' ? formatDateTime(complaint.createdAt) : 'Target SLA'}</span>
+              </div>
+              <div className="fo-phase-body">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span className="material-symbols-outlined" style={{ fontSize: 22, color: activeOriginPhase === 'AT_UNLOADING_POINT' ? '#ef4444' : '#8c909f' }}>
+                    inventory_2
+                  </span>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span style={{ fontWeight: 700, fontSize: 13, color: '#ffffff' }}>At Unloading Point</span>
+                    <span style={{ fontSize: 10, color: activeOriginPhase === 'AT_UNLOADING_POINT' ? '#ffb4ab' : '#8c909f' }}>
+                      {activeOriginPhase === 'AT_UNLOADING_POINT' ? `Driver SOS: ${complaint.category || 'Unloading'}` : 'Interrupted by Incident'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div className="fo-phase-foot">
+                <span style={{ fontSize: 10, color: '#8c909f', fontFamily: 'var(--fo-font-mono)' }}>
+                  {complaint.loadingStatus ? `Status: ${complaint.loadingStatus}` : 'POD Delivery Pending'}
+                </span>
+              </div>
+            </div>
+
+            {/* PHASE 4: YARD_IDLE (PARKING / SAFE YARD) */}
+            <div className={`fo-phase-box ${activeOriginPhase === 'YARD_IDLE' ? 'active-origin' : ''}`}>
+              <div className="fo-phase-head">
+                <span className={`fo-phase-badge ${activeOriginPhase === 'YARD_IDLE' ? 'alert' : 'muted'}`}>
+                  {activeOriginPhase === 'YARD_IDLE' ? '● COMPLAINT RAISED HERE' : 'CURRENT STOPPAGE'}
+                </span>
+                <span className="fo-phase-time">{activeOriginPhase === 'YARD_IDLE' ? formatDateTime(complaint.createdAt) : 'Staging Zone'}</span>
+              </div>
+              <div className="fo-phase-body">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ width: 26, height: 26, borderRadius: 6, background: activeOriginPhase === 'YARD_IDLE' ? '#ef4444' : '#1b2b3f', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ffffff', fontWeight: 800, fontSize: 13, flexShrink: 0 }}>
+                    P
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span style={{ fontWeight: 700, fontSize: 13, color: '#ffffff' }}>Parking / Safe Yard</span>
+                    <span style={{ fontSize: 10, color: activeOriginPhase === 'YARD_IDLE' ? '#ffb4ab' : '#8c909f' }}>
+                      {activeOriginPhase === 'YARD_IDLE' ? `Driver SOS: ${complaint.category || 'Yard'}` : 'Post-Incident Safe Haven'}
+                    </span>
+                    {complaint.tripLocationName ? (
+                      <span style={{ fontSize: 10, color: '#8c909f', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>
+                        {complaint.tripLocationName}
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+              <div className="fo-phase-foot">
+                <span style={{ fontSize: 10, color: activeOriginPhase === 'YARD_IDLE' ? '#ffb4ab' : '#8c909f', fontFamily: 'var(--fo-font-mono)' }}>
+                  Status: {complaint.status}
+                </span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ==========================================================================
+            3. TWO-COLUMN FORENSIC SPLIT LAYOUT
+            ========================================================================== */}
+        <div className="fo-inv-grid">
+          {/* ==================== LEFT COLUMN (~60%) ==================== */}
+          <div className="fo-inv-col">
+            {/* 1. Voice Note & AI Speech Forensics */}
+            <div className="fo-inv-card">
+              <div className="fo-inv-card-head">
+                <div className="fo-inv-card-title-group">
+                  <div className="fo-inv-card-icon" style={{ color: '#4cd7f6' }}>
+                    <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
+                      mic
+                    </span>
+                  </div>
+                  <div>
+                    <h3 className="fo-inv-card-title">Driver Voice Memo & AI Forensics</h3>
+                    <div className="fo-inv-card-subtitle">
+                      {voiceNoteAttachment ? `Voice Attachment • ${formatDateTime(voiceNoteAttachment.createdAt)}` : 'Audio / Text Description Log'}
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Right Action, Assignment & Audit History Column */}
-        <div className="detail-sidebar-column" style={{ position: 'sticky', top: 'calc(var(--header-height, 64px) + 20px)', alignSelf: 'start' }}>
-          {/* Card 1: Take Action & Assign Staff Box */}
-          <div className="table-card" style={{ borderRadius: 14, padding: 0, overflow: 'hidden' }}>
-            {/* Segmented Tab Header Bar */}
-            <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', background: 'var(--surface-muted)' }}>
-              <button
-                type="button"
-                onClick={() => setActionTab('status')}
-                style={{
-                  flex: 1,
-                  padding: '12px 14px',
-                  background: actionTab === 'status' ? 'var(--surface)' : 'transparent',
-                  color: actionTab === 'status' ? 'var(--accent)' : 'var(--muted)',
-                  border: 'none',
-                  borderBottom: actionTab === 'status' ? '2px solid var(--accent)' : '2px solid transparent',
-                  fontWeight: 700,
-                  fontSize: 13,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 6,
-                  transition: 'all 0.15s ease',
-                }}
-              >
-                <CheckSquare size={16} /> Take Action
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActionTab('assign')}
-                style={{
-                  flex: 1,
-                  padding: '12px 14px',
-                  background: actionTab === 'assign' ? 'var(--surface)' : 'transparent',
-                  color: actionTab === 'assign' ? 'var(--accent)' : 'var(--muted)',
-                  border: 'none',
-                  borderBottom: actionTab === 'assign' ? '2px solid var(--accent)' : '2px solid transparent',
-                  fontWeight: 700,
-                  fontSize: 13,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 6,
-                  transition: 'all 0.15s ease',
-                  position: 'relative',
-                }}
-              >
-                <UserCheck size={16} /> Assign Staff
-                {!complaint.assignedToId && (
+                </div>
+                {voiceNoteAttachment && (
                   <span
                     style={{
-                      width: 7,
-                      height: 7,
-                      borderRadius: '50%',
-                      backgroundColor: '#ef4444',
-                      display: 'inline-block',
+                      fontFamily: 'var(--fo-font-mono)',
+                      fontSize: 10,
+                      fontWeight: 800,
+                      color: '#93ccff',
+                      background: '#1b2b3f',
+                      padding: '2px 8px',
+                      borderRadius: 4,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.08em',
                     }}
-                    title="Complaint unassigned"
-                  />
+                  >
+                    Verified Audio
+                  </span>
                 )}
-              </button>
-            </div>
+              </div>
 
-            {/* Tab 1 Content: Take Action & Update */}
-            {actionTab === 'status' && (
-              <form className="form-card" onSubmit={submitStatus} style={{ padding: '16px 18px', gap: 12 }}>
-                <ErrorBanner error={statusError} />
+              <div className="fo-inv-waveform-box">
+                {voiceNoteAttachment ? (
+                  <>
+                    <audio
+                      ref={audioRef}
+                      src={voiceNoteAttachment.url}
+                      onTimeUpdate={() => setAudioCurrentTime(audioRef.current?.currentTime || 0)}
+                      onLoadedMetadata={() => setAudioDuration(audioRef.current?.duration || voiceNoteAttachment.durationSec || 0)}
+                      onEnded={() => setIsPlayingAudio(false)}
+                      style={{ display: 'none' }}
+                    />
 
-                {/* Interactive Status Selector Chips (Horizontal 4-grid) */}
-                <div className="form-group" style={{ gap: 4 }}>
-                  <label className="form-label" style={{ fontSize: 11 }}>Set Complaint Status</label>
-                  <div className="status-chips-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
-                    {COMPLAINT_STATUSES.map((s) => {
-                      const isSelected = status === s;
-                      return (
-                        <button
-                          key={s}
-                          type="button"
-                          onClick={() => setStatus(s)}
-                          className={`status-chip-btn status-${s.toLowerCase()} ${isSelected ? 'active' : ''}`}
-                          style={{
-                            padding: '6px 2px',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'center',
-                            gap: 2,
-                            fontSize: 11,
-                            minHeight: 'auto',
-                          }}
-                        >
-                          <span style={{ fontSize: 13 }}>
-                            {s === 'NEW' ? '🔵' : s === 'IN_PROGRESS' ? '🟡' : s === 'RESOLVED' ? '🟢' : '⚫'}
-                          </span>
-                          <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>
-                            {formatEnum(s)}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
+                    <div className="fo-inv-wave-player-row">
+                      <button
+                        type="button"
+                        className="fo-inv-play-btn"
+                        onClick={togglePlayAudio}
+                        title={isPlayingAudio ? 'Pause' : 'Play'}
+                      >
+                        <span className="material-symbols-outlined" style={{ fontSize: 20 }}>
+                          {isPlayingAudio ? 'pause' : 'play_arrow'}
+                        </span>
+                      </button>
 
-                {/* Quick Action Preset Buttons */}
-                <div className="form-group" style={{ gap: 4 }}>
-                  <label className="form-label" style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <Zap size={12} color="var(--accent)" /> Quick Presets
-                  </label>
-                  <div className="presets-group" style={{ marginTop: 0, gap: 4 }}>
-                    <button
-                      type="button"
-                      className="preset-pill-btn"
-                      style={{ fontSize: 10.5, padding: '3px 7px' }}
-                      onClick={() => applyPresetNote('Clarification requested from driver: Please provide more details regarding current vehicle condition.')}
-                    >
-                      💬 Info
-                    </button>
-                    <button
-                      type="button"
-                      className="preset-pill-btn"
-                      style={{ fontSize: 10.5, padding: '3px 7px' }}
-                      onClick={() => applyPresetNote('Location confirmation requested: Please share your exact highway/loading plant landmark.')}
-                    >
-                      📍 Location
-                    </button>
-                    <button
-                      type="button"
-                      className="preset-pill-btn"
-                      style={{ fontSize: 10.5, padding: '3px 7px' }}
-                      onClick={() => applyPresetNote('Mechanic / Breakdown assistance team has been dispatched to vehicle location.')}
-                    >
-                      🛠️ Mechanic
-                    </button>
-                    <button
-                      type="button"
-                      className="preset-pill-btn"
-                      style={{ fontSize: 10.5, padding: '3px 7px' }}
-                      onClick={() => applyPresetNote('Issue investigated and resolved. Driver cleared to proceed.')}
-                    >
-                      ✅ Resolved
-                    </button>
-                  </div>
-                </div>
+                      <div className="fo-inv-wave-bars">
+                        {[12, 20, 28, 16, 32, 24, 36, 20, 28, 16, 24, 32, 20, 12, 28, 36, 16, 24, 32, 14, 20, 28, 16, 24, 10, 20].map(
+                          (h, i) => {
+                            const isPlayed = audioDuration > 0 ? i / 26 <= audioCurrentTime / audioDuration : false;
+                            return (
+                              <div
+                                key={i}
+                                className={`fo-inv-bar ${isPlayed ? '' : 'unplayed'}`}
+                                style={{ height: `${h}px` }}
+                              />
+                            );
+                          },
+                        )}
+                      </div>
 
-                {/* Note Textarea */}
-                <div className="form-group" style={{ gap: 4 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 6 }}>
-                    <label htmlFor="note" className="form-label" style={{ fontSize: 11, margin: 0 }}>
-                      Action Taken / Progress Note
-                    </label>
+                      <span style={{ fontFamily: 'var(--fo-font-mono)', fontSize: 11, color: '#93ccff', minWidth: 70 }}>
+                        {Math.floor(audioCurrentTime / 60)}:{Math.floor(audioCurrentTime % 60).toString().padStart(2, '0')} /{' '}
+                        {Math.floor(audioDuration / 60)}:{Math.floor(audioDuration % 60).toString().padStart(2, '0')}
+                      </span>
 
-                    {/* Language Selector + Voice Dictate Button */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <div className="voice-lang-selector" style={{ display: 'inline-flex', background: 'var(--surface-muted)', borderRadius: 10, padding: 2, border: '1px solid var(--border)' }}>
-                        {(
-                          [
-                            { id: 'en-IN', label: 'EN' },
-                            { id: 'hi-IN', label: 'हिंदी' },
-                            { id: 'bn-IN', label: 'বাংলা' },
-                          ] as const
-                        ).map((l) => (
+                      <div className="fo-inv-speed-group">
+                        {[1.0, 1.25, 1.5].map((rate) => (
                           <button
-                            key={l.id}
+                            key={rate}
                             type="button"
-                            onClick={() => setVoiceLang(l.id)}
-                            style={{
-                              padding: '2px 6px',
-                              borderRadius: 8,
-                              fontSize: 10,
-                              fontWeight: 800,
-                              border: 'none',
-                              background: voiceLang === l.id ? 'var(--surface)' : 'transparent',
-                              color: voiceLang === l.id ? 'var(--accent)' : 'var(--muted)',
-                              cursor: 'pointer',
-                              boxShadow: voiceLang === l.id ? '0 1px 2px rgba(0,0,0,0.1)' : 'none',
-                            }}
-                            title={`Set voice recognition language to ${l.label}`}
+                            className={`fo-inv-speed-btn ${playbackRate === rate ? 'active' : ''}`}
+                            onClick={() => changePlaybackRate(rate)}
                           >
-                            {l.label}
+                            {rate}x
                           </button>
                         ))}
                       </div>
+                    </div>
+                  </>
+                ) : null}
 
+                {/* AI Transcription Container */}
+                <div className="fo-inv-transcription-box">
+                  <div className="fo-inv-transcript-head">
+                    <div className="fo-inv-transcript-badge">
+                      <span className="material-symbols-outlined" style={{ fontSize: 15 }}>
+                        smart_toy
+                      </span>
+                      <span>AI SPEECH FORENSICS</span>
+                    </div>
+
+                    <div className="fo-inv-lang-tabs">
                       <button
                         type="button"
-                        onClick={() => toggleVoiceRecording()}
-                        title={
-                          isListening
-                            ? 'Click to stop voice dictation'
-                            : `Click to dictate note in ${
-                                voiceLang === 'hi-IN' ? 'Hindi (हिंदी)' : voiceLang === 'bn-IN' ? 'Bengali (বাংলা)' : 'English'
-                              }`
-                        }
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 4,
-                          padding: '3px 8px',
-                          borderRadius: 12,
-                          fontSize: 11,
-                          fontWeight: 700,
-                          border: isListening ? '1px solid #ef4444' : '1px solid var(--border)',
-                          backgroundColor: isListening ? 'rgba(239, 68, 68, 0.12)' : 'var(--surface-muted)',
-                          color: isListening ? '#ef4444' : 'var(--muted)',
-                          cursor: 'pointer',
-                          transition: 'all 0.2s ease',
-                        }}
+                        className={`fo-inv-lang-tab ${selectedLang === 'HI' ? 'active' : ''}`}
+                        onClick={() => handleTranslateLang('HI')}
                       >
-                        <Mic size={13} color={isListening ? '#ef4444' : 'var(--accent)'} />
-                        <span>{isListening ? 'Listening…' : 'Voice Dictate'}</span>
-                        {isListening && (
-                          <span
-                            style={{
-                              width: 6,
-                              height: 6,
-                              borderRadius: '50%',
-                              backgroundColor: '#ef4444',
-                              display: 'inline-block',
-                            }}
-                          />
-                        )}
+                        हिंदी (Original)
+                      </button>
+                      <button
+                        type="button"
+                        className={`fo-inv-lang-tab ${selectedLang === 'EN' ? 'active' : ''}`}
+                        onClick={() => handleTranslateLang('EN')}
+                      >
+                        English Translation
+                      </button>
+                      <button
+                        type="button"
+                        className={`fo-inv-lang-tab ${selectedLang === 'BN' ? 'active' : ''}`}
+                        onClick={() => handleTranslateLang('BN')}
+                      >
+                        বাংলা
                       </button>
                     </div>
                   </div>
 
-                  <textarea
-                    id="note"
-                    ref={noteTextareaRef}
-                    className="form-textarea"
-                    rows={3}
-                    maxLength={2000}
-                    placeholder={
-                      isListening
-                        ? `🎙 Listening (${
-                            voiceLang === 'hi-IN' ? 'Hindi / हिंदी' : voiceLang === 'bn-IN' ? 'Bengali / বাংলা' : 'English'
-                          })... Speak clearly...`
-                        : 'Type progress update, instructions for driver, or resolution details...'
-                    }
-                    value={note}
-                    onChange={(e) => setNote(e.target.value)}
+                  <div className="fo-inv-transcript-text">
+                    {translating ? (
+                      <span style={{ color: '#8c909f' }}>Translating neural speech model…</span>
+                    ) : (
+                      displayedTranscript
+                    )}
+                  </div>
+
+                  {!complaint.transcription && voiceNoteAttachment && (
+                    <button
+                      type="button"
+                      className="fo-btn-workflow secondary"
+                      style={{ alignSelf: 'flex-start', marginTop: 4 }}
+                      onClick={handleTranscribe}
+                      disabled={transcribing}
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: 14 }}>
+                        transcribe
+                      </span>
+                      <span>{transcribing ? 'Transcribing…' : 'Generate Full AI Transcription'}</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* 2. Field Photographic Dossier */}
+            <div className="fo-inv-card">
+              <div className="fo-inv-card-head">
+                <div className="fo-inv-card-title-group">
+                  <div className="fo-inv-card-icon" style={{ color: '#3b82f6' }}>
+                    <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
+                      photo_camera
+                    </span>
+                  </div>
+                  <div>
+                    <h3 className="fo-inv-card-title">Field Photographic Dossier</h3>
+                    <div className="fo-inv-card-subtitle">
+                      {photoAttachments.length} {photoAttachments.length === 1 ? 'image attached' : 'images attached'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {photoAttachments.length > 0 ? (
+                <div className="fo-inv-photo-grid">
+                  {photoAttachments.map((photo, idx) => (
+                    <div
+                      key={photo.id || idx}
+                      className="fo-inv-photo-card"
+                      onClick={() => setActivePhoto(photo.url)}
+                      title="Click to expand full resolution photo"
+                    >
+                      <img src={photo.url} alt={photo.originalName || `Photo #${idx + 1}`} />
+                      <div className="fo-inv-photo-overlay">
+                        <span className="fo-inv-photo-tag">{photo.format?.toUpperCase() || 'PHOTO'}</span>
+                        <div className="fo-inv-photo-bottom">
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span style={{ fontFamily: 'var(--fo-font-mono)', fontSize: 9, color: '#8c909f' }}>
+                              {formatDateTime(photo.createdAt)}
+                            </span>
+                            <span style={{ fontFamily: 'var(--fo-font-head)', fontSize: 12, fontWeight: 700, color: '#ffffff' }}>
+                              {photo.originalName || `Photo #${idx + 1}`}
+                            </span>
+                          </div>
+                          <span className="material-symbols-outlined" style={{ fontSize: 16, color: '#adc6ff' }}>
+                            zoom_in
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ padding: '24px 16px', textAlign: 'center', color: '#8c909f', background: '#0b1c30', borderRadius: 8 }}>
+                  <span className="material-symbols-outlined" style={{ fontSize: 24, color: '#424754', display: 'block', marginBottom: 6 }}>
+                    no_photography
+                  </span>
+                  <span style={{ fontSize: 12 }}>No field photos attached to this ticket.</span>
+                </div>
+              )}
+            </div>
+
+            {/* 3. Fleet Asset & Pilot Telemetry */}
+            <div className="fo-inv-card">
+              <div className="fo-inv-card-head">
+                <div className="fo-inv-card-title-group">
+                  <div className="fo-inv-card-icon" style={{ color: '#93ccff' }}>
+                    <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
+                      local_shipping
+                    </span>
+                  </div>
+                  <h3 className="fo-inv-card-title">Fleet Asset & Pilot Telemetry</h3>
+                </div>
+                <span style={{ fontFamily: 'var(--fo-font-mono)', fontSize: 10, color: '#4cd7f6' }}>
+                  Unit Context
+                </span>
+              </div>
+
+              <div className="fo-inv-telemetry-grid">
+                {/* Driver Subcard */}
+                <div className="fo-inv-telemetry-box">
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                    <div
+                      style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: 8,
+                        background: 'linear-gradient(135deg, #1d4ed8 0%, #0284c7 100%)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#ffffff',
+                        fontFamily: 'Outfit',
+                        fontSize: 16,
+                        fontWeight: 700,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {driverName.slice(0, 2).toUpperCase()}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontWeight: 700, fontSize: 13, color: '#ffffff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {driverName}
+                        </span>
+                        <span style={{ fontFamily: 'var(--fo-font-mono)', fontSize: 9, background: '#1b2b3f', color: '#93ccff', padding: '1px 4px', borderRadius: 3 }}>
+                          #{driverEmpId}
+                        </span>
+                      </div>
+                      <span style={{ fontFamily: 'var(--fo-font-mono)', fontSize: 11, color: '#4cd7f6', marginTop: 4 }}>
+                        {driverPhone || 'No contact phone'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {driverPhone ? (
+                    <div style={{ display: 'flex', gap: 6, paddingTop: 6, borderTop: '1px solid rgba(66, 71, 84, 0.4)' }}>
+                      <a
+                        href={`tel:${driverPhone}`}
+                        className="fo-btn-workflow secondary"
+                        style={{ flex: 1, justifyContent: 'center', textDecoration: 'none' }}
+                      >
+                        <span className="material-symbols-outlined" style={{ fontSize: 13, color: '#4cd7f6' }}>
+                          call
+                        </span>
+                        <span>Direct Call</span>
+                      </a>
+                      <a
+                        href={`https://wa.me/${driverPhone.replace(/[^0-9]/g, '')}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="fo-btn-workflow secondary"
+                        style={{ flex: 1, justifyContent: 'center', textDecoration: 'none', color: '#93ccff' }}
+                      >
+                        <span className="material-symbols-outlined" style={{ fontSize: 13 }}>
+                          chat
+                        </span>
+                        <span>WhatsApp</span>
+                      </a>
+                    </div>
+                  ) : null}
+                </div>
+
+                {/* Vehicle & Trip Subcard */}
+                <div className="fo-inv-telemetry-box">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontFamily: 'var(--fo-font-mono)', fontSize: 14, fontWeight: 800, color: '#adc6ff' }}>
+                        {vehiclePlate}
+                      </span>
+                      <span style={{ fontSize: 11, color: '#8c909f', fontWeight: 600 }}>
+                        {complaint.vehicle ? [complaint.vehicle.make, complaint.vehicle.model].filter(Boolean).join(' ') || complaint.vehicleModel || 'Vehicle Unit' : (complaint.vehicleModel || 'Unassigned')}
+                      </span>
+                    </div>
+
+                    {/* Vehicle Specifications: Chassis No (VIN), Wheel, Status of Agreements */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, background: '#102034', padding: '8px 10px', borderRadius: 6, border: '1px solid rgba(66, 71, 84, 0.4)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 11 }}>
+                        <span style={{ color: '#8c909f', fontFamily: 'var(--fo-font-mono)' }}>Chassis No (VIN):</span>
+                        <span style={{ color: '#93ccff', fontFamily: 'var(--fo-font-mono)', fontWeight: 700 }}>
+                          {complaint.vehicle?.chassisNumber || complaint.vehicle?.vin || 'N/A'}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 11 }}>
+                        <span style={{ color: '#8c909f', fontFamily: 'var(--fo-font-mono)' }}>Wheel Specification:</span>
+                        <span style={{ color: '#ffffff', fontWeight: 600 }}>
+                          {complaint.vehicle?.wheels ? (complaint.vehicle.wheels.includes('Wheel') ? complaint.vehicle.wheels : `${complaint.vehicle.wheels} Wheels`) : 'N/A'}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 11 }}>
+                        <span style={{ color: '#8c909f', fontFamily: 'var(--fo-font-mono)' }}>Status of Agreements:</span>
+                        <span
+                          style={{
+                            fontWeight: 700,
+                            padding: '1px 6px',
+                            borderRadius: 4,
+                            fontSize: 10,
+                            fontFamily: 'var(--fo-font-mono)',
+                            background: complaint.vehicle?.agreementStatus === 'EXPIRED' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(16, 185, 129, 0.2)',
+                            color: complaint.vehicle?.agreementStatus === 'EXPIRED' ? '#ffb4ab' : '#6ee7b7',
+                          }}
+                        >
+                          {complaint.vehicle?.agreementStatus || 'ACTIVE'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div style={{ background: '#102034', padding: '6px 8px', borderRadius: 6, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <span style={{ fontFamily: 'var(--fo-font-mono)', fontSize: 9, color: '#8c909f', textTransform: 'uppercase' }}>
+                        Trip Context
+                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 11, color: '#ffffff' }}>
+                        <span>{complaint.tripPhase ? complaint.tripPhase.replace(/_/g, ' ') : 'In-Transit'}</span>
+                        {complaint.loadingStatus ? (
+                          <span style={{ fontSize: 10, color: '#4cd7f6' }}>({complaint.loadingStatus})</span>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+
+                  {complaint.tripLocationName ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, color: '#93ccff', background: '#102034', padding: '4px 8px', borderRadius: 4 }}>
+                      <span className="material-symbols-outlined" style={{ fontSize: 13, color: '#4cd7f6' }}>
+                        pin_drop
+                      </span>
+                      <span className="truncate">{complaint.tripLocationName}</span>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+
+              {/* Geolocation Stoppage Location Trace */}
+              {complaint.tripLocationName ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 11, color: '#8c909f' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span className="material-symbols-outlined" style={{ fontSize: 14, color: '#4cd7f6' }}>
+                        location_on
+                      </span>
+                      Reported Incident Location
+                    </span>
+                    <a
+                      href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(complaint.tripLocationName)}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ fontFamily: 'var(--fo-font-mono)', color: '#4cd7f6', fontSize: 11, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 2 }}
+                    >
+                      <span>Open Google Maps</span>
+                      <span className="material-symbols-outlined" style={{ fontSize: 12 }}>
+                        open_in_new
+                      </span>
+                    </a>
+                  </div>
+
+                  <div style={{ background: '#0b1c30', border: '1px solid rgba(66, 71, 84, 0.4)', borderRadius: 8, padding: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span className="material-symbols-outlined" style={{ fontSize: 20, color: '#ef4444' }}>
+                      location_on
+                    </span>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: '#ffffff' }}>
+                        {complaint.tripLocationName}
+                      </span>
+                      <span style={{ fontSize: 10, color: '#8c909f' }}>
+                        Filed by {driverName} • {formatDateTime(complaint.createdAt)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          {/* ==================== RIGHT COLUMN (~40%) ==================== */}
+          <div className="fo-inv-col">
+            {/* 1. Assignment Control Card */}
+            <div className="fo-inv-card">
+              <div className="fo-inv-card-head">
+                <div className="fo-inv-card-title-group">
+                  <span className="material-symbols-outlined" style={{ fontSize: 20, color: '#93ccff' }}>
+                    assignment_ind
+                  </span>
+                  <h3 className="fo-inv-card-title">Assignment Control</h3>
+                </div>
+                <span
+                  style={{
+                    fontFamily: 'var(--fo-font-mono)',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    padding: '2px 8px',
+                    borderRadius: 4,
+                    background: complaint.assignedToId ? 'rgba(0, 158, 185, 0.25)' : 'rgba(239, 68, 68, 0.2)',
+                    color: complaint.assignedToId ? '#4cd7f6' : '#ffb4ab',
+                    border: `1px solid ${complaint.assignedToId ? 'rgba(76, 215, 246, 0.35)' : 'rgba(239, 68, 68, 0.35)'}`,
+                  }}
+                >
+                  {complaint.assignedToId ? 'Assigned' : 'Unassigned'}
+                </span>
+              </div>
+
+              {/* Active Dispatch Unit */}
+              <div style={{ background: '#0b1c30', border: '1px solid rgba(66, 71, 84, 0.4)', borderRadius: 8, padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontFamily: 'var(--fo-font-mono)', fontSize: 10, color: '#8c909f', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    Assigned Administrator / Tech
+                  </span>
+                  <button
+                    type="button"
+                    style={{ background: 'none', border: 'none', color: '#38bdf8', fontSize: 11, fontWeight: 700, cursor: 'pointer', padding: 0 }}
+                    onClick={() => setShowReassignModal(true)}
+                  >
+                    Reassign
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div
+                      style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: 8,
+                        background: 'linear-gradient(135deg, #0284c7 0%, #009eb9 100%)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#ffffff',
+                        fontWeight: 700,
+                        fontSize: 13,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {assignedTechName.slice(0, 2).toUpperCase()}
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <span style={{ fontWeight: 600, fontSize: 13, color: '#ffffff' }}>{assignedTechName}</span>
+                      {complaint.assignedTo?.employeeId ? (
+                        <span style={{ fontSize: 10, color: '#8c909f' }}>ID: #{complaint.assignedTo.employeeId}</span>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Dynamic SLA Gauge Bar */}
+              <div style={{ background: '#0b1c30', border: '1px solid rgba(66, 71, 84, 0.4)', borderRadius: 8, padding: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <span style={{ fontFamily: 'var(--fo-font-mono)', fontSize: 10, color: '#8c909f', textTransform: 'uppercase' }}>
+                    Category SLA ({complaint.category || 'General'}: {slaTargetHours}h)
+                  </span>
+                  <span style={{ fontFamily: 'var(--fo-font-mono)', fontSize: 11, fontWeight: 700, color: isSlaBreached ? '#ef4444' : '#93ccff' }}>
+                    {isSlaBreached ? 'Breached' : `On Schedule (${Math.round(slaFraction * 100)}%)`}
+                  </span>
+                </div>
+
+                <div style={{ width: '100%', height: 6, background: '#102034', borderRadius: 3, overflow: 'hidden' }}>
+                  <div
                     style={{
-                      fontSize: 13,
-                      padding: '8px 10px',
-                      borderColor: isListening ? '#ef4444' : undefined,
-                      boxShadow: isListening ? '0 0 0 2px rgba(239, 68, 68, 0.2)' : undefined,
+                      height: '100%',
+                      borderRadius: 3,
+                      background: isSlaBreached ? '#ef4444' : '#93ccff',
+                      width: `${Math.round(slaFraction * 100)}%`,
                     }}
                   />
                 </div>
 
-                <button
-                  type="submit"
-                  className="btn-primary btn-full"
-                  disabled={savingStatus || (status === complaint.status && !note.trim())}
-                  style={{
-                    padding: '10px 14px',
-                    fontSize: 13.5,
-                    fontWeight: 800,
-                    background: status === 'RESOLVED' ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : undefined,
-                    boxShadow: status === 'RESOLVED' ? '0 4px 12px rgba(16, 185, 129, 0.3)' : undefined,
-                  }}
-                >
-                  {savingStatus
-                    ? 'Saving Update…'
-                    : status === 'RESOLVED' && complaint.status !== 'RESOLVED'
-                      ? '✓ Mark Complaint as Resolved'
-                      : status === complaint.status
-                        ? 'Add Progress Note'
-                        : `Update Status to ${formatEnum(status)}`}
-                </button>
-              </form>
-            )}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 10, color: '#8c909f' }}>
+                  <span>Elapsed: {elapsedMinutes} mins</span>
+                  <span style={{ color: '#d3e4fe' }}>Target Resolution: {formatDateTime(deadlineIso)}</span>
+                </div>
+              </div>
+            </div>
 
-            {/* Tab 2 Content: Assign Staff / Team */}
-            {actionTab === 'assign' && (
-              <form className="form-card" onSubmit={submitAssignee} style={{ padding: '16px 18px', gap: 14 }}>
-                <ErrorBanner error={assignError} />
-                <ErrorBanner error={adminsRes.error} />
+            {/* 2. Forensic Audit Timeline */}
+            <div className="fo-inv-card">
+              <div className="fo-inv-card-head">
+                <div className="fo-inv-card-title-group">
+                  <span className="material-symbols-outlined" style={{ fontSize: 18, color: '#4cd7f6' }}>
+                    history
+                  </span>
+                  <h3 className="fo-inv-card-title">Forensic Audit Timeline</h3>
+                </div>
+                <span style={{ fontSize: 11, color: '#8c909f' }}>
+                  {(complaint.updates?.length || 0) + 1} Events Logged
+                </span>
+              </div>
 
-                {/* Current Assignee Summary */}
-                <div style={{ background: 'var(--surface-muted)', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border)' }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', marginBottom: 4 }}>
-                    Current Assigned Lead
+              <div className="fo-inv-timeline">
+                {/* 1. Ticket Creation Event */}
+                <div className="fo-inv-timeline-item">
+                  <div className="fo-inv-timeline-dot cyan" />
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontFamily: 'var(--fo-font-mono)', fontSize: 10, fontWeight: 700, color: '#4cd7f6' }}>
+                      {formatDateTime(complaint.createdAt)} • TICKET CREATED
+                    </span>
+                    <span style={{ fontFamily: 'var(--fo-font-mono)', fontSize: 10, color: '#8c909f' }}>
+                      {formatRelativeTime(complaint.createdAt)}
+                    </span>
                   </div>
-                  <div>
-                    {complaint.assignedTo ? (
-                      <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                        👤 {fullName(complaint.assignedTo)} <span style={{ fontSize: 11, color: 'var(--muted)' }}>({complaint.assignedTo.employeeId})</span>
+                  <p style={{ margin: '4px 0 0 0', fontSize: 11, color: '#d3e4fe', background: '#0b1c30', padding: 8, borderRadius: 6 }}>
+                    Ticket #{complaint.complaintNo} submitted by <strong style={{ color: '#93ccff' }}>{driverName}</strong> ({complaint.category || 'General'}).
+                  </p>
+                </div>
+
+                {/* 2. Database Complaint Updates */}
+                {complaint.updates?.map((u, i) => (
+                  <div key={u.id || i} className="fo-inv-timeline-item">
+                    <div className="fo-inv-timeline-dot cyan" />
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontFamily: 'var(--fo-font-mono)', fontSize: 10, fontWeight: 700, color: '#93ccff' }}>
+                        {formatDateTime(u.createdAt)} {u.toStatus ? `• STATUS: ${u.toStatus}` : ''}
                       </span>
-                    ) : (
-                      <span style={{ color: '#ef4444', fontWeight: 700, fontSize: 12 }}>
-                        ⚠️ Currently Unassigned
+                      <span style={{ fontFamily: 'var(--fo-font-mono)', fontSize: 10, color: '#8c909f' }}>
+                        {formatRelativeTime(u.createdAt)}
                       </span>
+                    </div>
+                    {u.note && (
+                      <p style={{ margin: '4px 0 0 0', fontSize: 11, color: '#d3e4fe', background: '#0b1c30', padding: 8, borderRadius: 6 }}>
+                        <strong style={{ color: '#ffffff' }}>{u.author ? `${u.author.firstName} ${u.author.lastName}` : 'Admin'}:</strong> “{u.note}”
+                      </p>
                     )}
                   </div>
-                </div>
-
-                <div className="form-group" style={{ gap: 4 }}>
-                  <label htmlFor="assignee" className="form-label" style={{ fontSize: 11 }}>
-                    Select Team Member / Lead
-                  </label>
-                  <select
-                    id="assignee"
-                    className="form-select"
-                    value={assignee}
-                    onChange={(e) => setAssignee(e.target.value)}
-                    disabled={complaint.assignmentStatus === 'PENDING'}
-                    style={{ fontSize: 13, padding: '8px 10px' }}
-                  >
-                    <option value="">Select a team member or leader…</option>
-                    {(adminsRes.data ?? []).map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {fullName(a)} ({formatEnum(a.role)}) {a.category ? `· ${formatEnum(a.category)}` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {(() => {
-                  const isPending = complaint.assignmentStatus === 'PENDING';
-                  const selectedUser = (adminsRes.data ?? []).find((a) => a.id === assignee);
-                  const isAssigningToSuperAdmin =
-                    (user?.role === 'ADMIN' || user?.role === 'EXECUTIVE') &&
-                    selectedUser?.role === 'SUPER_ADMIN';
-
-                  return (
-                    <>
-                      <button
-                        type="submit"
-                        className="btn-primary btn-full"
-                        disabled={isPending || savingAssignee || !assignee || assignee === complaint.assignedToId}
-                        style={{ padding: '10px 14px', fontSize: 13.5, fontWeight: 800 }}
-                      >
-                        {savingAssignee
-                          ? 'Submitting…'
-                          : isAssigningToSuperAdmin
-                            ? 'Request SuperAdmin Assignment'
-                            : 'Assign Staff / Team'}
-                      </button>
-                      {isPending ? (
-                        <p className="form-hint" style={{ color: 'var(--warning-text)', fontWeight: 600, fontSize: 11 }}>
-                          Please Accept or Reject the pending assignment request above before re-assigning.
-                        </p>
-                      ) : isAssigningToSuperAdmin ? (
-                        <p className="form-hint" style={{ fontSize: 11 }}>
-                          Assigning to a SuperAdmin sends an assignment request for their acceptance.
-                        </p>
-                      ) : null}
-                    </>
-                  );
-                })()}
-              </form>
-            )}
-          </div>
-
-          {/* Card 2: Action & Audit Timeline (Directly below Take Action box) */}
-          <div className="table-card detail-card" style={{ borderRadius: 14, padding: '16px 18px' }}>
-            <h2 className="card-section-title" style={{ fontSize: 14, margin: '0 0 12px', paddingBottom: 8 }}>
-              <History size={16} color="var(--accent)" /> Action & Audit Timeline
-              <span className="badge-pill" style={{ marginLeft: 6, fontSize: 11 }}>{complaint.updates.length}</span>
-            </h2>
-
-            {complaint.updates.length === 0 ? (
-              <p className="empty-text" style={{ fontSize: 12 }}>No updates or actions logged yet.</p>
-            ) : (
-              <div className="detail-audit-timeline" style={{ gap: 12, marginTop: 8 }}>
-                {complaint.updates.map((u, idx) => (
-                  <div key={u.id} className="detail-audit-item">
-                    <div className="detail-audit-indicator" style={{ paddingTop: 8 }}>
-                      <div className="detail-audit-dot" style={{ width: 11, height: 11 }} />
-                      {idx < complaint.updates.length - 1 && <div className="detail-audit-line" />}
-                    </div>
-                    <div className="detail-audit-bubble" style={{ padding: '10px 12px', borderRadius: 10 }}>
-                      <div className="detail-audit-header" style={{ paddingBottom: 6, marginBottom: 6 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
-                          <span className="detail-audit-author" style={{ fontSize: 12.5 }}>👤 {fullName(u.author)}</span>
-                          {u.author?.employeeId && (
-                            <span className="detail-audit-role-badge" style={{ fontSize: 9.5 }}>
-                              {u.author.employeeId}
-                            </span>
-                          )}
-                        </div>
-                        <span className="detail-audit-time" style={{ fontSize: 11 }}>{formatDateTime(u.createdAt)}</span>
-                      </div>
-
-                      <div className="detail-audit-body" style={{ gap: 6 }}>
-                        {u.toStatus && (
-                          <div className="detail-audit-status-row">
-                            <span className="detail-audit-status-label" style={{ fontSize: 11 }}>Status changed to</span>
-                            <StatusBadge status={u.toStatus} />
-                          </div>
-                        )}
-                        {u.note && (
-                          <div className="detail-audit-note" style={{ padding: '8px 10px' }}>
-                            <p style={{ margin: 0, fontSize: 12.5, color: 'var(--text)', lineHeight: 1.5 }}>
-                              {u.note}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
                 ))}
+
+                {/* 3. Resolution Event if resolved */}
+                {complaint.resolvedAt ? (
+                  <div className="fo-inv-timeline-item">
+                    <div className="fo-inv-timeline-dot" style={{ background: '#10b981', borderColor: '#10b981' }} />
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontFamily: 'var(--fo-font-mono)', fontSize: 10, fontWeight: 700, color: '#6ee7b7' }}>
+                        {formatDateTime(complaint.resolvedAt)} • RESOLVED
+                      </span>
+                      <span style={{ fontFamily: 'var(--fo-font-mono)', fontSize: 10, color: '#8c909f' }}>
+                        {formatRelativeTime(complaint.resolvedAt)}
+                      </span>
+                    </div>
+                    <p style={{ margin: '4px 0 0 0', fontSize: 11, color: '#6ee7b7', background: 'rgba(16, 185, 129, 0.15)', padding: 8, borderRadius: 6 }}>
+                      Complaint marked resolved.
+                    </p>
+                  </div>
+                ) : null}
               </div>
-            )}
+
+              {/* 3. Internal Team Note Composer */}
+              <form className="fo-inv-composer" onSubmit={handlePostNote}>
+                <span style={{ fontFamily: 'var(--fo-font-mono)', fontSize: 10, fontWeight: 700, color: '#8c909f', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  Add Operational Note
+                </span>
+
+                <div style={{ position: 'relative' }}>
+                  <textarea
+                    className="fo-inv-textarea"
+                    placeholder="Type internal dispatch note or operational update..."
+                    value={noteContent}
+                    onChange={(e) => setNoteContent(e.target.value)}
+                    rows={3}
+                  />
+
+                  {/* Voice dictation mic button */}
+                  <button
+                    type="button"
+                    onClick={toggleVoiceRecording}
+                    title={isListeningVoice ? 'Stop voice dictation' : 'Click to dictate note'}
+                    style={{
+                      position: 'absolute',
+                      right: 8,
+                      bottom: 8,
+                      background: isListeningVoice ? '#ef4444' : '#1b2b3f',
+                      border: '1px solid rgba(66, 71, 84, 0.5)',
+                      borderRadius: '50%',
+                      width: 28,
+                      height: 28,
+                      color: '#ffffff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
+                      {isListeningVoice ? 'mic_off' : 'mic'}
+                    </span>
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingTop: 4 }}>
+                  <button
+                    type="submit"
+                    className="fo-btn-workflow resolve"
+                    style={{ height: 28, padding: '0 14px' }}
+                    disabled={postingNote || !noteContent.trim()}
+                  >
+                    {postingNote ? 'Posting…' : 'Post Note'}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         </div>
+
+        {/* ==========================================================================
+            3. FULL-RESOLUTION DOSSIER LIGHTBOX MODAL
+            ========================================================================== */}
+        {activePhoto && (
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              backgroundColor: 'rgba(0, 15, 33, 0.95)',
+              backdropFilter: 'blur(8px)',
+              zIndex: 99999,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 24,
+            }}
+            onClick={() => setActivePhoto(null)}
+          >
+            <div
+              style={{ position: 'relative', maxWidth: '90vw', maxHeight: '85vh' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <img
+                src={activePhoto}
+                alt="Enlarged forensic evidentiary photo"
+                style={{ maxWidth: '100%', maxHeight: '85vh', objectFit: 'contain', borderRadius: 8, border: '1px solid rgba(140, 144, 159, 0.3)' }}
+              />
+              <button
+                type="button"
+                onClick={() => setActivePhoto(null)}
+                style={{
+                  position: 'absolute',
+                  top: -16,
+                  right: -16,
+                  background: '#ef4444',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: 32,
+                  height: 32,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 10px rgba(0,0,0,0.5)',
+                }}
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
+                  close
+                </span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ==========================================================================
+            4. REASSIGN MODAL
+            ========================================================================== */}
+        {showReassignModal && (
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              backgroundColor: 'rgba(0, 15, 33, 0.8)',
+              backdropFilter: 'blur(4px)',
+              zIndex: 99999,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 16,
+            }}
+            onClick={() => setShowReassignModal(false)}
+          >
+            <div
+              style={{
+                width: '100%',
+                maxWidth: 440,
+                background: '#102034',
+                border: '1px solid rgba(66, 71, 84, 0.6)',
+                borderRadius: 12,
+                padding: 20,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 16,
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <h3 style={{ margin: 0, fontFamily: 'Outfit', fontSize: 18, color: '#ffffff' }}>
+                  Reassign Field Technician
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setShowReassignModal(false)}
+                  style={{ background: 'none', border: 'none', color: '#8c909f', cursor: 'pointer' }}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: 20 }}>
+                    close
+                  </span>
+                </button>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <label style={{ fontFamily: 'var(--fo-font-mono)', fontSize: 11, color: '#8c909f' }}>
+                  SELECT OPS DISPATCHER / FIELD TECH
+                </label>
+                <select
+                  style={{
+                    background: '#0b1c30',
+                    border: '1px solid rgba(66, 71, 84, 0.5)',
+                    borderRadius: 6,
+                    padding: '8px 12px',
+                    color: '#ffffff',
+                    fontFamily: 'Inter',
+                    fontSize: 13,
+                  }}
+                  value={selectedAssignee}
+                  onChange={(e) => setSelectedAssignee(e.target.value)}
+                >
+                  <option value="">-- Choose Operator --</option>
+                  {adminsRes.data?.map((admin) => (
+                    <option key={admin.id} value={admin.id}>
+                      {admin.firstName} {admin.lastName} ({admin.employeeId})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                <button
+                  type="button"
+                  className="fo-btn-workflow secondary"
+                  onClick={() => setShowReassignModal(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="fo-btn-workflow resolve"
+                  onClick={handleAssignTech}
+                  disabled={assigning || !selectedAssignee}
+                >
+                  {assigning ? 'Assigning…' : 'Confirm Assignment'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

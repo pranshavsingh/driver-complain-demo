@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, type ReactElement } from 'react';
+import { useState, useEffect, useRef, useMemo, type ReactElement } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { Truck, LayoutDashboard, Users, ClipboardList, LogOut, Bell, Menu, X, Trash2, CheckCircle2, Wrench, FileSpreadsheet, Package, Headphones, Settings } from './Icons';
+import { Truck, ClipboardList, Bell, Menu, X, Trash2, CheckCircle2 } from './Icons';
 
 import { isAdmin, isSuperAdmin, isExecutive, useAuth } from '../auth/AuthContext';
 import { canAccessPath } from '../auth/permissions';
@@ -84,6 +84,42 @@ export function Layout(): ReactElement {
     }
   }, [complaintsUnreadResource.data?.unreadCount]);
 
+  const loadingResource = useApiResource('layout:loading', () =>
+    canAccessPath(user, '/loading') ? api.loading.list() : Promise.resolve({ data: [] }),
+  );
+  const loadingDelayedCount = useMemo(() => {
+    const list = loadingResource.data?.data ?? [];
+    const now = Date.now();
+    return list.filter((r) => {
+      if (r.waitingTimeMinutes && r.waitingTimeMinutes > 180) return true;
+      if (r.unloadingDurationMinutes && r.unloadingDurationMinutes > 180) return true;
+      if (!r.completedAt && r.reachedAt) {
+        const diffMins = Math.floor((now - new Date(r.reachedAt).getTime()) / 60000);
+        return diffMins > 180;
+      }
+      if (r.tripCompletedAt && !r.unloadingCompletedAt) {
+        const diffMins = Math.floor((now - new Date(r.tripCompletedAt).getTime()) / 60000);
+        return diffMins > 180;
+      }
+      return false;
+    }).length;
+  }, [loadingResource.data]);
+
+  const sparePartsResource = useApiResource('layout:sparePartsStats', () =>
+    canAccessPath(user, '/spare-parts')
+      ? api.spareParts.stats().catch(() => ({ totalPending: 0, totalIssuePending: 0 } as any))
+      : Promise.resolve({ totalPending: 0, totalIssuePending: 0 } as any),
+  );
+  const sparePartsNewCount =
+    (sparePartsResource.data?.totalPending ?? 0) + (sparePartsResource.data?.totalIssuePending ?? 0);
+
+  const supportResource = useApiResource('layout:supportUnread', () =>
+    canAccessPath(user, '/support')
+      ? api.support.getUnreadCount().catch(() => ({ unreadCount: 0 }))
+      : Promise.resolve({ unreadCount: 0 }),
+  );
+  const supportUnreadCount = supportResource.data?.unreadCount ?? 0;
+
   const showToast = (title: string, message: string, type: 'info' | 'success' | 'warning' = 'info') => {
     const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     setToasts((prev) => [...prev, { id, title, message, type }]);
@@ -118,6 +154,15 @@ export function Layout(): ReactElement {
 
   const complaintsRef = useRef(complaintsUnreadResource);
   complaintsRef.current = complaintsUnreadResource;
+
+  const loadingRef = useRef(loadingResource);
+  loadingRef.current = loadingResource;
+
+  const sparePartsRef = useRef(sparePartsResource);
+  sparePartsRef.current = sparePartsResource;
+
+  const supportRef = useRef(supportResource);
+  supportRef.current = supportResource;
 
   // Realtime Live Updates for Approvals, Complaints & Notifications
   useEffect(() => {
@@ -200,6 +245,23 @@ export function Layout(): ReactElement {
       }
     });
 
+    // Realtime listeners for Loading, Spare Parts & Support Chats
+    const unsubLoadingReached = subscribeCustom('loading:reached', () => {
+      void loadingRef.current.reload();
+    });
+    const unsubLoadingCompleted = subscribeCustom('loading:completed', () => {
+      void loadingRef.current.reload();
+    });
+    const unsubSparePartCreated = subscribeCustom('spare-part:created', () => {
+      void sparePartsRef.current.reload();
+    });
+    const unsubSparePartUpdated = subscribeCustom('spare-part:updated', () => {
+      void sparePartsRef.current.reload();
+    });
+    const unsubSupportMsg = subscribeCustom('support:message-received', () => {
+      void supportRef.current.reload();
+    });
+
     return () => {
       unsubReq();
       unsubAppr();
@@ -211,6 +273,11 @@ export function Layout(): ReactElement {
       unsubComplaintStatus();
       unsubComplaintAssigned();
       unsubNotif();
+      unsubLoadingReached();
+      unsubLoadingCompleted();
+      unsubSparePartCreated();
+      unsubSparePartUpdated();
+      unsubSupportMsg();
     };
   }, [subscribeCustom, user]);
 
@@ -255,9 +322,13 @@ export function Layout(): ReactElement {
   };
 
   const unreadCount = notifications.filter((n) => n.unread).length;
+  const isFleetOpsRoute =
+    location.pathname.startsWith('/dashboard') ||
+    location.pathname.startsWith('/complaints') ||
+    location.pathname === '/';
 
   return (
-    <div className={`admin-app-container ${sidebarOpen ? 'sidebar-expanded' : ''}`}>
+    <div className={`admin-app-container ${sidebarOpen ? 'sidebar-expanded' : ''} ${isFleetOpsRoute ? 'fleetops-active' : ''}`}>
       {/* Floating Toast Notification Container */}
       <div
         style={{
@@ -338,211 +409,317 @@ export function Layout(): ReactElement {
 
       {/* Full-Height Left Sidebar (Starts at top: 0, bottom: 0 - Never cut off) */}
       <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
-        <div className="sidebar-brand">
-          <div className="brand-logo-icon">
-            <Truck size={22} color="#ffffff" />
+        <div className="fo-sidebar-top">
+          {/* 1. FleetOps v2.4 Brand Header */}
+          <div className="fo-sidebar-brand">
+            <div className="fo-brand-left">
+              <div className="fo-brand-logo-icon">
+                <span className="material-symbols-outlined" style={{ fontSize: 20 }}>
+                  hub
+                </span>
+              </div>
+              <span className="fo-brand-title">FleetOps</span>
+            </div>
+            <span className="fo-brand-version">v2.4</span>
           </div>
-          <div>
-            <div className="brand-title">Driver Complaint</div>
-            <div className="brand-subtitle">Fleet Admin</div>
+
+          {/* 2. Role Switcher Badge Card */}
+          <div className="fo-role-box" title={`Current logged-in identity: ${user?.role || 'Staff'}`}>
+            <div className="fo-role-inner">
+              <span className="fo-role-label">Role Switcher</span>
+              <span className="fo-role-val">
+                {user?.role === 'SUPER_ADMIN'
+                  ? 'SUPER ADMIN'
+                  : user?.category
+                    ? `DEPT: ${user.category}`
+                    : user?.role || 'OPERATOR'}
+              </span>
+            </div>
+            <span className="material-symbols-outlined fo-role-chevron">unfold_more</span>
           </div>
+
+          {/* 3. Categorized Section Dividers & Navigation Groups */}
+          <nav className="fo-sidebar-nav">
+            {/* Section: MAIN OPERATIONS */}
+            <div className="fo-nav-section">
+              <span className="fo-nav-section-title">Main Operations</span>
+
+              {canAccessPath(user, '/dashboard') && (
+                <NavLink
+                  to="/dashboard"
+                  className={({ isActive }) =>
+                    isActive || location.pathname === '/' ? 'fo-nav-item active' : 'fo-nav-item'
+                  }
+                >
+                  {({ isActive }) => (
+                    <>
+                      <div className="fo-nav-left">
+                        <span className="material-symbols-outlined fo-nav-icon">dashboard</span>
+                        <span className="fo-nav-label">Dashboard</span>
+                      </div>
+                      {(isActive || location.pathname === '/') && <span className="fo-nav-active-dot" />}
+                    </>
+                  )}
+                </NavLink>
+              )}
+
+              {canAccessPath(user, '/complaints') && (
+                <NavLink
+                  to="/complaints"
+                  className={({ isActive }) => (isActive ? 'fo-nav-item active' : 'fo-nav-item')}
+                >
+                  {({ isActive }) => (
+                    <>
+                      <div className="fo-nav-left">
+                        <span className="material-symbols-outlined fo-nav-icon">report_problem</span>
+                        <span className="fo-nav-label">Complaints & Triage</span>
+                      </div>
+                      {isActive ? (
+                        <span className="fo-nav-active-dot" />
+                      ) : complaintBadgeCount > 0 ? (
+                        <span className="fo-badge-red" title={`${complaintBadgeCount} unread or escalated`}>
+                          {complaintBadgeCount}
+                        </span>
+                      ) : null}
+                    </>
+                  )}
+                </NavLink>
+              )}
+
+              {canAccessPath(user, '/loading') && (
+                <NavLink
+                  to="/loading"
+                  className={({ isActive }) => (isActive ? 'fo-nav-item active' : 'fo-nav-item')}
+                >
+                  {({ isActive }) => (
+                    <>
+                      <div className="fo-nav-left">
+                        <span className="material-symbols-outlined fo-nav-icon">timer</span>
+                        <span className="fo-nav-label">Loading & Detention</span>
+                      </div>
+                      {isActive ? (
+                        <span className="fo-nav-active-dot" />
+                      ) : loadingDelayedCount > 0 ? (
+                        <span className="fo-badge-cyan" title={`${loadingDelayedCount} trucks delayed / detained`}>
+                          {loadingDelayedCount} Delayed
+                        </span>
+                      ) : null}
+                    </>
+                  )}
+                </NavLink>
+              )}
+            </div>
+
+            {/* Section: OPERATIONS */}
+            <div className="fo-nav-section">
+              <span className="fo-nav-section-title">Operations</span>
+
+              {canAccessPath(user, '/vehicles') && (
+                <NavLink
+                  to="/vehicles"
+                  className={({ isActive }) => (isActive ? 'fo-nav-item active' : 'fo-nav-item')}
+                >
+                  {({ isActive }) => (
+                    <>
+                      <div className="fo-nav-left">
+                        <span className="material-symbols-outlined fo-nav-icon">local_shipping</span>
+                        <span className="fo-nav-label">Vehicles Directory</span>
+                      </div>
+                      {isActive && <span className="fo-nav-active-dot" />}
+                    </>
+                  )}
+                </NavLink>
+              )}
+
+              {canAccessPath(user, '/maintenance') && (
+                <NavLink
+                  to="/maintenance"
+                  className={({ isActive }) =>
+                    isActive || location.pathname.startsWith('/fuel-logs')
+                      ? 'fo-nav-item active'
+                      : 'fo-nav-item'
+                  }
+                >
+                  {({ isActive }) => (
+                    <>
+                      <div className="fo-nav-left">
+                        <span className="material-symbols-outlined fo-nav-icon">build</span>
+                        <span className="fo-nav-label">Maintenance</span>
+                      </div>
+                      {(isActive || location.pathname.startsWith('/fuel-logs')) && (
+                        <span className="fo-nav-active-dot" />
+                      )}
+                    </>
+                  )}
+                </NavLink>
+              )}
+
+              {canAccessPath(user, '/spare-parts') && (
+                <NavLink
+                  to="/spare-parts"
+                  className={({ isActive }) => (isActive ? 'fo-nav-item active' : 'fo-nav-item')}
+                >
+                  {({ isActive }) => (
+                    <>
+                      <div className="fo-nav-left">
+                        <span className="material-symbols-outlined fo-nav-icon">inventory_2</span>
+                        <span className="fo-nav-label">Spare Parts</span>
+                      </div>
+                      {isActive ? (
+                        <span className="fo-nav-active-dot" />
+                      ) : sparePartsNewCount > 0 ? (
+                        <span className="fo-badge-blue" title={`${sparePartsNewCount} pending requisitions`}>
+                          {sparePartsNewCount} New
+                        </span>
+                      ) : null}
+                    </>
+                  )}
+                </NavLink>
+              )}
+
+              {canAccessPath(user, '/trips') && (
+                <NavLink
+                  to="/trips"
+                  className={({ isActive }) => (isActive ? 'fo-nav-item active' : 'fo-nav-item')}
+                >
+                  {({ isActive }) => (
+                    <>
+                      <div className="fo-nav-left">
+                        <span className="material-symbols-outlined fo-nav-icon">route</span>
+                        <span className="fo-nav-label">Trip Analytics & Logs</span>
+                      </div>
+                      {isActive && <span className="fo-nav-active-dot" />}
+                    </>
+                  )}
+                </NavLink>
+              )}
+            </div>
+
+            {/* Section: ADMINISTRATION */}
+            <div className="fo-nav-section">
+              <span className="fo-nav-section-title">Administration</span>
+
+              {canAccessPath(user, '/users') && isAdmin(user) && !isExecutive(user) && (
+                <NavLink
+                  to="/users"
+                  className={({ isActive }) => (isActive ? 'fo-nav-item active' : 'fo-nav-item')}
+                >
+                  {({ isActive }) => (
+                    <>
+                      <div className="fo-nav-left">
+                        <span className="material-symbols-outlined fo-nav-icon">how_to_reg</span>
+                        <span className="fo-nav-label">Driver Approvals</span>
+                      </div>
+                      {isActive ? (
+                        <span className="fo-nav-active-dot" />
+                      ) : pendingCount > 0 ? (
+                        <span className="fo-badge-blue" title={`${pendingCount} pending approvals`}>
+                          {pendingCount} Pending
+                        </span>
+                      ) : null}
+                    </>
+                  )}
+                </NavLink>
+              )}
+
+              {canAccessPath(user, '/support') && isSuperAdmin(user) && (
+                <NavLink
+                  to="/support"
+                  className={({ isActive }) => (isActive ? 'fo-nav-item active' : 'fo-nav-item')}
+                >
+                  {({ isActive }) => (
+                    <>
+                      <div className="fo-nav-left">
+                        <span className="material-symbols-outlined fo-nav-icon">support_agent</span>
+                        <span className="fo-nav-label">Helpline Chat</span>
+                      </div>
+                      {isActive ? (
+                        <span className="fo-nav-active-dot" />
+                      ) : supportUnreadCount > 0 ? (
+                        <span className="fo-badge-cyan" title={`${supportUnreadCount} unread support messages`}>
+                          {supportUnreadCount}
+                        </span>
+                      ) : null}
+                    </>
+                  )}
+                </NavLink>
+              )}
+
+              {canAccessPath(user, '/reports') && (
+                <NavLink
+                  to="/reports"
+                  className={({ isActive }) => (isActive ? 'fo-nav-item active' : 'fo-nav-item')}
+                >
+                  {({ isActive }) => (
+                    <>
+                      <div className="fo-nav-left">
+                        <span className="material-symbols-outlined fo-nav-icon">analytics</span>
+                        <span className="fo-nav-label">Reports & Exports</span>
+                      </div>
+                      {isActive && <span className="fo-nav-active-dot" />}
+                    </>
+                  )}
+                </NavLink>
+              )}
+
+              {canAccessPath(user, '/settings') && (isSuperAdmin(user) || user?.role === 'ADMIN') && (
+                <NavLink
+                  to="/settings"
+                  className={({ isActive }) => (isActive ? 'fo-nav-item active' : 'fo-nav-item')}
+                >
+                  {({ isActive }) => (
+                    <>
+                      <div className="fo-nav-left">
+                        <span className="material-symbols-outlined fo-nav-icon">settings</span>
+                        <span className="fo-nav-label">SLA & Settings</span>
+                      </div>
+                      {isActive && <span className="fo-nav-active-dot" />}
+                    </>
+                  )}
+                </NavLink>
+              )}
+            </div>
+          </nav>
         </div>
 
-        <nav className="sidebar-nav">
-          {canAccessPath(user, '/dashboard') && (
-            <NavLink
-              to="/dashboard"
-              className={({ isActive }) =>
-                isActive || location.pathname === '/' ? 'nav-item active' : 'nav-item'
-              }
-            >
-              <LayoutDashboard size={18} className="nav-icon" />
-              <span className="nav-label">Dashboard</span>
-            </NavLink>
-          )}
-
-          {canAccessPath(user, '/vehicles') && (
-            <NavLink
-              to="/vehicles"
-              className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
-            >
-              <Truck size={18} className="nav-icon" />
-              <span className="nav-label">{isSuperAdmin(user) ? 'Vehicle Entry' : 'Vehicles'}</span>
-            </NavLink>
-          )}
-
-          {canAccessPath(user, '/users') && isAdmin(user) && !isExecutive(user) ? (
-            <NavLink
-              to="/users"
-              className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <Users size={18} className="nav-icon" />
-                <span className="nav-label">
-                  {isSuperAdmin(user) ? 'Users & Approvals' : 'Drivers & Approvals'}
-                </span>
-              </div>
-              {pendingCount > 0 && isSuperAdmin(user) ? (
-                <span
-                  style={{
-                    backgroundColor: 'var(--danger-text)',
-                    color: '#ffffff',
-                    fontSize: 10,
-                    fontWeight: 800,
-                    padding: '2px 7px',
-                    borderRadius: 10,
-                    marginLeft: 'auto',
-                    minWidth: 18,
-                    textAlign: 'center',
-                    lineHeight: '13px',
-                    boxShadow: '0 2px 5px rgba(239, 68, 68, 0.4)',
-                  }}
-                  title={`${pendingCount} pending approvals waiting for review`}
-                >
-                  {pendingCount}
-                </span>
-              ) : null}
-            </NavLink>
-          ) : null}
-
-          {canAccessPath(user, '/complaints') && (
-            <NavLink
-              to="/complaints"
-              className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <ClipboardList size={18} className="nav-icon" />
-                <span className="nav-label">Complaints</span>
-              </div>
-              {complaintBadgeCount > 0 ? (
-                <span
-                  style={{
-                    backgroundColor: 'var(--danger-text)',
-                    color: '#ffffff',
-                    fontSize: 10,
-                    fontWeight: 800,
-                    padding: '2px 7px',
-                    borderRadius: 10,
-                    marginLeft: 'auto',
-                    minWidth: 18,
-                    textAlign: 'center',
-                    lineHeight: '13px',
-                    boxShadow: '0 2px 5px rgba(239, 68, 68, 0.4)',
-                  }}
-                  title={`${complaintBadgeCount} unread/new complaints waiting for review`}
-                >
-                  {complaintBadgeCount}
-                </span>
-              ) : null}
-            </NavLink>
-          )}
-
-          {canAccessPath(user, '/loading') && (
-            <NavLink
-              to="/loading"
-              className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
-            >
-              <Truck size={18} className="nav-icon" />
-              <span className="nav-label">Loading & Detention</span>
-            </NavLink>
-          )}
-
-          {canAccessPath(user, '/trips') && (
-            <NavLink
-              to="/trips"
-              className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
-            >
-              <Truck size={18} className="nav-icon" />
-              <span className="nav-label">Trip Analytics & Logs</span>
-            </NavLink>
-          )}
-
-          {canAccessPath(user, '/maintenance') && (
-            <NavLink
-              to="/maintenance"
-              className={({ isActive }) =>
-                isActive || location.pathname.startsWith('/fuel-logs')
-                  ? 'nav-item active'
-                  : 'nav-item'
-              }
-            >
-              <Wrench size={18} className="nav-icon" />
-              <span className="nav-label">Vehicle Maintenance</span>
-            </NavLink>
-          )}
-
-          {canAccessPath(user, '/spare-parts') && (
-            <NavLink
-              to="/spare-parts"
-              className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
-            >
-              <Package size={18} className="nav-icon" />
-              <span className="nav-label">Spare Parts</span>
-            </NavLink>
-          )}
-
-          {canAccessPath(user, '/support') && isSuperAdmin(user) ? (
-            <NavLink
-              to="/support"
-              className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
-            >
-              <Headphones size={18} className="nav-icon" />
-              <span className="nav-label">Support Chat</span>
-            </NavLink>
-          ) : null}
-
-          {canAccessPath(user, '/reports') && (
-            <NavLink
-              to="/reports"
-              className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
-            >
-              <FileSpreadsheet size={18} className="nav-icon" />
-              <span className="nav-label">Vehicle Reports</span>
-            </NavLink>
-          )}
-
-          {canAccessPath(user, '/settings') && (isSuperAdmin(user) || user?.role === 'ADMIN') ? (
-            <NavLink
-              to="/settings"
-              className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
-            >
-              <Settings size={18} className="nav-icon" />
-              <span className="nav-label">Settings</span>
-            </NavLink>
-          ) : null}
-        </nav>
-
-
-
-
-        {/* Sidebar Footer with User Profile Identity & Restored Logout Button (Pinned at bottom, flex-shrink: 0) */}
-        <div className="sidebar-footer">
+        {/* 4. Modern Bottom Operator Card */}
+        <div className="fo-sidebar-footer">
           {user ? (
-            <div className="user-profile-box">
-              <div className="user-avatar-circle">
-                {user.firstName ? user.firstName[0] : 'U'}
-                {user.lastName ? user.lastName[0] : ''}
+            <div className="fo-operator-card">
+              <div className="fo-operator-left">
+                <div className="fo-operator-avatar-wrapper">
+                  <div className="fo-operator-avatar">
+                    {user.firstName ? user.firstName[0] : 'U'}
+                    {user.lastName ? user.lastName[0] : ''}
+                  </div>
+                  <span className="fo-operator-status-dot" title="Console Active" />
+                </div>
+                <div className="fo-operator-meta">
+                  <span className="fo-operator-name">{fullName(user) || 'Console Operator'}</span>
+                  <span className="fo-operator-role">
+                    {user.role === 'SUPER_ADMIN'
+                      ? 'Global Fleet Dir.'
+                      : user.employeeId
+                        ? `${user.employeeId} • ${user.role}`
+                        : user.role}
+                  </span>
+                </div>
               </div>
-              <div className="user-profile-meta">
-                <div className="user-full-name">{fullName(user)}</div>
-                <div className="user-employee-id">{user.employeeId}</div>
-                <div className="user-role-badge">{user.role}</div>
-              </div>
+
+              <button
+                type="button"
+                className="fo-btn-logout"
+                onClick={handleLogout}
+                disabled={signingOut}
+                title="Sign out of FleetOps"
+                aria-label="Sign out"
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
+                  logout
+                </span>
+              </button>
             </div>
           ) : null}
-
-          <button
-            type="button"
-            className="btn-sidebar-logout"
-            onClick={handleLogout}
-            disabled={signingOut}
-            title="Sign out of Fleet Admin"
-          >
-            <LogOut size={16} />
-            <span>{signingOut ? 'Signing out…' : 'Sign out'}</span>
-          </button>
         </div>
       </aside>
 
@@ -550,7 +727,7 @@ export function Layout(): ReactElement {
       {sidebarOpen ? <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} /> : null}
 
       {/* Main Workspace Content Area */}
-      <main className="main-content">
+      <main className={`main-content ${isFleetOpsRoute ? 'fleetops-active' : ''}`}>
         {/* Workspace Top Header Bar (Contains Breadcrumbs, Sync Status, Theme Switcher & Notifications) */}
         <header className="workspace-header">
           <div className="workspace-header-left">
@@ -646,7 +823,7 @@ export function Layout(): ReactElement {
           </div>
         </header>
 
-        <div className="workspace-body">
+        <div className={`workspace-body ${isFleetOpsRoute ? 'fleetops-body' : ''}`}>
           <PageErrorBoundary routeKey={location.pathname}>
             <Outlet />
           </PageErrorBoundary>

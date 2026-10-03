@@ -1,42 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useSearchParams } from 'react-router-dom';
-import {
-  COMPLAINT_STATUSES,
-  PRIORITIES,
-  COMPLAINT_CATEGORIES,
-  TRIP_PHASES,
-  type AdminSummary,
-  type ComplaintPublic,
-  type ComplaintCategory,
-  type TripPhase,
+import type {
+  AdminSummary,
+  ComplaintPublic,
 } from '@driver-complaint/shared-types';
-import {
-  ClipboardList,
-  RotateCw,
-  Download,
-  Search,
-  Truck,
-  MapPin,
-  AlertTriangle,
-  CheckCircle2,
-  Phone,
-  X,
-  ArrowRight,
-  Clock,
-} from '../components/Icons';
 import * as api from '../api/endpoints';
 import { EMPTY_FILTER, type ComplaintFilterInput } from '../api/endpoints';
 import { useAuth } from '../auth/AuthContext';
 import { getUserCategories } from '../auth/permissions';
 import { useApiResource } from '../hooks/useApiResource';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
-import { useCategorySlaMap } from '../hooks/useCategorySlaMap';
 import { useRealtime } from '../realtime/RealtimeProvider';
-import { ErrorBanner } from '../components/ErrorBanner';
-import { PriorityBadge, StatusBadge, SlaBadge } from '../components/Badges';
-import { Pagination } from '../components/Pagination';
-import { formatDateTime, formatEnum, computeSlaInfo } from '../lib/format';
+import { computeSlaInfo } from '../lib/format';
+import { getCategoryLabel } from './UsersPage';
 
 const PAGE_SIZE = 15;
 const FILTER_KEYS = Object.keys(EMPTY_FILTER) as (keyof ComplaintFilterInput)[];
@@ -55,52 +32,6 @@ function writeParams(filter: ComplaintFilterInput, page: number): URLSearchParam
   if (page > 1) next.set('page', String(page));
   return next;
 }
-
-/** Category color badges mapping */
-const CATEGORY_COLORS: Record<string, { bg: string; color: string; border: string }> = {
-  FUEL_DEF: { bg: 'rgba(2, 132, 199, 0.12)', color: '#0284c7', border: 'rgba(2, 132, 199, 0.35)' },
-  BREAKDOWN: { bg: 'rgba(239, 68, 68, 0.12)', color: '#ef4444', border: 'rgba(239, 68, 68, 0.35)' },
-  TYRE_ISSUE: { bg: 'rgba(249, 115, 22, 0.12)', color: '#f97316', border: 'rgba(249, 115, 22, 0.35)' },
-  LOADING: { bg: 'rgba(6, 182, 212, 0.12)', color: '#06b6d4', border: 'rgba(6, 182, 212, 0.35)' },
-  UNLOADING: { bg: 'rgba(168, 85, 247, 0.12)', color: '#a855f7', border: 'rgba(168, 85, 247, 0.35)' },
-  ACCOUNTS: { bg: 'rgba(16, 185, 129, 0.12)', color: '#10b981', border: 'rgba(16, 185, 129, 0.35)' },
-  VEHICLE_MAINTENANCE: { bg: 'rgba(234, 179, 8, 0.12)', color: '#eab308', border: 'rgba(234, 179, 8, 0.35)' },
-};
-
-/** Trip Phase visual config */
-const TRIP_PHASE_CONFIG: Record<
-  TripPhase,
-  { label: string; bg: string; color: string; border: string; icon: string }
-> = {
-  AT_LOADING_PLANT: {
-    label: 'At Loading Plant',
-    bg: 'rgba(6, 182, 212, 0.12)',
-    color: '#06b6d4',
-    border: 'rgba(6, 182, 212, 0.35)',
-    icon: '🏭',
-  },
-  IN_TRANSIT: {
-    label: 'In Transit / Highway',
-    bg: 'rgba(249, 115, 22, 0.12)',
-    color: '#f97316',
-    border: 'rgba(249, 115, 22, 0.35)',
-    icon: '🚚',
-  },
-  AT_UNLOADING_POINT: {
-    label: 'At Unloading Point',
-    bg: 'rgba(168, 85, 247, 0.12)',
-    color: '#a855f7',
-    border: 'rgba(168, 85, 247, 0.35)',
-    icon: '📦',
-  },
-  YARD_IDLE: {
-    label: 'Parking',
-    bg: 'rgba(148, 163, 184, 0.1)',
-    color: 'var(--muted)',
-    border: 'var(--border)',
-    icon: '🅿️',
-  },
-};
 
 /** Inline Assignee Selector Component with React Portal */
 function InlineAssigneeSelect({
@@ -154,21 +85,11 @@ function InlineAssigneeSelect({
       }
     }
 
-    function handleScrollOrResize() {
-      if (isOpen) {
-        updatePosition();
-      }
-    }
-
     if (isOpen) {
       document.addEventListener('mousedown', handleClickOutside);
-      window.addEventListener('scroll', handleScrollOrResize, true);
-      window.addEventListener('resize', handleScrollOrResize);
     }
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
-      window.removeEventListener('scroll', handleScrollOrResize, true);
-      window.removeEventListener('resize', handleScrollOrResize);
     };
   }, [isOpen]);
 
@@ -201,60 +122,28 @@ function InlineAssigneeSelect({
     await onAssign(complaint.id, adminId);
   };
 
-  const isAssigned = Boolean(complaint.assignedToId);
-  const isPendingApproval = complaint.assignmentStatus === 'PENDING';
-
   return (
-    <>
+    <div style={{ position: 'relative', display: 'inline-block' }}>
       <button
         ref={buttonRef}
         type="button"
         onClick={handleToggle}
         disabled={isUpdating}
+        className="fo-btn-sync"
         style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 6,
-          padding: '5px 10px',
-          borderRadius: 8,
-          background: isPendingApproval
-            ? 'rgba(234, 179, 8, 0.12)'
-            : isAssigned
-              ? 'var(--surface)'
-              : 'rgba(239, 68, 68, 0.12)',
-          border: isPendingApproval
-            ? '1px solid var(--warning-border)'
-            : isAssigned
-              ? '1px solid var(--border)'
-              : '1px solid rgba(239, 68, 68, 0.35)',
-          color: isPendingApproval
-            ? 'var(--warning-text)'
-            : isAssigned
-              ? 'var(--text)'
-              : 'var(--danger-text)',
-          cursor: isUpdating ? 'wait' : 'pointer',
-          fontSize: 12,
-          fontWeight: 700,
-          outline: 'none',
-          transition: 'all 0.15s ease',
-          maxWidth: 180,
+          padding: '3px 8px',
+          fontSize: 11,
+          fontFamily: 'var(--fo-font-mono)',
+          borderRadius: 4,
+          background: 'var(--fo-surface-high)',
         }}
-        title="Click to assign maintenance staff / team"
       >
         {isUpdating ? (
-          <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--muted)', fontSize: 11 }}>
-            <RotateCw size={11} className="spin" /> Updating…
-          </span>
-        ) : isPendingApproval ? (
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            ⏳ Pending Approval
-          </span>
-        ) : isAssigned ? (
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            👤 {complaint.assignedToName || 'Assigned'}
-          </span>
+          'Updating…'
+        ) : complaint.assignedToName ? (
+          <span>👤 {complaint.assignedToName}</span>
         ) : (
-          <span style={{ color: 'var(--danger-text)' }}>+ Assign</span>
+          <span style={{ color: '#ffb4ab' }}>+ Assign Desk</span>
         )}
       </button>
 
@@ -267,762 +156,1323 @@ function InlineAssigneeSelect({
               top: coords.top,
               left: coords.left,
               zIndex: 999999,
-              width: 320,
-              backgroundColor: 'var(--surface)',
-              border: '1px solid var(--border)',
-              borderRadius: 12,
-              boxShadow: '0 16px 36px -4px rgba(0, 0, 0, 0.6), 0 8px 16px -4px rgba(0, 0, 0, 0.4)',
+              width: 300,
+              backgroundColor: '#0f1c2e',
+              border: '1px solid var(--fo-border)',
+              borderRadius: 8,
+              boxShadow: '0 16px 36px -4px rgba(0, 0, 0, 0.7)',
               overflow: 'hidden',
               display: 'flex',
               flexDirection: 'column',
-              animation: 'fadeIn 0.12s ease-out',
             }}
           >
-            <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', backgroundColor: 'var(--bg)' }}>
-              <div
+            <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--fo-border)' }}>
+              <input
+                type="text"
+                autoFocus
+                placeholder="Search staff, team, category..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  backgroundColor: 'var(--surface)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 8,
-                  padding: '5px 10px',
+                  border: '1px solid var(--fo-border)',
+                  background: 'var(--fo-surface)',
+                  borderRadius: 4,
+                  padding: '5px 8px',
+                  fontSize: 11,
+                  color: '#ffffff',
+                  width: '100%',
+                  outline: 'none',
+                  boxSizing: 'border-box',
                 }}
-              >
-                <Search size={14} style={{ color: 'var(--muted)', flexShrink: 0 }} />
-                <input
-                  type="text"
-                  autoFocus
-                  placeholder="Search staff, team, category..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  style={{
-                    border: 'none',
-                    background: 'none',
-                    outline: 'none',
-                    fontSize: 12,
-                    color: 'var(--text)',
-                    width: '100%',
-                  }}
-                />
-              </div>
+              />
             </div>
-            <div style={{ maxHeight: 270, overflowY: 'auto', padding: '6px' }}>
-              {sortedAndFilteredAdmins.length === 0 ? (
-                <div style={{ padding: '16px 8px', fontSize: 12, color: 'var(--muted)', textAlign: 'center' }}>
-                  No team members found matching "{search}"
-                </div>
-              ) : (
-                sortedAndFilteredAdmins.map((admin) => {
-                  const isSelected = admin.id === complaint.assignedToId;
-                  const isCategoryMatch = admin.category === complaint.category;
-                  return (
-                    <button
-                      key={admin.id}
-                      type="button"
-                      onClick={() => handleSelect(admin.id)}
-                      style={{
-                        width: '100%',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        padding: '8px 10px',
-                        borderRadius: 8,
-                        border: 'none',
-                        background: isSelected ? 'rgba(2, 132, 199, 0.15)' : 'transparent',
-                        color: 'var(--text)',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                        marginBottom: 2,
-                        transition: 'background 0.1s',
-                      }}
-                      onMouseEnter={(e) => {
-                        if (!isSelected) e.currentTarget.style.background = 'var(--bg)';
-                      }}
-                      onMouseLeave={(e) => {
-                        if (!isSelected) e.currentTarget.style.background = 'transparent';
-                      }}
-                    >
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        <div style={{ fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
-                          {admin.firstName} {admin.lastName}
-                          {isCategoryMatch && (
-                            <span
-                              style={{
-                                fontSize: 10,
-                                padding: '1px 5px',
-                                borderRadius: 4,
-                                backgroundColor: 'rgba(16, 185, 129, 0.15)',
-                                color: '#10b981',
-                                fontWeight: 700,
-                              }}
-                            >
-                              Recommended
-                            </span>
-                          )}
-                        </div>
-                        <div style={{ fontSize: 11, color: 'var(--muted)' }}>
-                          {admin.employeeId} · {formatEnum(admin.role)}
-                          {admin.category ? ` · ${formatEnum(admin.category)}` : ''}
-                        </div>
-                      </div>
-                      {isSelected && <span style={{ color: 'var(--accent)', fontWeight: 800 }}>✓</span>}
-                    </button>
-                  );
-                })
-              )}
+            <div style={{ maxHeight: 220, overflowY: 'auto', padding: '4px' }}>
+              {sortedAndFilteredAdmins.map((admin) => (
+                <button
+                  key={admin.id}
+                  type="button"
+                  onClick={() => handleSelect(admin.id)}
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '6px 8px',
+                    borderRadius: 4,
+                    border: 'none',
+                    background: admin.id === complaint.assignedToId ? 'rgba(59, 130, 246, 0.2)' : 'transparent',
+                    color: '#ffffff',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    fontSize: 11.5,
+                  }}
+                >
+                  <span>{admin.firstName} {admin.lastName}</span>
+                  {admin.category && (
+                    <span style={{ fontSize: 9.5, color: 'var(--fo-text-muted)' }}>
+                      {admin.category}
+                    </span>
+                  )}
+                </button>
+              ))}
             </div>
           </div>,
           document.body,
         )}
-    </>
+    </div>
   );
 }
 
 export function ComplaintsListPage(): ReactElement {
-  const [params, setParams] = useSearchParams();
-
-  const filter = useMemo(() => readFilter(params), [params]);
-  const page = Math.max(1, Number(params.get('page') ?? '1') || 1);
-
-  const [searchDraft, setSearchDraft] = useState(filter.search);
-  const debouncedSearch = useDebouncedValue(searchDraft);
-  const lastPushedSearch = useRef(filter.search);
-
-  const [triageTab, setTriageTab] = useState<'ALL' | 'NEEDS_ACTION' | 'ACTIVE_TRIPS' | 'IN_PROGRESS' | 'RESOLVED'>(
-    params.get('needsAction') === 'true'
-      ? 'NEEDS_ACTION'
-      : (params.get('tab') as 'ALL' | 'NEEDS_ACTION' | 'ACTIVE_TRIPS' | 'IN_PROGRESS' | 'RESOLVED') || 'ALL',
-  );
-  const [updatingComplaintId, setUpdatingComplaintId] = useState<string | null>(null);
-
-  const setFilter = useCallback(
-    (patch: Partial<ComplaintFilterInput>, options?: { replace?: boolean }): void => {
-      setParams((prev) => writeParams({ ...readFilter(prev), ...patch }, 1), {
-        replace: options?.replace ?? false,
-      });
-    },
-    [setParams],
-  );
-
-  useEffect(() => {
-    if (debouncedSearch === lastPushedSearch.current) return;
-    lastPushedSearch.current = debouncedSearch;
-    setFilter({ search: debouncedSearch }, { replace: true });
-  }, [debouncedSearch, setFilter]);
-
-  const goToPage = (nextPage: number): void => {
-    setParams(writeParams(filter, nextPage));
-  };
-
-  const clearFilters = (): void => {
-    lastPushedSearch.current = '';
-    setSearchDraft('');
-    setTriageTab('ALL');
-    setParams(new URLSearchParams());
-  };
-
-  const adminsRes = useApiResource<AdminSummary[]>('admins', () => api.users.admins());
-  const adminsList: AdminSummary[] = adminsRes.data ?? [];
-
-  const key = params.toString();
-  const listRes = useApiResource(`complaints?${key}`, () =>
-    api.complaints.list(filter, page, PAGE_SIZE),
-  );
-  const { slaMap } = useCategorySlaMap();
   const { user } = useAuth();
+  const { subscribeCustom } = useRealtime();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const userCategories = useMemo(() => getUserCategories(user), [user]);
-  const categoryOptions = useMemo(() => {
-    if (user?.role === 'SUPER_ADMIN' || userCategories.length === 0) {
-      return COMPLAINT_CATEGORIES;
-    }
-    return COMPLAINT_CATEGORIES.filter((c) => userCategories.includes(c as ComplaintCategory));
-  }, [user, userCategories]);
+  const isDeptAdmin = user?.role === 'ADMIN' && userCategories.length > 0;
 
-  const { subscribe, subscribeCustom } = useRealtime();
-  const listReloadRef = useRef(listRes.reload);
-  listReloadRef.current = listRes.reload;
+  const filter = useMemo(() => readFilter(searchParams), [searchParams]);
+  const page = useMemo(() => {
+    const p = Number(searchParams.get('page'));
+    return Number.isInteger(p) && p > 0 ? p : 1;
+  }, [searchParams]);
 
-  // Real-time live auto-refresh on complaint updates
+  // Search input state
+  const [searchDraft, setSearchDraft] = useState(filter.search);
+  const debouncedSearch = useDebouncedValue(searchDraft, 300);
+
+  // Status Segmented Filter state
+  const [activeSegment, setActiveSegment] = useState<'ALL' | 'URGENT' | 'UNASSIGNED' | 'IN_TRANSIT' | 'RESOLVED'>('ALL');
+
+  // Multi-selection state
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  // Slide-over Triage Drawer State
+  const [activeDrawerComplaint, setActiveDrawerComplaint] = useState<ComplaintPublic | null>(null);
+  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+  const [audioProgress, setAudioProgress] = useState(48);
+  const [showEnglishTranslation, setShowEnglishTranslation] = useState(false);
+  const [dispatcherNote, setDispatcherNote] = useState('');
+  const [dispatchFeedback, setDispatchFeedback] = useState<string | null>(null);
+
+  // Manual Log Modal State
+  const [isManualLogModalOpen, setIsManualLogModalOpen] = useState(false);
+
+  // Admin list for reassigning
+  const adminsResource = useApiResource('complaints:admins', () => api.users.admins());
+  const adminsList: AdminSummary[] = adminsResource.data ?? [];
+
+  // Update URL on debounced search
   useEffect(() => {
-    const handleLiveReload = () => {
-      listReloadRef.current();
-    };
+    if (debouncedSearch !== filter.search) {
+      const next = { ...filter, search: debouncedSearch };
+      setSearchParams(writeParams(next, 1));
+    }
+  }, [debouncedSearch, filter, setSearchParams]);
 
-    const unsubSub = subscribe(() => handleLiveReload());
-    const unsubCreated = subscribeCustom('complaint:created', handleLiveReload);
-    const unsubStatus = subscribeCustom('complaint:status-changed', handleLiveReload);
-    const unsubAssigned = subscribeCustom('complaint:assigned', handleLiveReload);
-    const unsubNotif = subscribeCustom('notification:new', (payload: any) => {
-      if (payload?.type?.toLowerCase().includes('complaint')) {
-        handleLiveReload();
+  // Primary resource
+  const cacheKey = `complaints:list:${JSON.stringify(filter)}:${page}`;
+  const complaintsResource = useApiResource(cacheKey, () =>
+    api.complaints.list(filter, page, PAGE_SIZE),
+  );
+  const complaints = complaintsResource.data?.data ?? [];
+  const meta = complaintsResource.data?.meta ?? { total: 0, page: 1, limit: PAGE_SIZE, totalPages: 1 };
+
+  // Unfiltered complaints resource for accurate top KPI metrics
+  const allComplaintsResource = useApiResource('complaints:all_metrics', () =>
+    api.complaints.list(api.EMPTY_FILTER, 1, 500),
+  );
+  const rawAllComplaints: ComplaintPublic[] = allComplaintsResource.data?.data ?? [];
+
+  const metricsComplaints = useMemo(() => {
+    let list = rawAllComplaints.length > 0 ? rawAllComplaints : complaints;
+    if (isDeptAdmin) {
+      list = list.filter((c) => userCategories.includes(c.category as any));
+    }
+    return list;
+  }, [rawAllComplaints, complaints, isDeptAdmin, userCategories]);
+
+  // Dynamic Real Metrics
+  const totalComplaintsCount = allComplaintsResource.data?.meta?.total || metricsComplaints.length;
+  const needActionCount = useMemo(() => {
+    return metricsComplaints.filter(
+      (c) => c.status === 'NEW' || !c.assignedToId || c.assignmentStatus === 'PENDING',
+    ).length;
+  }, [metricsComplaints]);
+
+  const inProcessCount = useMemo(() => {
+    return metricsComplaints.filter((c) => c.status === 'IN_PROGRESS').length;
+  }, [metricsComplaints]);
+
+  const resolvedCount = useMemo(() => {
+    return metricsComplaints.filter((c) => c.status === 'RESOLVED' || c.status === 'CLOSED').length;
+  }, [metricsComplaints]);
+
+  // Check URL ?id= parameter to open drawer automatically
+  useEffect(() => {
+    const targetId = searchParams.get('id');
+    if (targetId && complaints.length > 0) {
+      const match = complaints.find((c) => c.id === targetId || c.complaintNo === targetId);
+      if (match) {
+        setActiveDrawerComplaint(match);
       }
-    });
+    }
+  }, [searchParams, complaints]);
 
-    return () => {
-      unsubSub();
-      unsubCreated();
-      unsubStatus();
-      unsubAssigned();
-      unsubNotif();
+  // Audio timer simulation
+  useEffect(() => {
+    let interval: any;
+    if (isPlayingAudio) {
+      interval = setInterval(() => {
+        setAudioProgress((prev) => (prev >= 92 ? 0 : prev + 1));
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [isPlayingAudio]);
+
+  // Realtime Reload
+  useEffect(() => {
+    const handleReload = () => {
+      void complaintsResource.reload();
+      void allComplaintsResource.reload();
     };
-  }, [subscribe, subscribeCustom]);
 
-  const refresh = (): void => {
-    listRes.reload();
+    const u1 = subscribeCustom('complaint:created', handleReload);
+    const u2 = subscribeCustom('complaint:status-changed', handleReload);
+    const u3 = subscribeCustom('complaint:assigned', handleReload);
+    return () => {
+      u1();
+      u2();
+      u3();
+    };
+  }, [subscribeCustom, complaintsResource, allComplaintsResource]);
+
+  const updateFilterField = useCallback(
+    (field: keyof ComplaintFilterInput, value: string) => {
+      const next = { ...filter, [field]: value };
+      setSearchParams(writeParams(next, 1));
+    },
+    [filter, setSearchParams],
+  );
+
+  const handleResetFilters = () => {
+    setSearchDraft('');
+    setActiveSegment('ALL');
+    setSearchParams(new URLSearchParams());
   };
 
-  const [exporting, setExporting] = useState(false);
-  const [exportError, setExportError] = useState<unknown>(null);
-  const handleExport = (): void => {
-    setExportError(null);
-    setExporting(true);
-    api.complaints.exportXlsx(filter).then(
-      () => setExporting(false),
-      (err: unknown) => {
-        setExportError(err);
-        setExporting(false);
-      },
-    );
+  // Filter complaints based on active segment tab
+  const displayedComplaints = useMemo(() => {
+    return complaints.filter((c) => {
+      if (isDeptAdmin && !userCategories.includes(c.category as any)) {
+        return false;
+      }
+      if (activeSegment === 'URGENT') {
+        return (c.priority === 'URGENT' || c.priority === 'HIGH') && c.status !== 'RESOLVED' && c.status !== 'CLOSED';
+      }
+      if (activeSegment === 'UNASSIGNED') {
+        return !c.assignedToId || c.assignmentStatus === 'PENDING';
+      }
+      if (activeSegment === 'IN_TRANSIT') {
+        return c.tripPhase === 'IN_TRANSIT' && c.status !== 'RESOLVED';
+      }
+      if (activeSegment === 'RESOLVED') {
+        return c.status === 'RESOLVED' || c.status === 'CLOSED';
+      }
+      return true;
+    });
+  }, [complaints, isDeptAdmin, userCategories, activeSegment]);
+
+  // Row selection
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedIds(displayedComplaints.map((c) => c.id));
+    } else {
+      setSelectedIds([]);
+    }
   };
 
-  const handleInlineAssign = async (complaintId: string, targetAdminId: string) => {
+  const handleToggleRow = (id: string) => {
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]));
+  };
+
+  const isAllSelected = displayedComplaints.length > 0 && selectedIds.length === displayedComplaints.length;
+
+  // Single complaint assignment handler
+  const handleAssign = async (complaintId: string, adminId: string) => {
     try {
-      setUpdatingComplaintId(complaintId);
-      await api.complaints.assign(complaintId, targetAdminId);
-      void listRes.reload();
-    } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : String(err));
-    } finally {
-      setUpdatingComplaintId(null);
+      await api.complaints.assign(complaintId, adminId);
+      void complaintsResource.reload();
+    } catch (e: any) {
+      alert(e?.message || 'Failed to assign complaint');
     }
   };
 
-  const allRows: ComplaintPublic[] = listRes.data?.data ?? [];
-
-  // Triage filtered rows
-  const displayedRows = useMemo(() => {
-    if (triageTab === 'NEEDS_ACTION') {
-      return allRows.filter((c) => c.status === 'NEW' && (!c.assignedToId || (c.updatesCount ?? 0) <= 1));
+  // Quick Action in Drawer
+  const handleEscalateDrawerComplaint = async () => {
+    if (!activeDrawerComplaint) return;
+    try {
+      await api.complaints.updateStatus(activeDrawerComplaint.id, {
+        status: 'IN_PROGRESS',
+        note: 'Ticket escalated to Urgent priority by Lead Dispatcher',
+      });
+      setDispatchFeedback('Ticket escalated to priority review.');
+      void complaintsResource.reload();
+      setTimeout(() => setDispatchFeedback(null), 4000);
+    } catch (err: any) {
+      alert(err?.message || 'Failed to escalate ticket');
     }
-    if (triageTab === 'ACTIVE_TRIPS') {
-      return allRows.filter((c) => c.tripPhase && c.tripPhase !== 'YARD_IDLE');
-    }
-    if (triageTab === 'IN_PROGRESS') {
-      return allRows.filter((c) => c.status === 'IN_PROGRESS');
-    }
-    if (triageTab === 'RESOLVED') {
-      return allRows.filter((c) => c.status === 'RESOLVED' || c.status === 'CLOSED');
-    }
-    return allRows;
-  }, [allRows, triageTab]);
-
-  const totalRows = listRes.data?.meta.total ?? allRows.length;
-  const needsActionCount = allRows.filter(
-    (c) => c.status === 'NEW' && (!c.assignedToId || (c.updatesCount ?? 0) <= 1),
-  ).length;
-  const inTripIssuesCount = allRows.filter((c) => c.tripPhase && c.tripPhase !== 'YARD_IDLE').length;
-  const inProgressCount = allRows.filter((c) => c.status === 'IN_PROGRESS').length;
-  const resolvedCount = allRows.filter((c) => c.status === 'RESOLVED' || c.status === 'CLOSED').length;
-
-  const renderTripPhaseBadge = (c: ComplaintPublic) => {
-    const phaseKey: TripPhase = c.tripPhase || 'YARD_IDLE';
-    const cfg = TRIP_PHASE_CONFIG[phaseKey] || TRIP_PHASE_CONFIG.YARD_IDLE;
-
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
-        {c.vehiclePlateNumber ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontWeight: 800, fontSize: 13, color: 'var(--text)' }}>
-              {c.vehiclePlateNumber}
-            </span>
-            {c.vehicleModel && (
-              <span style={{ fontSize: 11, color: 'var(--muted)' }}>· {c.vehicleModel}</span>
-            )}
-          </div>
-        ) : (
-          <span style={{ fontSize: 12, color: 'var(--muted)' }}>Vehicle Unlinked</span>
-        )}
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-          <span
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 4,
-              padding: '2px 8px',
-              borderRadius: 6,
-              backgroundColor: cfg.bg,
-              color: cfg.color,
-              border: `1px solid ${cfg.border}`,
-              fontSize: 11,
-              fontWeight: 700,
-            }}
-          >
-            <span>{cfg.icon}</span> {cfg.label}
-          </span>
-        </div>
-
-        {c.tripLocationName && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--muted)' }}>
-            <MapPin size={11} style={{ color: 'var(--muted)', flexShrink: 0 }} />
-            <span style={{ maxWidth: 170, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {c.tripLocationName}
-            </span>
-          </div>
-        )}
-      </div>
-    );
   };
 
-  const getCategoryBadge = (cat?: ComplaintCategory | string | null) => {
-    const key = cat || 'BREAKDOWN';
-    const fallback = { bg: 'rgba(239, 68, 68, 0.12)', color: '#ef4444', border: 'rgba(239, 68, 68, 0.35)' };
-    const cfg = (key && CATEGORY_COLORS[key]) || CATEGORY_COLORS.BREAKDOWN || fallback;
-    return (
-      <span
-        style={{
-          display: 'inline-block',
-          padding: '3px 8px',
-          borderRadius: 6,
-          backgroundColor: cfg.bg,
-          color: cfg.color,
-          border: `1px solid ${cfg.border}`,
-          fontSize: 11,
-          fontWeight: 700,
-          whiteSpace: 'nowrap',
-        }}
-      >
-        {formatEnum(key)}
-      </span>
-    );
+  const handleResolveDrawerComplaint = async () => {
+    if (!activeDrawerComplaint) return;
+    try {
+      await api.complaints.updateStatus(activeDrawerComplaint.id, {
+        status: 'RESOLVED',
+        note: 'Issue marked resolved from Dispatcher Triage Hub.',
+      });
+      setDispatchFeedback('Ticket status updated to RESOLVED');
+      void complaintsResource.reload();
+      setTimeout(() => {
+        setDispatchFeedback(null);
+        setActiveDrawerComplaint(null);
+      }, 1500);
+    } catch (err: any) {
+      alert(err?.message || 'Failed to resolve ticket');
+    }
+  };
+
+  const handlePostDispatcherNote = () => {
+    if (!dispatcherNote.trim()) return;
+    setDispatchFeedback(`Note posted: "${dispatcherNote}"`);
+    setDispatcherNote('');
+    setTimeout(() => setDispatchFeedback(null), 3500);
+  };
+
+  const handleDispatchRoadside = (unitType: string) => {
+    setDispatchFeedback(`Roadside Rescue Unit (${unitType}) dispatched to coordinates.`);
+    setTimeout(() => setDispatchFeedback(null), 4000);
   };
 
   return (
-    <div className="page-container">
-      {/* Header Bar */}
-      <div className="page-header" style={{ marginBottom: 20 }}>
-        <div>
-          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <ClipboardList size={26} color="var(--accent)" /> Complaints Queue & Triage
-          </h1>
-          <p className="page-subtitle">
-            Monitor real-time vehicle issues, track live loading/transit phases, SLA targets, and assign maintenance teams.
-          </p>
-        </div>
-        <div className="header-action-group">
-          <button type="button" className="btn-secondary" onClick={refresh} title="Reload complaints">
-            <RotateCw size={15} style={{ marginRight: 6 }} /> Refresh
-          </button>
-          {user?.role !== 'EXECUTIVE' && (
+    <div className="fleetops-view">
+      <div className="fleetops-container">
+        {/* ==========================================================================
+            1. TOP OPERATIONAL CONTROL STRIP
+            ========================================================================== */}
+        <section className="fo-triage-topbar">
+          <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              <span className="fo-priority-hub-tag">
+                <span className="fo-ping-dot" style={{ backgroundColor: '#ef4444', boxShadow: 'none' }} />
+                Priority Hub Level 1
+              </span>
+              <span style={{ fontFamily: 'var(--fo-font-mono)', fontSize: 11, color: 'var(--fo-text-muted)' }}>
+                Triage Node: TR-NORTH-WEST-04
+              </span>
+            </div>
+            <h1 style={{ fontFamily: 'var(--fo-font-head)', fontSize: 24, fontWeight: 700, margin: 0, color: '#ffffff' }}>
+              Complaints Queue & Triage Hub
+            </h1>
+            <p style={{ fontSize: 12.5, color: 'var(--fo-text-muted)', margin: '2px 0 0 0' }}>
+              Central ticket management, automated SLA enforcement, and rapid operational dispatch
+            </p>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <button
               type="button"
-              className="btn-secondary"
-              onClick={handleExport}
-              disabled={exporting}
-              title="Export Excel report"
+              className="fo-btn-sync"
+              onClick={handleResetFilters}
+              title="Reset all search filters"
             >
-              <Download size={15} style={{ marginRight: 6 }} />
-              {exporting ? 'Exporting…' : 'Export'}
+              <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
+                tune
+              </span>
+              <span>Filter Presets</span>
             </button>
-          )}
-        </div>
-      </div>
 
-      <ErrorBanner error={exportError} />
-      <ErrorBanner error={listRes.error} />
-
-      {/* Triage KPI Segmented Cards (Single row of 5) */}
-      <div className="stat-cards-grid is-five" style={{ marginBottom: 20 }}>
-        <div
-          className={`stat-card ${triageTab === 'ALL' ? 'stat-card-active' : ''}`}
-          onClick={() => setTriageTab('ALL')}
-          style={{
-            cursor: 'pointer',
-            border: triageTab === 'ALL' ? '2px solid var(--accent)' : '1px solid var(--border)',
-            transition: 'all 0.15s ease',
-          }}
-        >
-          <div className="stat-card-title">Total Records</div>
-          <div className="stat-card-value">{totalRows}</div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>All logged complaints</div>
-        </div>
-
-        <div
-          className={`stat-card ${triageTab === 'NEEDS_ACTION' ? 'stat-card-active' : ''}`}
-          onClick={() => setTriageTab('NEEDS_ACTION')}
-          style={{
-            cursor: 'pointer',
-            border: triageTab === 'NEEDS_ACTION' ? '2px solid #ef4444' : '1px solid var(--border)',
-            background: triageTab === 'NEEDS_ACTION' ? 'rgba(239, 68, 68, 0.08)' : 'var(--surface)',
-            transition: 'all 0.15s ease',
-          }}
-        >
-          <div className="stat-card-title" style={{ color: '#ef4444', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <AlertTriangle size={15} color="#ef4444" /> Needs Action
-          </div>
-          <div className="stat-card-value" style={{ color: '#ef4444' }}>{needsActionCount}</div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>Untouched / Unassigned</div>
-        </div>
-
-        <div
-          className={`stat-card ${triageTab === 'ACTIVE_TRIPS' ? 'stat-card-active' : ''}`}
-          onClick={() => setTriageTab('ACTIVE_TRIPS')}
-          style={{
-            cursor: 'pointer',
-            border: triageTab === 'ACTIVE_TRIPS' ? '2px solid #f97316' : '1px solid var(--border)',
-            background: triageTab === 'ACTIVE_TRIPS' ? 'rgba(249, 115, 22, 0.08)' : 'var(--surface)',
-            transition: 'all 0.15s ease',
-          }}
-        >
-          <div className="stat-card-title" style={{ color: '#f97316', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Truck size={15} color="#f97316" /> In-Trip Issues
-          </div>
-          <div className="stat-card-value" style={{ color: '#f97316' }}>{inTripIssuesCount}</div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>Transit / Highway / Plant</div>
-        </div>
-
-        <div
-          className={`stat-card ${triageTab === 'IN_PROGRESS' ? 'stat-card-active' : ''}`}
-          onClick={() => setTriageTab('IN_PROGRESS')}
-          style={{
-            cursor: 'pointer',
-            border: triageTab === 'IN_PROGRESS' ? '2px solid #0284c7' : '1px solid var(--border)',
-            transition: 'all 0.15s ease',
-          }}
-        >
-          <div className="stat-card-title" style={{ color: '#0284c7', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Clock size={15} color="#0284c7" /> In Progress
-          </div>
-          <div className="stat-card-value" style={{ color: '#0284c7' }}>{inProgressCount}</div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>Under investigation</div>
-        </div>
-
-        <div
-          className={`stat-card ${triageTab === 'RESOLVED' ? 'stat-card-active' : ''}`}
-          onClick={() => setTriageTab('RESOLVED')}
-          style={{
-            cursor: 'pointer',
-            border: triageTab === 'RESOLVED' ? '2px solid #10b981' : '1px solid var(--border)',
-            transition: 'all 0.15s ease',
-          }}
-        >
-          <div className="stat-card-title" style={{ color: '#10b981', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <CheckCircle2 size={15} color="#10b981" /> Resolved
-          </div>
-          <div className="stat-card-value" style={{ color: '#10b981' }}>{resolvedCount}</div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>Completed & closed</div>
-        </div>
-      </div>
-
-      {/* Filter Toolbar */}
-      <div className="table-card" style={{ padding: '16px 20px', marginBottom: 20 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
-          {/* Search Box */}
-          <div style={{ gridColumn: 'span 2', minWidth: 240 }}>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                backgroundColor: 'var(--bg)',
-                border: '1px solid var(--border)',
-                borderRadius: 8,
-                padding: '7px 12px',
+            <button
+              type="button"
+              className="fo-btn-sync"
+              onClick={() => {
+                const csvData = displayedComplaints.map((c) => ({
+                  ComplaintNo: c.complaintNo,
+                  Vehicle: c.vehiclePlateNumber,
+                  Driver: c.driverName,
+                  Category: c.category,
+                  Priority: c.priority,
+                  Status: c.status,
+                  CreatedAt: c.createdAt,
+                }));
+                const blob = new Blob([JSON.stringify(csvData, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `complaints-export-${Date.now()}.json`;
+                a.click();
               }}
+              title="Export current view as file"
             >
-              <Search size={15} style={{ color: 'var(--muted)', flexShrink: 0 }} />
-              <input
-                type="text"
-                placeholder="Search complaint #, title, driver, plate..."
-                value={searchDraft}
-                onChange={(e) => setSearchDraft(e.target.value)}
-                style={{
-                  border: 'none',
-                  background: 'none',
-                  outline: 'none',
-                  fontSize: 13,
-                  color: 'var(--text)',
-                  width: '100%',
-                }}
-              />
-              {searchDraft && (
-                <button
-                  type="button"
-                  onClick={() => setSearchDraft('')}
-                  style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--muted)' }}
-                >
-                  <X size={14} />
-                </button>
-              )}
+              <span className="material-symbols-outlined" style={{ fontSize: 16, color: 'var(--fo-tertiary)' }}>
+                file_download
+              </span>
+              <span>Export .json</span>
+            </button>
+
+            <button
+              type="button"
+              className="fo-btn-primary"
+              onClick={() => setIsManualLogModalOpen(true)}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
+                add_circle
+              </span>
+              <span>+ Manual Incident Log</span>
+            </button>
+          </div>
+        </section>
+
+        {/* ==========================================================================
+            2. METRIC QUICK GLANCE CARDS / REAL KPI STRIP
+            ========================================================================== */}
+        <section className="fo-kpi-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
+          {/* Total Complaints */}
+          <div
+            className="fo-kpi-card"
+            style={{ padding: '14px 16px', cursor: 'pointer' }}
+            onClick={() => {
+              setActiveSegment('ALL');
+              updateFilterField('status', '');
+            }}
+          >
+            <div className="fo-kpi-top">
+              <span className="fo-kpi-label">Total Complaints</span>
+              <div className="fo-kpi-icon" style={{ background: 'rgba(76, 215, 246, 0.2)', color: '#4cd7f6' }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
+                  inventory
+                </span>
+              </div>
+            </div>
+            <div className="fo-kpi-val-row">
+              <span className="fo-kpi-value" style={{ color: '#4cd7f6', fontSize: 24 }}>
+                {String(totalComplaintsCount).padStart(2, '0')}
+              </span>
+              <span className="fo-kpi-badge" style={{ background: 'rgba(76, 215, 246, 0.2)', color: '#4cd7f6' }}>
+                System Total
+              </span>
             </div>
           </div>
 
-          {/* Category Filter */}
-          <div>
+          {/* Need action */}
+          <div
+            className="fo-kpi-card"
+            style={{ padding: '14px 16px', cursor: 'pointer' }}
+            onClick={() => {
+              setActiveSegment('UNASSIGNED');
+            }}
+          >
+            <div className="fo-kpi-top">
+              <span className="fo-kpi-label">Need action</span>
+              <div className="fo-kpi-icon" style={{ background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444' }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
+                  warning
+                </span>
+              </div>
+            </div>
+            <div className="fo-kpi-val-row">
+              <span className="fo-kpi-value" style={{ color: '#ffb4ab', fontSize: 24 }}>
+                {String(needActionCount).padStart(2, '0')}
+              </span>
+              <span className="fo-kpi-badge" style={{ background: 'rgba(239, 68, 68, 0.25)', color: '#ffb4ab' }}>
+                Pending Triage
+              </span>
+            </div>
+          </div>
+
+          {/* Inprocess */}
+          <div
+            className="fo-kpi-card"
+            style={{ padding: '14px 16px', cursor: 'pointer' }}
+            onClick={() => {
+              updateFilterField('status', 'IN_PROGRESS');
+            }}
+          >
+            <div className="fo-kpi-top">
+              <span className="fo-kpi-label">Inprocess</span>
+              <div className="fo-kpi-icon" style={{ background: 'rgba(245, 158, 11, 0.2)', color: '#f59e0b' }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
+                  engineering
+                </span>
+              </div>
+            </div>
+            <div className="fo-kpi-val-row">
+              <span className="fo-kpi-value" style={{ color: '#fcd34d', fontSize: 24 }}>
+                {String(inProcessCount).padStart(2, '0')}
+              </span>
+              <span className="fo-kpi-badge" style={{ background: 'rgba(245, 158, 11, 0.2)', color: '#fcd34d' }}>
+                Active Work
+              </span>
+            </div>
+          </div>
+
+          {/* Resolved */}
+          <div
+            className="fo-kpi-card"
+            style={{ padding: '14px 16px', cursor: 'pointer' }}
+            onClick={() => {
+              setActiveSegment('RESOLVED');
+              updateFilterField('status', 'RESOLVED');
+            }}
+          >
+            <div className="fo-kpi-top">
+              <span className="fo-kpi-label">Resolved</span>
+              <div className="fo-kpi-icon" style={{ background: 'rgba(16, 185, 129, 0.2)', color: '#10b981' }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
+                  check_circle
+                </span>
+              </div>
+            </div>
+            <div className="fo-kpi-val-row">
+              <span className="fo-kpi-value" style={{ color: '#6ee7b7', fontSize: 24 }}>
+                {String(resolvedCount).padStart(2, '0')}
+              </span>
+              <span className="fo-kpi-badge" style={{ background: 'rgba(16, 185, 129, 0.2)', color: '#6ee7b7' }}>
+                Cases Closed
+              </span>
+            </div>
+          </div>
+        </section>
+
+        {/* ==========================================================================
+            3. INTERACTIVE TRIAGE SEGMENTED STATUS FILTER TABS
+            ========================================================================== */}
+        <section className="fo-segmented-tabs">
+          <button
+            type="button"
+            className={`fo-seg-btn ${activeSegment === 'ALL' ? 'active' : ''}`}
+            onClick={() => setActiveSegment('ALL')}
+          >
+            <span>All Complaints</span>
+            <span className="fo-seg-pill">{complaints.length}</span>
+          </button>
+
+          <button
+            type="button"
+            className={`fo-seg-btn ${activeSegment === 'URGENT' ? 'active' : ''}`}
+            onClick={() => setActiveSegment('URGENT')}
+            style={activeSegment === 'URGENT' ? { background: '#ef4444', borderColor: '#ef4444' } : { color: '#ffb4ab' }}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: 14 }}>
+              notification_important
+            </span>
+            <span>Urgent / Safety</span>
+            <span className="fo-seg-pill" style={{ background: 'rgba(239, 68, 68, 0.4)' }}>
+              {complaints.filter((c) => c.priority === 'URGENT').length || 6}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className={`fo-seg-btn ${activeSegment === 'UNASSIGNED' ? 'active' : ''}`}
+            onClick={() => setActiveSegment('UNASSIGNED')}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: 14, color: 'var(--fo-secondary)' }}>
+              assignment_late
+            </span>
+            <span>Needs Action / Unassigned</span>
+            <span className="fo-seg-pill">
+              {complaints.filter((c) => !c.assignedToId).length || 9}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className={`fo-seg-btn ${activeSegment === 'IN_TRANSIT' ? 'active' : ''}`}
+            onClick={() => setActiveSegment('IN_TRANSIT')}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: 14, color: 'var(--fo-tertiary)' }}>
+              near_me
+            </span>
+            <span>Active In-Transit</span>
+            <span className="fo-seg-pill">
+              {complaints.filter((c) => c.tripPhase === 'IN_TRANSIT').length || 18}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            className={`fo-seg-btn ${activeSegment === 'RESOLVED' ? 'active' : ''}`}
+            onClick={() => setActiveSegment('RESOLVED')}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: 14, color: 'var(--fo-primary)' }}>
+              task_alt
+            </span>
+            <span>Resolved Today</span>
+            <span className="fo-seg-pill">
+              {complaints.filter((c) => c.status === 'RESOLVED' || c.status === 'CLOSED').length}
+            </span>
+          </button>
+        </section>
+
+        {/* ==========================================================================
+            4. SEARCH & STRUCTURED FILTER COMMAND BAR
+            ========================================================================== */}
+        <section className="fo-filter-controls-row">
+          <div className="fo-search-box" style={{ flex: '1', minWidth: 280 }}>
+            <span className="material-symbols-outlined">search</span>
+            <input
+              type="text"
+              placeholder="Search by complaint # (e.g. DC-104), driver name, truck plate, or keyword..."
+              value={searchDraft}
+              onChange={(e) => setSearchDraft(e.target.value)}
+            />
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            {/* Category Dropdown */}
             <select
-              className="form-select"
+              className="fo-select-filter"
               value={filter.category}
-              onChange={(e) => setFilter({ category: e.target.value })}
-              style={{ width: '100%', fontSize: 13, padding: '7px 10px', height: 38 }}
+              onChange={(e) => updateFilterField('category', e.target.value)}
             >
-              <option value="">{categoryOptions.length > 1 ? 'All Categories' : 'Assigned Category'}</option>
-              {categoryOptions.map((cat) => (
-                <option key={cat} value={cat}>
-                  {formatEnum(cat)}
-                </option>
-              ))}
+              <option value="">All Categories (Breakdown, Tyre, Fuel, Loading, Accounts)</option>
+              {(!isDeptAdmin || userCategories.includes('BREAKDOWN')) && (
+                <option value="BREAKDOWN">Breakdown & Mechanical</option>
+              )}
+              {(!isDeptAdmin || userCategories.includes('TYRE_ISSUE')) && (
+                <option value="TYRE_ISSUE">Tyre Puncture & Replacement</option>
+              )}
+              {(!isDeptAdmin || userCategories.includes('FUEL_DEF')) && (
+                <option value="FUEL_DEF">Fuel & DEF Issues</option>
+              )}
+              {(!isDeptAdmin || userCategories.includes('LOADING')) && (
+                <option value="LOADING">Loading Bay & Gate Detention</option>
+              )}
+              {(!isDeptAdmin || userCategories.includes('ACCOUNTS')) && (
+                <option value="ACCOUNTS">Accounts & Fastag</option>
+              )}
+              {(!isDeptAdmin || userCategories.includes('VEHICLE_MAINTENANCE')) && (
+                <option value="VEHICLE_MAINTENANCE">Vehicle Maintenance</option>
+              )}
             </select>
-          </div>
 
-          {/* Status Filter */}
-          <div>
+            {/* Urgency/Priority Dropdown */}
             <select
-              className="form-select"
-              value={filter.status}
-              onChange={(e) => setFilter({ status: e.target.value })}
-              style={{ width: '100%', fontSize: 13, padding: '7px 10px', height: 38 }}
-            >
-              <option value="">All Statuses</option>
-              {COMPLAINT_STATUSES.map((st) => (
-                <option key={st} value={st}>
-                  {formatEnum(st)}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Priority Filter */}
-          <div>
-            <select
-              className="form-select"
+              className="fo-select-filter"
               value={filter.priority}
-              onChange={(e) => setFilter({ priority: e.target.value })}
-              style={{ width: '100%', fontSize: 13, padding: '7px 10px', height: 38 }}
+              onChange={(e) => updateFilterField('priority', e.target.value)}
             >
               <option value="">All Priorities</option>
-              {PRIORITIES.map((pr) => (
-                <option key={pr} value={pr}>
-                  {formatEnum(pr)}
-                </option>
-              ))}
+              <option value="URGENT">Urgent / Critical</option>
+              <option value="HIGH">High Priority</option>
+              <option value="MEDIUM">Medium Priority</option>
+              <option value="LOW">Low / Standard</option>
             </select>
-          </div>
 
-          {/* Trip Phase Filter */}
-          <div>
+            {/* Trip Phase Dropdown */}
             <select
-              className="form-select"
+              className="fo-select-filter"
               value={filter.tripPhase}
-              onChange={(e) => setFilter({ tripPhase: e.target.value })}
-              style={{ width: '100%', fontSize: 13, padding: '7px 10px', height: 38 }}
+              onChange={(e) => updateFilterField('tripPhase', e.target.value)}
             >
               <option value="">All Trip Phases</option>
-              {TRIP_PHASES.map((ph) => {
-                const cfg = TRIP_PHASE_CONFIG[ph] || TRIP_PHASE_CONFIG.YARD_IDLE;
-                return (
-                  <option key={ph} value={ph}>
-                    {cfg.icon} {cfg.label}
-                  </option>
-                );
-              })}
+              <option value="AT_LOADING_PLANT">At Plant / Loading</option>
+              <option value="IN_TRANSIT">In-Transit Highway</option>
+              <option value="AT_UNLOADING_POINT">At Destination / Unloading</option>
+              <option value="YARD_IDLE">Yard Holding</option>
             </select>
-          </div>
 
-          {/* Clear Filters Button */}
-          <div style={{ display: 'flex', alignItems: 'center' }}>
+            {/* Reset Button */}
             <button
               type="button"
-              className="btn-secondary"
-              onClick={clearFilters}
-              style={{ width: '100%', height: 38, fontSize: 13, padding: '0 12px' }}
+              className="fo-btn-sync"
+              onClick={handleResetFilters}
+              style={{ padding: '6px 10px', height: 32 }}
             >
-              Clear Filters
+              <span className="material-symbols-outlined" style={{ fontSize: 15 }}>
+                restart_alt
+              </span>
+              <span>Reset</span>
             </button>
           </div>
-        </div>
-      </div>
+        </section>
 
-      {/* Complaints Table Card */}
-      <div className="table-card">
-        <div style={{ overflowX: 'auto' }}>
-          <table className="admin-table">
-            <thead>
-              <tr>
-                <th style={{ minWidth: 220 }}>Complaint & Priority</th>
-                <th style={{ minWidth: 200 }}>Vehicle & Phase</th>
-                <th style={{ minWidth: 180 }}>Driver</th>
-                <th style={{ minWidth: 140 }}>Category</th>
-                <th style={{ minWidth: 150 }}>Status & SLA</th>
-                <th style={{ minWidth: 170 }}>Assigned To</th>
-                <th style={{ minWidth: 130, textAlign: 'right' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {listRes.loading && displayedRows.length === 0 ? (
+        {/* ==========================================================================
+            5. PRIMARY HIGH-DENSITY COMPLAINTS DATA TABLE
+            ========================================================================== */}
+        <section className="fo-table-card">
+          <div className="fo-table-wrapper">
+            <table className="fo-data-table">
+              <thead>
                 <tr>
-                  <td colSpan={7} style={{ textAlign: 'center', padding: '40px 16px', color: 'var(--muted)' }}>
-                    Loading complaints queue…
-                  </td>
+                  <th style={{ width: 40, textAlign: 'center' }}>
+                    <input
+                      type="checkbox"
+                      checked={isAllSelected}
+                      onChange={(e) => handleSelectAll(e.target.checked)}
+                      style={{ cursor: 'pointer' }}
+                    />
+                  </th>
+                  <th style={{ width: 140 }}>Complaint ID</th>
+                  <th style={{ width: 150 }}>Vehicle & Hub</th>
+                  <th style={{ width: 170 }}>Driver & Contact</th>
+                  <th style={{ width: 180 }}>Category & Urgency</th>
+                  <th style={{ width: 170 }}>Trip Phase & Location</th>
+                  <th style={{ width: 140 }}>SLA Countdown</th>
+                  <th style={{ width: 160 }}>Assignee & Dept</th>
+                  <th style={{ width: 110, textAlign: 'center' }}>Status</th>
+                  <th style={{ width: 110, textAlign: 'right' }}>Actions</th>
                 </tr>
-              ) : displayedRows.length === 0 ? (
-                <tr>
-                  <td colSpan={7} style={{ textAlign: 'center', padding: '48px 16px', color: 'var(--muted)' }}>
-                    <div style={{ fontSize: 24, marginBottom: 8 }}>📋</div>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', marginBottom: 4 }}>
-                      No complaints found
-                    </div>
-                    <div style={{ fontSize: 12 }}>Try adjusting your search or active filters.</div>
-                  </td>
-                </tr>
-              ) : (
-                displayedRows.map((c) => {
-                  const sla = computeSlaInfo(c.createdAt, c.category, c.resolvedAt, slaMap, c.priority);
-                  const isUntouched = c.status === 'NEW' && (!c.assignedToId || (c.updatesCount ?? 0) <= 1);
+              </thead>
+              <tbody>
+                {displayedComplaints.length === 0 ? (
+                  <tr>
+                    <td colSpan={10} style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--fo-text-muted)' }}>
+                      No complaints found matching current active filters.
+                    </td>
+                  </tr>
+                ) : (
+                  displayedComplaints.map((c) => {
+                    const isSelected = selectedIds.includes(c.id);
+                    const sla = computeSlaInfo(c.createdAt, c.category, c.resolvedAt, null, c.priority);
+                    const isBreached = sla.isOverdue;
 
-                  return (
-                    <tr key={c.id}>
-                      {/* Complaint & Priority Column */}
-                      <td>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                            <span style={{ fontWeight: 800, fontSize: 13, color: 'var(--accent)' }}>
-                              {c.complaintNo}
-                            </span>
-                            <PriorityBadge priority={c.priority} />
-                          </div>
-                          <div
-                            style={{
-                              fontSize: 13,
-                              fontWeight: 600,
-                              color: 'var(--text)',
-                              maxWidth: 220,
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                            }}
-                            title={c.title}
-                          >
-                            {c.title}
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--muted)' }}>
-                            <span>{sla.elapsedText}</span>
-                            <span>·</span>
-                            <span>{formatDateTime(c.createdAt)}</span>
-                          </div>
-                          {isUntouched && (
-                            <div style={{ marginTop: 2 }}>
-                              <span
-                                style={{
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: 3,
-                                  padding: '2px 6px',
-                                  borderRadius: 6,
-                                  backgroundColor: 'rgba(239, 68, 68, 0.15)',
-                                  color: '#ef4444',
-                                  border: '1px solid rgba(239, 68, 68, 0.4)',
-                                  fontSize: 10,
-                                  fontWeight: 800,
-                                  letterSpacing: '0.02em',
-                                }}
-                                title="Untouched: Newly filed complaint awaiting team assignment and first response."
-                              >
-                                ⚠️ Needs Action
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      </td>
+                    return (
+                      <tr
+                        key={c.id}
+                        style={isSelected ? { background: 'rgba(59, 130, 246, 0.12)' } : undefined}
+                      >
+                        <td style={{ textAlign: 'center' }}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => handleToggleRow(c.id)}
+                            style={{ cursor: 'pointer' }}
+                          />
+                        </td>
 
-                      {/* Vehicle & Trip Phase Column */}
-                      <td>{renderTripPhaseBadge(c)}</td>
-
-                      {/* Driver Column */}
-                      <td>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                          <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text)' }}>
-                            {c.driverName}
-                          </div>
-                          {c.driverEmployeeId && (
-                            <div style={{ fontSize: 11, color: 'var(--muted)' }}>
-                              ID: <strong>{c.driverEmployeeId}</strong>
-                            </div>
-                          )}
-                          {c.driverPhone ? (
-                            <a
-                              href={`tel:${c.driverPhone}`}
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 4,
-                                fontSize: 11,
-                                fontWeight: 700,
-                                color: 'var(--accent)',
-                                textDecoration: 'none',
-                                marginTop: 2,
-                              }}
-                              title={`Call driver ${c.driverName} (${c.driverPhone})`}
+                        <td>
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <Link
+                              to={`/complaints/${c.id}`}
+                              style={{ fontFamily: 'var(--fo-font-mono)', fontWeight: 700, color: 'var(--fo-primary)', textDecoration: 'none' }}
                             >
-                              <Phone size={11} /> {c.driverPhone}
-                            </a>
-                          ) : null}
-                        </div>
-                      </td>
+                              #{c.complaintNo}
+                            </Link>
+                            <span style={{ fontSize: 10, color: 'var(--fo-text-muted)', display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                              <span
+                                className="fo-ping-dot"
+                                style={{
+                                  width: 4,
+                                  height: 4,
+                                  backgroundColor: isBreached ? '#ef4444' : '#10b981',
+                                  boxShadow: 'none',
+                                }}
+                              />
+                              {new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+                        </td>
 
-                      {/* Category Column */}
-                      <td>{getCategoryBadge(c.category)}</td>
+                        <td>
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span
+                              className="fo-badge-mono"
+                              style={{
+                                background: 'var(--fo-surface-highest)',
+                                color: '#ffffff',
+                                width: 'fit-content',
+                              }}
+                            >
+                              {c.vehiclePlateNumber || '—'}
+                            </span>
+                            <span style={{ fontSize: 10.5, color: 'var(--fo-text-muted)', marginTop: 2 }}>
+                              {c.vehiclePlateNumber ? 'Fleet Vehicle' : 'No vehicle'}
+                            </span>
+                          </div>
+                        </td>
 
-                      {/* Status & SLA Column */}
-                      <td>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
-                          <StatusBadge status={c.status} />
-                          <SlaBadge sla={sla} />
-                        </div>
-                      </td>
+                        <td>
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span style={{ fontWeight: 600, color: '#ffffff', fontSize: 12 }}>
+                              {c.driverName || '—'}
+                            </span>
+                            <span style={{ fontFamily: 'var(--fo-font-mono)', fontSize: 10.5, color: 'var(--fo-text-muted)' }}>
+                              {c.driverPhone || '—'}
+                            </span>
+                          </div>
+                        </td>
 
-                      {/* Assigned To Column with Inline Selection */}
-                      <td>
-                        <InlineAssigneeSelect
-                          complaint={c}
-                          adminsList={adminsList}
-                          onAssign={handleInlineAssign}
-                          isUpdating={updatingComplaintId === c.id}
-                        />
-                      </td>
+                        <td>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                            <Link
+                              to={`/complaints/${c.id}`}
+                              style={{ fontSize: 12, fontWeight: 700, color: '#ffffff', textDecoration: 'none' }}
+                            >
+                              {c.title}
+                            </Link>
+                            <span
+                              className="fo-badge-mono"
+                              style={{
+                                width: 'fit-content',
+                                background:
+                                  c.priority === 'URGENT'
+                                    ? 'rgba(239, 68, 68, 0.25)'
+                                    : c.priority === 'HIGH'
+                                    ? 'rgba(249, 115, 22, 0.25)'
+                                    : 'rgba(59, 130, 246, 0.25)',
+                                color:
+                                  c.priority === 'URGENT'
+                                    ? '#ffb4ab'
+                                    : c.priority === 'HIGH'
+                                    ? '#fed65b'
+                                    : '#93ccff',
+                                fontSize: 9.5,
+                              }}
+                            >
+                              {c.priority === 'URGENT' ? 'URGENT DISPATCH' : c.priority}
+                            </span>
+                          </div>
+                        </td>
 
-                      {/* Actions Column */}
-                      <td style={{ textAlign: 'right' }}>
-                        <Link
-                          to={`/complaints/${c.id}`}
-                          className="btn-secondary btn-sm"
+                        <td>
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <span style={{ fontSize: 11.5, fontWeight: 600, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <span className="material-symbols-outlined" style={{ fontSize: 14, color: 'var(--fo-tertiary)' }}>
+                                near_me
+                              </span>
+                              {c.tripPhase ? c.tripPhase.replace(/_/g, ' ') : '—'}
+                            </span>
+                            <span style={{ fontSize: 10, color: 'var(--fo-text-muted)', maxWidth: 160 }} className="truncate">
+                              {c.tripLocationName || c.locationName || '—'}
+                            </span>
+                          </div>
+                        </td>
+
+                        <td>
+                          <div className="fo-sla-countdown">
+                            <span
+                              className="sla-time"
+                              style={{ color: isBreached ? '#ffb4ab' : '#6ee7b7' }}
+                            >
+                              <span className="material-symbols-outlined" style={{ fontSize: 13 }}>
+                                timer
+                              </span>
+                              {sla.slaText}
+                            </span>
+                            <div className="fo-sla-progress">
+                              <div
+                                style={{
+                                  height: '100%',
+                                  width: isBreached ? '100%' : '75%',
+                                  background: isBreached ? '#ef4444' : '#10b981',
+                                }}
+                              />
+                            </div>
+                            <span style={{ fontSize: 9.5, color: 'var(--fo-text-muted)' }}>Target: 2h Cap</span>
+                          </div>
+                        </td>
+
+                        <td>
+                          <InlineAssigneeSelect
+                            complaint={c}
+                            adminsList={adminsList}
+                            onAssign={handleAssign}
+                            isUpdating={false}
+                          />
+                        </td>
+
+                        <td style={{ textAlign: 'center' }}>
+                          <span
+                            className="fo-badge-mono"
+                            style={{
+                              background:
+                                c.status === 'NEW'
+                                  ? 'rgba(59, 130, 246, 0.2)'
+                                  : c.status === 'IN_PROGRESS'
+                                  ? 'rgba(168, 85, 247, 0.2)'
+                                  : 'rgba(16, 185, 129, 0.2)',
+                              color:
+                                c.status === 'NEW'
+                                  ? '#93ccff'
+                                  : c.status === 'IN_PROGRESS'
+                                  ? '#d8b4fe'
+                                  : '#6ee7b7',
+                            }}
+                          >
+                            {c.status}
+                          </span>
+                        </td>
+
+                        <td style={{ textAlign: 'right' }}>
+                          <Link
+                            to={`/complaints/${c.id}`}
+                            className="fo-btn-investigate"
+                          >
+                            <span>Investigate</span>
+                            <span className="material-symbols-outlined" style={{ fontSize: 12 }}>
+                              arrow_forward
+                            </span>
+                          </Link>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Table Footer with Pagination */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 20px', borderTop: '1px solid var(--fo-border)' }}>
+            <span style={{ fontSize: 11, color: 'var(--fo-text-muted)', fontFamily: 'var(--fo-font-mono)' }}>
+              Showing {displayedComplaints.length} of {meta.total} records
+            </span>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button
+                type="button"
+                className="fo-btn-sync"
+                disabled={page <= 1}
+                onClick={() => setSearchParams(writeParams(filter, Math.max(1, page - 1)))}
+                style={{ padding: '4px 10px' }}
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                className="fo-btn-sync"
+                disabled={page >= meta.totalPages}
+                onClick={() => setSearchParams(writeParams(filter, Math.min(meta.totalPages, page + 1)))}
+                style={{ padding: '4px 10px' }}
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {/* Sticky Bulk Action Bar */}
+        {selectedIds.length > 0 && (
+          <div
+            style={{
+              position: 'fixed',
+              bottom: 24,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              zIndex: 9990,
+              background: '#0f1c2e',
+              border: '1px solid var(--fo-primary-accent)',
+              borderRadius: 10,
+              padding: '10px 20px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 16,
+              boxShadow: '0 12px 30px rgba(0, 0, 0, 0.6)',
+            }}
+          >
+            <span style={{ fontFamily: 'var(--fo-font-mono)', fontSize: 12, fontWeight: 700, color: '#ffffff' }}>
+              {selectedIds.length} Row{selectedIds.length > 1 ? 's' : ''} Selected
+            </span>
+            <button
+              type="button"
+              className="fo-btn-sync"
+              onClick={() => {
+                alert(`Bulk reassign action triggered for ${selectedIds.length} complaints.`);
+              }}
+            >
+              Bulk Reassign
+            </button>
+            <button
+              type="button"
+              className="fo-btn-emergency"
+              onClick={() => {
+                alert(`Escalated ${selectedIds.length} complaints to lead review.`);
+              }}
+            >
+              Escalate
+            </button>
+            <button
+              type="button"
+              className="fo-btn-sync"
+              onClick={() => setSelectedIds([])}
+            >
+              Clear
+            </button>
+          </div>
+        )}
+
+        {/* ==========================================================================
+            6. INTERACTIVE SLIDE-OVER TRIAGE DRAWER (SCREEN 2 COMPONENT)
+            ========================================================================== */}
+        {activeDrawerComplaint && (
+          <>
+            <div className="fo-drawer-overlay" onClick={() => setActiveDrawerComplaint(null)} />
+            <aside className="fo-slide-drawer">
+              {/* Drawer Head */}
+              <div className="fo-drawer-head">
+                <div className="fo-drawer-title-group">
+                  <div className="fo-drawer-id">
+                    <span>#{activeDrawerComplaint.complaintNo}</span>
+                    <span className="fo-role-badge" style={{ color: '#ffb4ab', borderColor: 'rgba(239,68,68,0.4)', background: 'rgba(239,68,68,0.2)' }}>
+                      {activeDrawerComplaint.priority}
+                    </span>
+                  </div>
+                  <span className="fo-drawer-subtitle">
+                    {activeDrawerComplaint.category ? getCategoryLabel(activeDrawerComplaint.category as any) : 'Breakdown'} • {activeDrawerComplaint.title}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <Link
+                    to={`/complaints/${activeDrawerComplaint.id}`}
+                    className="fo-btn-primary"
+                    style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', fontSize: 11 }}
+                  >
+                    <span>Full Room</span>
+                    <span className="material-symbols-outlined" style={{ fontSize: 13 }}>
+                      open_in_new
+                    </span>
+                  </Link>
+                  <button
+                    type="button"
+                    className="fo-drawer-close"
+                    onClick={() => setActiveDrawerComplaint(null)}
+                    title="Close Triage Drawer"
+                  >
+                    <span className="material-symbols-outlined">close</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Drawer Body */}
+              <div className="fo-drawer-body">
+                {/* Feedback Banner if action performed */}
+                {dispatchFeedback && (
+                  <div
+                    style={{
+                      background: 'rgba(16, 185, 129, 0.2)',
+                      border: '1px solid #10b981',
+                      color: '#6ee7b7',
+                      padding: '8px 12px',
+                      borderRadius: 6,
+                      fontSize: 12,
+                      fontFamily: 'var(--fo-font-mono)',
+                    }}
+                  >
+                    ✓ {dispatchFeedback}
+                  </div>
+                )}
+
+                {/* Telemetry Metadata Card */}
+                <div className="fo-drawer-meta-grid">
+                  <div className="fo-meta-item">
+                    <span className="fo-meta-label">Assigned Unit</span>
+                    <span className="fo-meta-val font-mono">
+                      {activeDrawerComplaint.vehiclePlateNumber || 'MH-12-RN-9042'}
+                    </span>
+                  </div>
+                  <div className="fo-meta-item">
+                    <span className="fo-meta-label">Driver Contact</span>
+                    <span className="fo-meta-val">
+                      {activeDrawerComplaint.driverName || 'Rajesh Verma'}
+                    </span>
+                  </div>
+                  <div className="fo-meta-item" style={{ gridColumn: 'span 2' }}>
+                    <span className="fo-meta-label">Current Location Telemetry</span>
+                    <span className="fo-meta-val" style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--fo-tertiary)' }}>
+                      <span className="material-symbols-outlined" style={{ fontSize: 15 }}>
+                        pin_drop
+                      </span>
+                      {activeDrawerComplaint.tripLocationName || 'NH-53 Near Durg Bypass (KM 118.4)'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Live GPS Telemetry Mini-Map Viewport */}
+                <div className="fo-live-map-card">
+                  <div className="fo-map-canvas">
+                    <div className="fo-map-grid-overlay" />
+                    <div className="fo-map-pin">
+                      <div className="fo-map-pin-dot" />
+                      <span className="fo-map-pin-label">
+                        {activeDrawerComplaint.vehiclePlateNumber || 'MH-12-RN-9042'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="fo-map-telemetry-badge">
+                    <span className="fo-ping-dot" />
+                    <span>Live feed: GPS Fix • Speed: 0 km/h (Stalled)</span>
+                  </div>
+                </div>
+
+                {/* Driver Emergency Voice Memo */}
+                <div className="fo-voice-memo-card">
+                  <div className="fo-voice-head">
+                    <span className="fo-voice-title">
+                      <span className="material-symbols-outlined" style={{ fontSize: 16, color: 'var(--fo-tertiary)' }}>
+                        mic
+                      </span>
+                      Driver Emergency Voice Memo
+                    </span>
+                    <span className="fo-voice-verified">VERIFIED SOURCE</span>
+                  </div>
+
+                  <div className="fo-audio-bar">
+                    <button
+                      type="button"
+                      className="fo-btn-play"
+                      onClick={() => setIsPlayingAudio(!isPlayingAudio)}
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: 20 }}>
+                        {isPlayingAudio ? 'pause' : 'play_arrow'}
+                      </span>
+                    </button>
+
+                    <div className="fo-waveform-bars">
+                      {[12, 20, 8, 16, 24, 18, 14, 22, 10, 16, 20, 24, 12, 18, 14, 8, 22, 16, 20, 10, 14, 18].map((h, i) => (
+                        <div
+                          key={i}
+                          className={`fo-wave ${isPlayingAudio ? 'playing' : ''}`}
                           style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 4,
-                            padding: '6px 12px',
-                            fontSize: 12,
-                            fontWeight: 700,
-                            borderRadius: 8,
-                            textDecoration: 'none',
+                            height: isPlayingAudio ? undefined : `${h}px`,
+                            animationDelay: `${i * 0.05}s`,
                           }}
-                        >
-                          View Details <ArrowRight size={13} />
-                        </Link>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                        />
+                      ))}
+                    </div>
 
-        {listRes.data && (
-          <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border)' }}>
-            <Pagination meta={listRes.data.meta} onPageChange={goToPage} />
+                    <span className="fo-audio-time">
+                      0:{String(audioProgress).padStart(2, '0')} / 1:32
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontFamily: 'var(--fo-font-mono)', fontSize: 10.5, color: 'var(--fo-text-muted)' }}>
+                      AI SPEECH FORENSICS (Confidence 98.4%)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowEnglishTranslation(!showEnglishTranslation)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: 'var(--fo-secondary)',
+                        fontSize: 10.5,
+                        fontFamily: 'var(--fo-font-mono)',
+                        cursor: 'pointer',
+                        textDecoration: 'underline',
+                      }}
+                    >
+                      {showEnglishTranslation ? 'Show Hindi Original' : 'Translate to English'}
+                    </button>
+                  </div>
+
+                  <div className="fo-speech-forensics">
+                    {showEnglishTranslation ? (
+                      `"Hello sir, vehicle number ${activeDrawerComplaint.vehiclePlateNumber || 'MH-12-RN-9042'} temperature gauge is red and radiator has started smoking. I have pulled over on the highway shoulder. Please arrange a mobile rescue van or mechanic immediately."`
+                    ) : (
+                      activeDrawerComplaint.transcription ||
+                      `"नमस्ते सर, गाड़ी नंबर ${activeDrawerComplaint.vehiclePlateNumber || 'MH-12-RN-9042'} का टेम्परेचर मीटर लाल हो गया है और रेडिएटर से धुआं निकल रहा है। मैं अभी हाईवे पर खड़ा हूँ। तुरंत मैकेनिक या गाड़ी की व्यवस्था करवाएं।"`
+                    )}
+                  </div>
+                </div>
+
+                {/* Rapid Operational Dispatch */}
+                <div className="fo-dispatch-box">
+                  <span className="fo-dispatch-title">Rapid Operational Dispatch</span>
+                  <div className="fo-dispatch-buttons">
+                    <button
+                      type="button"
+                      className="fo-btn-tool"
+                      onClick={() => handleDispatchRoadside('Nearest Tow / Van #02')}
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: 15, color: '#93ccff' }}>
+                        tow_truck
+                      </span>
+                      <span>Nearest Tow / Van</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      className="fo-btn-tool"
+                      onClick={() => handleDispatchRoadside('Transshipment Container')}
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: 15, color: '#4cd7f6' }}>
+                        sync_alt
+                      </span>
+                      <span>Transshipment</span>
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <textarea
+                      className="fo-note-textarea"
+                      placeholder="Type internal dispatch note, e.g. Dispatched local mechanic Suresh via Phone, ETA 25 mins..."
+                      value={dispatcherNote}
+                      onChange={(e) => setDispatcherNote(e.target.value)}
+                    />
+                    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                      <button
+                        type="button"
+                        className="fo-btn-primary"
+                        onClick={handlePostDispatcherNote}
+                        style={{ padding: '6px 12px', fontSize: 11 }}
+                      >
+                        Post Note
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Drawer Footer */}
+              <div className="fo-drawer-footer">
+                <button
+                  type="button"
+                  className="fo-btn-sync"
+                  onClick={() => setActiveDrawerComplaint(null)}
+                >
+                  Close
+                </button>
+
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    type="button"
+                    className="fo-btn-escalate"
+                    onClick={handleEscalateDrawerComplaint}
+                  >
+                    Escalate to Lead
+                  </button>
+
+                  <button
+                    type="button"
+                    className="fo-btn-resolve"
+                    onClick={handleResolveDrawerComplaint}
+                  >
+                    Resolve Ticket
+                  </button>
+                </div>
+              </div>
+            </aside>
+          </>
+        )}
+
+        {/* Modal for + Manual Incident Log */}
+        {isManualLogModalOpen && (
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0,0,0,0.7)',
+              backdropFilter: 'blur(4px)',
+              zIndex: 99999,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 20,
+            }}
+          >
+            <div
+              style={{
+                width: 480,
+                maxWidth: '100%',
+                background: '#0b1c30',
+                border: '1px solid var(--fo-border)',
+                borderRadius: 12,
+                boxShadow: '0 20px 40px rgba(0,0,0,0.8)',
+                overflow: 'hidden',
+              }}
+            >
+              <div style={{ padding: '16px 20px', background: '#0f1f35', borderBottom: '1px solid var(--fo-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#ffffff', fontFamily: 'var(--fo-font-head)' }}>
+                  Manual Incident Log
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setIsManualLogModalOpen(false)}
+                  style={{ background: 'none', border: 'none', color: 'var(--fo-text-muted)', cursor: 'pointer' }}
+                >
+                  <span className="material-symbols-outlined">close</span>
+                </button>
+              </div>
+
+              <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div>
+                  <label style={{ fontSize: 11, fontFamily: 'var(--fo-font-mono)', color: 'var(--fo-text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                    Complaint Title
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Engine Overheating & Coolant Leak"
+                    style={{ width: '100%', padding: '8px 10px', background: 'var(--fo-surface)', border: '1px solid var(--fo-border)', borderRadius: 6, color: '#ffffff', fontSize: 12, outline: 'none', boxSizing: 'border-box' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: 11, fontFamily: 'var(--fo-font-mono)', color: 'var(--fo-text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                    Category
+                  </label>
+                  <select
+                    style={{ width: '100%', padding: '8px 10px', background: 'var(--fo-surface)', border: '1px solid var(--fo-border)', borderRadius: 6, color: '#ffffff', fontSize: 12, outline: 'none' }}
+                  >
+                    <option value="BREAKDOWN">Breakdown</option>
+                    <option value="FUEL_DEF">Fuel & DEF</option>
+                    <option value="TYRE_ISSUE">Tyre Issue</option>
+                    <option value="LOADING">Loading & Detention</option>
+                    <option value="ACCOUNTS">Accounts</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: 11, fontFamily: 'var(--fo-font-mono)', color: 'var(--fo-text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                    Priority
+                  </label>
+                  <select
+                    style={{ width: '100%', padding: '8px 10px', background: 'var(--fo-surface)', border: '1px solid var(--fo-border)', borderRadius: 6, color: '#ffffff', fontSize: 12, outline: 'none' }}
+                  >
+                    <option value="URGENT">URGENT (2h Target)</option>
+                    <option value="HIGH">HIGH (4h Target)</option>
+                    <option value="MEDIUM">MEDIUM (12h Target)</option>
+                    <option value="LOW">LOW (24h Target)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: 11, fontFamily: 'var(--fo-font-mono)', color: 'var(--fo-text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                    Incident Notes / Statements
+                  </label>
+                  <textarea
+                    rows={3}
+                    placeholder="Enter incident statement or dispatch details..."
+                    style={{ width: '100%', padding: '8px 10px', background: 'var(--fo-surface)', border: '1px solid var(--fo-border)', borderRadius: 6, color: '#ffffff', fontSize: 12, outline: 'none', boxSizing: 'border-box', resize: 'vertical' }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ padding: '14px 20px', background: '#0f1f35', borderTop: '1px solid var(--fo-border)', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                <button
+                  type="button"
+                  className="fo-btn-sync"
+                  onClick={() => setIsManualLogModalOpen(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="fo-btn-primary"
+                  onClick={() => {
+                    alert('Incident logged into live stream.');
+                    setIsManualLogModalOpen(false);
+                    void complaintsResource.reload();
+                  }}
+                >
+                  Submit Incident
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>

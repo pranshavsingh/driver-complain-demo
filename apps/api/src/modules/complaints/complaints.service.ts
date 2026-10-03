@@ -415,6 +415,9 @@ export async function create(
             ...(voiceTranscription && !existingOpenComplaint.transcription
               ? { transcription: voiceTranscription }
               : {}),
+            ...((() => { const v = typeof input.latitude === 'number' ? input.latitude : parseFloat(String(input.latitude)); return isFinite(v) ? { latitude: v } : {}; })()),
+            ...((() => { const v = typeof input.longitude === 'number' ? input.longitude : parseFloat(String(input.longitude)); return isFinite(v) ? { longitude: v } : {}; })()),
+            ...(input.locationName?.trim() ? { locationName: input.locationName.trim() } : {}),
           },
         });
 
@@ -500,6 +503,26 @@ export async function create(
     });
     const complaintNo = `DC-${year}-${String(counter.value).padStart(6, '0')}`;
 
+    // Derive tripPhase: prefer explicit input, then derive from active loading record, default to YARD_IDLE
+    let derivedTripPhase: string | null = input.tripPhase || null;
+    if (!derivedTripPhase && activeLoading) {
+      const loadStatus = activeLoading.status;
+      if (loadStatus === 'REACHED' || loadStatus === 'COMPLETED') {
+        derivedTripPhase = 'AT_LOADING_PLANT';
+      } else if (loadStatus === 'TRIP_STARTED') {
+        derivedTripPhase = 'IN_TRANSIT';
+      } else if (loadStatus === 'UNLOADING') {
+        derivedTripPhase = 'AT_UNLOADING_POINT';
+      } else {
+        derivedTripPhase = 'YARD_IDLE';
+      }
+    }
+    if (!derivedTripPhase) derivedTripPhase = 'YARD_IDLE';
+
+    // Coerce latitude/longitude from FormData strings to numbers
+    const parsedLat = typeof input.latitude === 'number' ? input.latitude : parseFloat(String(input.latitude));
+    const parsedLng = typeof input.longitude === 'number' ? input.longitude : parseFloat(String(input.longitude));
+
     const complaint = await tx.complaint.create({
       data: {
         complaintNo,
@@ -511,6 +534,10 @@ export async function create(
         category: categoryToUse,
         priority: input.priority ?? 'MEDIUM',
         assignedToId: autoAssignedToId,
+        tripPhase: derivedTripPhase,
+        latitude: isFinite(parsedLat) ? parsedLat : null,
+        longitude: isFinite(parsedLng) ? parsedLng : null,
+        locationName: input.locationName?.trim() || null,
       },
     });
 

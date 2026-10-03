@@ -190,7 +190,7 @@ export function toComplaintPublic(complaint: Complaint & {
   const assignedToName = c.assignedTo ? `${c.assignedTo.firstName} ${c.assignedTo.lastName}`.trim() : null;
   const updatesCount = c._count?.updates ?? 0;
 
-  let tripPhase: ComplaintPublic['tripPhase'] = null;
+  let tripPhase: ComplaintPublic['tripPhase'] = (c as any).tripPhase || null;
   let loadingStatus: ComplaintPublic['loadingStatus'] = null;
   let loadingRecordId: string | null = null;
   let tripLocationName: string | null = null;
@@ -200,19 +200,33 @@ export function toComplaintPublic(complaint: Complaint & {
     loadingStatus = latestLoading.status;
     tripLocationName = latestLoading.locationName || latestLoading.reachedAddress || latestLoading.completedAddress || latestLoading.tripStartAddress || null;
 
-    if (latestLoading.status === 'REACHED' || latestLoading.status === 'COMPLETED') {
-      tripPhase = 'AT_LOADING_PLANT';
-    } else if (latestLoading.status === 'TRIP_STARTED') {
-      tripPhase = 'IN_TRANSIT';
-    } else if (latestLoading.status === 'UNLOADING') {
-      tripPhase = 'AT_UNLOADING_POINT';
-    } else {
-      tripPhase = 'YARD_IDLE';
+    // Only derive from loading if complaint doesn't already have a stored tripPhase
+    if (!tripPhase) {
+      if (latestLoading.status === 'REACHED' || latestLoading.status === 'COMPLETED') {
+        tripPhase = 'AT_LOADING_PLANT';
+      } else if (latestLoading.status === 'TRIP_STARTED') {
+        tripPhase = 'IN_TRANSIT';
+      } else if (latestLoading.status === 'UNLOADING') {
+        tripPhase = 'AT_UNLOADING_POINT';
+      } else {
+        tripPhase = 'YARD_IDLE';
+      }
     }
   }
 
   // Needs action = NEW complaint with no assignee OR no admin updates yet
   const needsAction = complaint.status === 'NEW' && (!complaint.assignedToId || updatesCount <= 1);
+
+  const effectiveLocationName =
+    (c as any).locationName ||
+    tripLocationName ||
+    (latestLoading
+      ? latestLoading.locationName ||
+        latestLoading.reachedAddress ||
+        latestLoading.completedAddress ||
+        latestLoading.tripStartAddress ||
+        null
+      : null);
 
   return {
     id: complaint.id,
@@ -233,7 +247,10 @@ export function toComplaintPublic(complaint: Complaint & {
     tripPhase,
     loadingStatus,
     loadingRecordId,
-    tripLocationName,
+    tripLocationName: effectiveLocationName,
+    latitude: (c as any).latitude ?? null,
+    longitude: (c as any).longitude ?? null,
+    locationName: effectiveLocationName,
     needsAction,
     updatesCount,
     assignedToId: complaint.assignedToId ?? null,
