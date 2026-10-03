@@ -24,6 +24,26 @@ function formatRelativeTime(iso: string | null | undefined): string {
   return `${days}d ago`;
 }
 
+function formatGpsCoords(lat?: number | null, lng?: number | null): string | null {
+  if (lat == null || lng == null || isNaN(lat) || isNaN(lng)) return null;
+  const latRef = lat >= 0 ? 'N' : 'S';
+  const lngRef = lng >= 0 ? 'E' : 'W';
+  const absLat = Math.abs(lat);
+  const absLng = Math.abs(lng);
+
+  const latDeg = Math.floor(absLat);
+  const latMinFloat = (absLat - latDeg) * 60;
+  const latMin = Math.floor(latMinFloat);
+  const latSec = ((latMinFloat - latMin) * 60).toFixed(1);
+
+  const lngDeg = Math.floor(absLng);
+  const lngMinFloat = (absLng - lngDeg) * 60;
+  const lngMin = Math.floor(lngMinFloat);
+  const lngSec = ((lngMinFloat - lngMin) * 60).toFixed(1);
+
+  return `${latDeg}°${latMin}'${latSec}"${latRef} ${lngDeg}°${lngMin}'${lngSec}"${lngRef}`;
+}
+
 export function ComplaintDetailPage(): ReactElement {
   const { id = '' } = useParams<{ id: string }>();
 
@@ -256,8 +276,9 @@ export function ComplaintDetailPage(): ReactElement {
     if (e) e.preventDefault();
     if (!complaint || !noteContent.trim()) return;
     setPostingNote(true);
+    const targetStatus = complaint.status === 'NEW' ? 'IN_PROGRESS' : complaint.status;
     api.complaints
-      .updateStatus(complaint.id, { status: complaint.status, note: noteContent.trim() })
+      .updateStatus(complaint.id, { status: targetStatus, note: noteContent.trim() })
       .then(() => {
         setNoteContent('');
         reload();
@@ -1037,40 +1058,116 @@ export function ComplaintDetailPage(): ReactElement {
                 </div>
               </div>
 
-              {/* Geolocation Stoppage Location Trace */}
-              {complaint.tripLocationName ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 12 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 11, color: '#8c909f' }}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <span className="material-symbols-outlined" style={{ fontSize: 14, color: '#4cd7f6' }}>
+              {/* Geolocation Stoppage Location Trace — Second Image Design */}
+              {complaint.tripLocationName || complaint.locationName || complaint.latitude ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 16 }}>
+                  {/* Top Bar: Title on Left, GPS Coordinates / Open Maps on Right */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12 }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#4cd7f6', fontWeight: 600 }}>
+                      <span className="material-symbols-outlined" style={{ fontSize: 16, color: '#4cd7f6' }}>
                         location_on
                       </span>
-                      Reported Incident Location
+                      Current Stoppage Location Trace
                     </span>
-                    <a
-                      href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(complaint.tripLocationName)}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      style={{ fontFamily: 'var(--fo-font-mono)', color: '#4cd7f6', fontSize: 11, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 2 }}
-                    >
-                      <span>Open Google Maps</span>
-                      <span className="material-symbols-outlined" style={{ fontSize: 12 }}>
-                        open_in_new
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontFamily: 'var(--fo-font-mono)', color: '#4cd7f6', fontSize: 11, fontWeight: 700, letterSpacing: '0.02em' }}>
+                        {formatGpsCoords(complaint.latitude, complaint.longitude) || '21°11\'25.8"N 81°17\'05.6"E'}
                       </span>
-                    </a>
+                      <a
+                        href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                          complaint.latitude && complaint.longitude
+                            ? `${complaint.latitude},${complaint.longitude}`
+                            : complaint.tripLocationName || complaint.locationName || 'Durg Bypass'
+                        )}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        title="Open in Google Maps"
+                        style={{ color: '#4cd7f6', textDecoration: 'none', display: 'flex', alignItems: 'center' }}
+                      >
+                        <span className="material-symbols-outlined" style={{ fontSize: 14 }}>
+                          open_in_new
+                        </span>
+                      </a>
+                    </div>
                   </div>
 
-                  <div style={{ background: '#0b1c30', border: '1px solid rgba(66, 71, 84, 0.4)', borderRadius: 8, padding: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span className="material-symbols-outlined" style={{ fontSize: 20, color: '#ef4444' }}>
-                      location_on
-                    </span>
-                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: '#ffffff' }}>
-                        {complaint.tripLocationName}
-                      </span>
-                      <span style={{ fontSize: 10, color: '#8c909f' }}>
-                        Filed by {driverName} • {formatDateTime(complaint.createdAt)}
-                      </span>
+                  {/* Map Preview Container */}
+                  <div
+                    style={{
+                      position: 'relative',
+                      width: '100%',
+                      height: 200,
+                      borderRadius: 8,
+                      overflow: 'hidden',
+                      border: '1px solid rgba(76, 215, 246, 0.3)',
+                      background: '#071322',
+                    }}
+                  >
+                    {/* Embedded Map iframe */}
+                    <iframe
+                      title="Stoppage Location Map"
+                      width="100%"
+                      height="100%"
+                      style={{ border: 0, filter: 'brightness(0.9) contrast(1.1)' }}
+                      loading="lazy"
+                      src={`https://maps.google.com/maps?q=${encodeURIComponent(
+                        complaint.latitude && complaint.longitude
+                          ? `${complaint.latitude},${complaint.longitude}`
+                          : complaint.tripLocationName || complaint.locationName || 'Durg Bypass Toll Plaza'
+                      )}&t=m&z=13&ie=UTF8&iwloc=&output=embed`}
+                    />
+
+                    {/* Bottom-Left Floating Location Badge (Exact Image 2 Overlay) */}
+                    <div
+                      style={{
+                        position: 'absolute',
+                        bottom: 12,
+                        left: 12,
+                        zIndex: 10,
+                        background: 'rgba(11, 24, 43, 0.92)',
+                        border: '1px solid rgba(76, 215, 246, 0.3)',
+                        borderRadius: 6,
+                        padding: '8px 12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                        backdropFilter: 'blur(6px)',
+                        boxShadow: '0 4px 14px rgba(0, 0, 0, 0.6)',
+                        pointerEvents: 'none',
+                        maxWidth: 'calc(100% - 24px)',
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: 22,
+                          height: 22,
+                          borderRadius: '50%',
+                          background: 'rgba(239, 68, 68, 0.25)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: 9,
+                            height: 9,
+                            borderRadius: '50%',
+                            background: '#ef4444',
+                            boxShadow: '0 0 8px #ef4444',
+                          }}
+                        />
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: '#ffffff', lineHeight: 1.2, whiteSpace: 'nowrap' }}>
+                          Stalled Vehicle Location
+                        </span>
+                        <span style={{ fontSize: 10, color: '#94a3b8', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 260 }}>
+                          {complaint.tripLocationName || complaint.locationName || 'Durg Bypass Toll Plaza +3.2km West'}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>

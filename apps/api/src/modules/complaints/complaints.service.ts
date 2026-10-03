@@ -1037,7 +1037,12 @@ export async function updateStatus(
   }
 
   const from = existing.status;
-  const to = input.status;
+  let to = input.status;
+
+  // Auto-transition status from NEW to IN_PROGRESS when adding an operational note
+  if (from === 'NEW' && input.note && input.note.trim().length > 0 && to === 'NEW') {
+    to = 'IN_PROGRESS';
+  }
 
   // RESOLVED stamps the resolution time; reopening clears it; CLOSED keeps it.
   let resolvedAt: Date | null = existing.resolvedAt;

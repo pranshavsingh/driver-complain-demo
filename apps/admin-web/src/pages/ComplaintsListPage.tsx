@@ -13,6 +13,7 @@ import { useApiResource } from '../hooks/useApiResource';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { useRealtime } from '../realtime/RealtimeProvider';
 import { computeSlaInfo } from '../lib/format';
+import { useCategorySlaMap } from '../hooks/useCategorySlaMap';
 import { getCategoryLabel } from './UsersPage';
 
 const PAGE_SIZE = 15;
@@ -226,6 +227,7 @@ function InlineAssigneeSelect({
 export function ComplaintsListPage(): ReactElement {
   const { user } = useAuth();
   const { subscribeCustom } = useRealtime();
+  const { slaMap } = useCategorySlaMap();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const userCategories = useMemo(() => getUserCategories(user), [user]);
@@ -242,7 +244,7 @@ export function ComplaintsListPage(): ReactElement {
   const debouncedSearch = useDebouncedValue(searchDraft, 300);
 
   // Status Segmented Filter state
-  const [activeSegment, setActiveSegment] = useState<'ALL' | 'URGENT' | 'UNASSIGNED' | 'IN_TRANSIT' | 'RESOLVED'>('ALL');
+  const [activeSegment, setActiveSegment] = useState<'ALL' | 'UNASSIGNED' | 'IN_PROGRESS' | 'RESOLVED'>('ALL');
 
   // Multi-selection state
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -295,10 +297,12 @@ export function ComplaintsListPage(): ReactElement {
   // Dynamic Real Metrics
   const totalComplaintsCount = allComplaintsResource.data?.meta?.total || metricsComplaints.length;
   const needActionCount = useMemo(() => {
-    return metricsComplaints.filter(
-      (c) => c.status === 'NEW' || !c.assignedToId || c.assignmentStatus === 'PENDING',
-    ).length;
-  }, [metricsComplaints]);
+    return metricsComplaints.filter((c) => {
+      if (c.status === 'RESOLVED' || c.status === 'CLOSED' || c.status === 'IN_PROGRESS') return false;
+      const sla = computeSlaInfo(c.createdAt, c.category, c.resolvedAt, slaMap, c.priority);
+      return sla.isOverdue || Boolean(c.needsAction);
+    }).length;
+  }, [metricsComplaints, slaMap]);
 
   const inProcessCount = useMemo(() => {
     return metricsComplaints.filter((c) => c.status === 'IN_PROGRESS').length;
@@ -367,21 +371,20 @@ export function ComplaintsListPage(): ReactElement {
       if (isDeptAdmin && !userCategories.includes(c.category as any)) {
         return false;
       }
-      if (activeSegment === 'URGENT') {
-        return (c.priority === 'URGENT' || c.priority === 'HIGH') && c.status !== 'RESOLVED' && c.status !== 'CLOSED';
-      }
       if (activeSegment === 'UNASSIGNED') {
-        return !c.assignedToId || c.assignmentStatus === 'PENDING';
+        if (c.status === 'RESOLVED' || c.status === 'CLOSED' || c.status === 'IN_PROGRESS') return false;
+        const sla = computeSlaInfo(c.createdAt, c.category, c.resolvedAt, slaMap, c.priority);
+        return sla.isOverdue || Boolean(c.needsAction);
       }
-      if (activeSegment === 'IN_TRANSIT') {
-        return c.tripPhase === 'IN_TRANSIT' && c.status !== 'RESOLVED';
+      if (activeSegment === 'IN_PROGRESS') {
+        return c.status === 'IN_PROGRESS';
       }
       if (activeSegment === 'RESOLVED') {
         return c.status === 'RESOLVED' || c.status === 'CLOSED';
       }
       return true;
     });
-  }, [complaints, isDeptAdmin, userCategories, activeSegment]);
+  }, [complaints, isDeptAdmin, userCategories, activeSegment, slaMap]);
 
   // Row selection
   const handleSelectAll = (checked: boolean) => {
@@ -517,7 +520,7 @@ export function ComplaintsListPage(): ReactElement {
               <span className="material-symbols-outlined" style={{ fontSize: 16, color: 'var(--fo-tertiary)' }}>
                 file_download
               </span>
-              <span>Export .json</span>
+              <span>Export Excel</span>
             </button>
 
             <button
@@ -595,7 +598,7 @@ export function ComplaintsListPage(): ReactElement {
             className="fo-kpi-card"
             style={{ padding: '14px 16px', cursor: 'pointer' }}
             onClick={() => {
-              updateFilterField('status', 'IN_PROGRESS');
+              setActiveSegment('IN_PROGRESS');
             }}
           >
             <div className="fo-kpi-top">
@@ -659,44 +662,33 @@ export function ComplaintsListPage(): ReactElement {
 
           <button
             type="button"
-            className={`fo-seg-btn ${activeSegment === 'URGENT' ? 'active' : ''}`}
-            onClick={() => setActiveSegment('URGENT')}
-            style={activeSegment === 'URGENT' ? { background: '#ef4444', borderColor: '#ef4444' } : { color: '#ffb4ab' }}
-          >
-            <span className="material-symbols-outlined" style={{ fontSize: 14 }}>
-              notification_important
-            </span>
-            <span>Urgent / Safety</span>
-            <span className="fo-seg-pill" style={{ background: 'rgba(239, 68, 68, 0.4)' }}>
-              {complaints.filter((c) => c.priority === 'URGENT').length || 6}
-            </span>
-          </button>
-
-          <button
-            type="button"
             className={`fo-seg-btn ${activeSegment === 'UNASSIGNED' ? 'active' : ''}`}
             onClick={() => setActiveSegment('UNASSIGNED')}
           >
             <span className="material-symbols-outlined" style={{ fontSize: 14, color: 'var(--fo-secondary)' }}>
               assignment_late
             </span>
-            <span>Needs Action / Unassigned</span>
+            <span>Needs Action</span>
             <span className="fo-seg-pill">
-              {complaints.filter((c) => !c.assignedToId).length || 9}
+              {complaints.filter((c) => {
+                if (c.status === 'RESOLVED' || c.status === 'CLOSED' || c.status === 'IN_PROGRESS') return false;
+                const sla = computeSlaInfo(c.createdAt, c.category, c.resolvedAt, slaMap, c.priority);
+                return sla.isOverdue || Boolean(c.needsAction);
+              }).length}
             </span>
           </button>
 
           <button
             type="button"
-            className={`fo-seg-btn ${activeSegment === 'IN_TRANSIT' ? 'active' : ''}`}
-            onClick={() => setActiveSegment('IN_TRANSIT')}
+            className={`fo-seg-btn ${activeSegment === 'IN_PROGRESS' ? 'active' : ''}`}
+            onClick={() => setActiveSegment('IN_PROGRESS')}
           >
             <span className="material-symbols-outlined" style={{ fontSize: 14, color: 'var(--fo-tertiary)' }}>
-              near_me
+              engineering
             </span>
-            <span>Active In-Transit</span>
+            <span>In Process</span>
             <span className="fo-seg-pill">
-              {complaints.filter((c) => c.tripPhase === 'IN_TRANSIT').length || 18}
+              {complaints.filter((c) => c.status === 'IN_PROGRESS').length}
             </span>
           </button>
 
@@ -738,22 +730,16 @@ export function ComplaintsListPage(): ReactElement {
             >
               <option value="">All Categories (Breakdown, Tyre, Fuel, Loading, Accounts)</option>
               {(!isDeptAdmin || userCategories.includes('BREAKDOWN')) && (
-                <option value="BREAKDOWN">Breakdown & Mechanical</option>
+                <option value="BREAKDOWN">Breakdown</option>
               )}
               {(!isDeptAdmin || userCategories.includes('TYRE_ISSUE')) && (
-                <option value="TYRE_ISSUE">Tyre Puncture & Replacement</option>
+                <option value="TYRE_ISSUE">Tyre</option>
               )}
               {(!isDeptAdmin || userCategories.includes('FUEL_DEF')) && (
                 <option value="FUEL_DEF">Fuel & DEF Issues</option>
               )}
-              {(!isDeptAdmin || userCategories.includes('LOADING')) && (
-                <option value="LOADING">Loading Bay & Gate Detention</option>
-              )}
               {(!isDeptAdmin || userCategories.includes('ACCOUNTS')) && (
-                <option value="ACCOUNTS">Accounts & Fastag</option>
-              )}
-              {(!isDeptAdmin || userCategories.includes('VEHICLE_MAINTENANCE')) && (
-                <option value="VEHICLE_MAINTENANCE">Vehicle Maintenance</option>
+                <option value="ACCOUNTS">Accounts</option>
               )}
             </select>
 
@@ -780,7 +766,7 @@ export function ComplaintsListPage(): ReactElement {
               <option value="AT_LOADING_PLANT">At Plant / Loading</option>
               <option value="IN_TRANSIT">In-Transit Highway</option>
               <option value="AT_UNLOADING_POINT">At Destination / Unloading</option>
-              <option value="YARD_IDLE">Yard Holding</option>
+              <option value="YARD_IDLE">Parking / Depot</option>
             </select>
 
             {/* Reset Button */}
@@ -835,8 +821,35 @@ export function ComplaintsListPage(): ReactElement {
                 ) : (
                   displayedComplaints.map((c) => {
                     const isSelected = selectedIds.includes(c.id);
-                    const sla = computeSlaInfo(c.createdAt, c.category, c.resolvedAt, null, c.priority);
+                    const sla = computeSlaInfo(c.createdAt, c.category, c.resolvedAt, slaMap, c.priority);
                     const isBreached = sla.isOverdue;
+
+                    const targetHours = sla.targetHours || 12;
+                    const targetMs = targetHours * 60 * 60 * 1000;
+                    const createdMs = new Date(c.createdAt).getTime();
+                    const endMs = c.resolvedAt ? new Date(c.resolvedAt).getTime() : Date.now();
+                    const elapsedMs = Math.max(0, endMs - createdMs);
+
+                    let slaPercent = 100;
+                    if (isBreached || c.resolvedAt) {
+                      slaPercent = 100;
+                    } else {
+                      slaPercent = Math.min(100, Math.max(5, Math.round((elapsedMs / targetMs) * 100)));
+                    }
+
+                    const slaTextColor = isBreached
+                      ? '#ffb4ab'
+                      : sla.status === 'WARNING'
+                        ? '#fde047'
+                        : '#6ee7b7';
+
+                    const slaBarColor = isBreached
+                      ? '#ef4444'
+                      : sla.status === 'WARNING'
+                        ? '#f59e0b'
+                        : '#10b981';
+
+                    const isNeedAction = c.status !== 'RESOLVED' && c.status !== 'CLOSED' && c.status !== 'IN_PROGRESS' && (isBreached || Boolean(c.needsAction));
 
                     return (
                       <tr
@@ -860,17 +873,37 @@ export function ComplaintsListPage(): ReactElement {
                             >
                               #{c.complaintNo}
                             </Link>
-                            <span style={{ fontSize: 10, color: 'var(--fo-text-muted)', display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
-                              <span
-                                className="fo-ping-dot"
-                                style={{
-                                  width: 4,
-                                  height: 4,
-                                  backgroundColor: isBreached ? '#ef4444' : '#10b981',
-                                  boxShadow: 'none',
-                                }}
-                              />
-                              {new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            <span style={{ fontSize: 10, color: 'var(--fo-text-muted)', display: 'flex', alignItems: 'center', gap: 6, marginTop: 2, flexWrap: 'wrap' }}>
+                              <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <span
+                                  className="fo-ping-dot"
+                                  style={{
+                                    width: 4,
+                                    height: 4,
+                                    backgroundColor: isBreached ? '#ef4444' : '#10b981',
+                                    boxShadow: 'none',
+                                  }}
+                                />
+                                {new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                              {isNeedAction && (
+                                <span
+                                  className="fo-badge-mono"
+                                  style={{
+                                    background: 'rgba(239, 68, 68, 0.25)',
+                                    color: '#ffb4ab',
+                                    border: '1px solid rgba(239, 68, 68, 0.5)',
+                                    fontSize: 9,
+                                    padding: '1px 5px',
+                                    fontWeight: 700,
+                                    borderRadius: 4,
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.5px',
+                                  }}
+                                >
+                                  NEED ACTION
+                                </span>
+                              )}
                             </span>
                           </div>
                         </td>
@@ -920,14 +953,14 @@ export function ComplaintsListPage(): ReactElement {
                                   c.priority === 'URGENT'
                                     ? 'rgba(239, 68, 68, 0.25)'
                                     : c.priority === 'HIGH'
-                                    ? 'rgba(249, 115, 22, 0.25)'
-                                    : 'rgba(59, 130, 246, 0.25)',
+                                      ? 'rgba(249, 115, 22, 0.25)'
+                                      : 'rgba(59, 130, 246, 0.25)',
                                 color:
                                   c.priority === 'URGENT'
                                     ? '#ffb4ab'
                                     : c.priority === 'HIGH'
-                                    ? '#fed65b'
-                                    : '#93ccff',
+                                      ? '#fed65b'
+                                      : '#93ccff',
                                 fontSize: 9.5,
                               }}
                             >
@@ -954,7 +987,7 @@ export function ComplaintsListPage(): ReactElement {
                           <div className="fo-sla-countdown">
                             <span
                               className="sla-time"
-                              style={{ color: isBreached ? '#ffb4ab' : '#6ee7b7' }}
+                              style={{ color: slaTextColor }}
                             >
                               <span className="material-symbols-outlined" style={{ fontSize: 13 }}>
                                 timer
@@ -965,12 +998,13 @@ export function ComplaintsListPage(): ReactElement {
                               <div
                                 style={{
                                   height: '100%',
-                                  width: isBreached ? '100%' : '75%',
-                                  background: isBreached ? '#ef4444' : '#10b981',
+                                  width: `${slaPercent}%`,
+                                  background: slaBarColor,
+                                  transition: 'width 0.3s ease',
                                 }}
                               />
                             </div>
-                            <span style={{ fontSize: 9.5, color: 'var(--fo-text-muted)' }}>Target: 2h Cap</span>
+                            <span style={{ fontSize: 9.5, color: 'var(--fo-text-muted)' }}>Target: {targetHours}h SLA</span>
                           </div>
                         </td>
 
@@ -991,14 +1025,14 @@ export function ComplaintsListPage(): ReactElement {
                                 c.status === 'NEW'
                                   ? 'rgba(59, 130, 246, 0.2)'
                                   : c.status === 'IN_PROGRESS'
-                                  ? 'rgba(168, 85, 247, 0.2)'
-                                  : 'rgba(16, 185, 129, 0.2)',
+                                    ? 'rgba(168, 85, 247, 0.2)'
+                                    : 'rgba(16, 185, 129, 0.2)',
                               color:
                                 c.status === 'NEW'
                                   ? '#93ccff'
                                   : c.status === 'IN_PROGRESS'
-                                  ? '#d8b4fe'
-                                  : '#6ee7b7',
+                                    ? '#d8b4fe'
+                                    : '#6ee7b7',
                             }}
                           >
                             {c.status}
