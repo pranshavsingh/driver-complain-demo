@@ -8,6 +8,7 @@ import {
   SparePartListQuerySchema,
   CreateWarehouseSchema,
   UpdateWarehouseSchema,
+  ConfirmReturnItemsSchema,
 } from '@driver-complaint/shared-types';
 import * as sparePartsService from './spare-parts.service';
 import * as warehousesService from './warehouses.service';
@@ -100,6 +101,18 @@ export async function rejectRequest(req: Request<{ id: string }>, res: Response)
   );
   sendSuccess(res, result);
 }
+
+export async function confirmReturnItems(req: Request<{ id: string }>, res: Response): Promise<void> {
+  if (!req.user) throw ApiError.unauthorized();
+  const input = ConfirmReturnItemsSchema.parse(req.body);
+  const result = await sparePartsService.confirmReturnItems(
+    req.user.id,
+    req.params.id,
+    input,
+  );
+  sendSuccess(res, result);
+}
+
 
 export async function getStats(req: Request, res: Response): Promise<void> {
   if (!req.user) throw ApiError.unauthorized();

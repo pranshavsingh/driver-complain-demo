@@ -24,6 +24,9 @@ const COLUMNS: Partial<ExcelJS.Column>[] = [
   { header: 'Issued Part Name', key: 'issuedPartName', width: 24 },
   { header: 'Issued Part No / S.N.', key: 'issuedPartNo', width: 22 },
   { header: 'Issued Qty', key: 'issuedQty', width: 12 },
+  { header: 'Issued Items (Detail)', key: 'issuedItemsList', width: 40 },
+  { header: 'Items Returned', key: 'itemsReturned', width: 40 },
+  { header: 'Last Return Confirmed At', key: 'lastReturnAt', width: 22, style: { numFmt: DATE_FORMAT } },
   { header: 'Returned Part No (Old)', key: 'returnedPartNo', width: 24 },
   { header: 'Returned Condition', key: 'returnedPartCondition', width: 20 },
   { header: 'Approved / Issued By', key: 'approvedBy', width: 22 },
@@ -48,6 +51,19 @@ function toCells(row: SparePartRequestPublic): Record<string, any> {
   const user = row.driver?.user;
   const approvedUser = row.approvedBy;
 
+  // Build structured item columns from issuedItems JSON
+  const items = row.issuedItems ?? [];
+  const issuedItemsList = items.length > 0
+    ? items.map((it, i) => `${i + 1}. ${it.name} x${it.quantity}${it.serialNumber ? ` (S/N: ${it.serialNumber})` : ''}`).join('\n')
+    : '';
+  const itemsReturned = items.length > 0
+    ? items.map((it, i) => `${i + 1}. ${it.name}: ${it.returned ? '✓ Returned' : '✗ Pending'}`).join('\n')
+    : '';
+  const lastReturnTimestamps = items.filter((it) => it.returned && it.returnedAt).map((it) => it.returnedAt as string);
+  const lastReturnAt = lastReturnTimestamps.length > 0
+    ? new Date(lastReturnTimestamps.sort().at(-1)!)
+    : null;
+
   return {
     requestNo: row.requestNo,
     createdAt: row.createdAt ? new Date(row.createdAt) : null,
@@ -65,6 +81,9 @@ function toCells(row: SparePartRequestPublic): Record<string, any> {
     issuedPartName: row.issuedPartName ?? '',
     issuedPartNo: row.issuedPartNo ?? '',
     issuedQty: row.issuedQty ?? '',
+    issuedItemsList,
+    itemsReturned,
+    lastReturnAt,
     returnedPartNo: row.returnedPartNo ?? '',
     returnedPartCondition: row.returnedPartCondition ?? '',
     approvedBy: approvedUser ? `${approvedUser.firstName} ${approvedUser.lastName} (${approvedUser.employeeId})` : '',

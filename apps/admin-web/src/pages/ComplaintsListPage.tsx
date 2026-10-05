@@ -766,7 +766,7 @@ export function ComplaintsListPage(): ReactElement {
               <option value="AT_LOADING_PLANT">At Plant / Loading</option>
               <option value="IN_TRANSIT">In-Transit Highway</option>
               <option value="AT_UNLOADING_POINT">At Destination / Unloading</option>
-              <option value="YARD_IDLE">Parking / Depot</option>
+              <option value="YARD_IDLE">Parking</option>
             </select>
 
             {/* Reset Button */}

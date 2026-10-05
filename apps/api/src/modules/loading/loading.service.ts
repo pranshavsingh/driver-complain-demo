@@ -684,27 +684,32 @@ export async function getDriverMonthlyTripSummaries(opts: {
   month?: number;
   driverId?: string;
   search?: string;
+  status?: string;
 }): Promise<Record<string, unknown>[]> {
-  const currentYear = opts.year || new Date().getFullYear();
+  let fromDate: Date | undefined;
+  let toDate: Date | undefined;
 
-  let fromDate: Date;
-  let toDate: Date;
-
-  if (opts.month && opts.month >= 1 && opts.month <= 12) {
+  if (opts.year) {
+    if (opts.month && opts.month >= 1 && opts.month <= 12) {
+      fromDate = new Date(opts.year, opts.month - 1, 1, 0, 0, 0, 0);
+      toDate = new Date(opts.year, opts.month, 0, 23, 59, 59, 999);
+    } else {
+      fromDate = new Date(opts.year, 0, 1, 0, 0, 0, 0);
+      toDate = new Date(opts.year, 11, 31, 23, 59, 59, 999);
+    }
+  } else if (opts.month && opts.month >= 1 && opts.month <= 12) {
+    const currentYear = new Date().getFullYear();
     fromDate = new Date(currentYear, opts.month - 1, 1, 0, 0, 0, 0);
     toDate = new Date(currentYear, opts.month, 0, 23, 59, 59, 999);
-  } else {
-    fromDate = new Date(currentYear, 0, 1, 0, 0, 0, 0);
-    toDate = new Date(currentYear, 11, 31, 23, 59, 59, 999);
   }
 
   const search = opts.search?.trim();
 
   const records = await prisma.loadingRecord.findMany({
     where: {
-      status: { in: ['TRIP_COMPLETED', 'COMPLETED', 'UNLOADING'] },
-      reachedAt: { gte: fromDate, lte: toDate },
+      ...(fromDate && toDate ? { reachedAt: { gte: fromDate, lte: toDate } } : {}),
       ...(opts.driverId ? { driverId: opts.driverId } : {}),
+      ...(opts.status ? { status: opts.status as any } : {}),
       ...(search
         ? {
             OR: [

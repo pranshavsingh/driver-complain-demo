@@ -10,16 +10,17 @@ import {
   Edit2,
   Trash2,
   CheckCircle2,
-  AlertCircle,
   Clock,
   ShieldAlert,
+  ShieldCheck,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Check,
   UserX,
 } from '../components/Icons';
 import * as api from '../api/endpoints';
 import { ErrorBanner } from '../components/ErrorBanner';
-import { Pagination } from '../components/Pagination';
 import { useApiResource } from '../hooks/useApiResource';
 import { useAuth, isSuperAdmin } from '../auth/AuthContext';
 import { useRealtime } from '../realtime/RealtimeProvider';
@@ -32,13 +33,15 @@ const WHEEL_OPTIONS = [
   '14 Wheeler',
   '16 Wheeler',
   '18 Wheeler',
-  '22 Wheeler',
+  '22 Wheeler Heavy',
 ];
 
 const AGREEMENT_STATUS_OPTIONS = [
-  { value: 'FMS Pack 1', label: 'FMS Pack 1', colorVar: '#0284c7', bgVar: 'rgba(2, 132, 199, 0.12)', borderVar: 'rgba(2, 132, 199, 0.3)' },
-  { value: 'Platinum Plus', label: 'Platinum Plus', colorVar: '#9333ea', bgVar: 'rgba(147, 51, 234, 0.12)', borderVar: 'rgba(147, 51, 234, 0.3)' },
-  { value: 'Platinum:ComprehensiveCovrg', label: 'Platinum:ComprehensiveCovrg', colorVar: '#059669', bgVar: 'rgba(5, 150, 105, 0.12)', borderVar: 'rgba(5, 150, 105, 0.3)' },
+  { value: 'ACTIVE', label: 'ACTIVE', colorVar: 'var(--fo-success)', bgVar: 'rgba(16, 185, 129, 0.12)', borderVar: 'rgba(16, 185, 129, 0.3)' },
+  { value: 'FMS Pack 1', label: 'FMS Pack 1', colorVar: 'var(--fo-tertiary)', bgVar: 'rgba(76, 215, 246, 0.12)', borderVar: 'rgba(76, 215, 246, 0.3)' },
+  { value: 'Platinum Plus', label: 'Platinum Plus', colorVar: '#a855f7', bgVar: 'rgba(168, 85, 247, 0.12)', borderVar: 'rgba(168, 85, 247, 0.3)' },
+  { value: 'Platinum:ComprehensiveCovrg', label: 'Platinum:ComprehensiveCovrg', colorVar: '#06b6d4', bgVar: 'rgba(6, 182, 212, 0.12)', borderVar: 'rgba(6, 182, 212, 0.3)' },
+  { value: 'LEASED', label: 'LEASED', colorVar: 'var(--fo-warning)', bgVar: 'rgba(245, 158, 11, 0.12)', borderVar: 'rgba(245, 158, 11, 0.3)' },
 ];
 
 /** Inline Searchable Driver Dropdown Selector Component */
@@ -152,35 +155,37 @@ function InlineDriverSelect({
         style={{
           display: 'inline-flex',
           alignItems: 'center',
-          gap: 8,
-          padding: '6px 12px',
-          borderRadius: 8,
-          background: vehicle.driverName ? 'var(--surface)' : 'rgba(16, 185, 129, 0.12)',
-          border: vehicle.driverName ? '1px solid var(--border)' : '1px solid rgba(16, 185, 129, 0.35)',
-          color: vehicle.driverName ? 'var(--text)' : 'var(--success-text)',
+          justifyContent: 'space-between',
+          gap: 6,
+          padding: '4px 10px',
+          borderRadius: 6,
+          background: vehicle.driverName ? 'var(--fo-surface-high)' : 'rgba(76, 215, 246, 0.12)',
+          border: vehicle.driverName ? '1px solid var(--fo-border-subtle)' : '1px solid rgba(76, 215, 246, 0.3)',
+          color: vehicle.driverName ? 'var(--fo-text)' : 'var(--fo-tertiary)',
           cursor: isUpdating ? 'wait' : 'pointer',
-          fontSize: 13,
-          fontWeight: 700,
+          fontSize: 12,
+          fontWeight: 600,
           transition: 'all 0.15s ease',
           outline: 'none',
+          whiteSpace: 'nowrap',
         }}
         title="Click to assign, change or unassign driver"
       >
         {isUpdating ? (
-          <span style={{ fontSize: 12, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <RotateCw size={12} className="spin" /> Updating…
+          <span style={{ fontSize: 11, color: 'var(--fo-text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <RotateCw size={11} className="spin" /> Updating…
           </span>
         ) : vehicle.driverName ? (
-          <>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <span
               style={{
-                width: 22,
-                height: 22,
+                width: 18,
+                height: 18,
                 borderRadius: '50%',
-                background: 'var(--accent)',
-                color: '#ffffff',
-                fontSize: 11,
-                fontWeight: 800,
+                background: 'var(--fo-primary-container)',
+                color: 'var(--fo-on-primary-container)',
+                fontSize: 10,
+                fontWeight: 700,
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -188,15 +193,15 @@ function InlineDriverSelect({
             >
               {vehicle.driverName[0]}
             </span>
-            <span style={{ fontWeight: 700 }}>{vehicle.driverName}</span>
-            <ChevronDown size={14} style={{ color: 'var(--muted)', marginLeft: 2 }} />
-          </>
+            <span style={{ fontWeight: 600 }}>{vehicle.driverName}</span>
+            <ChevronDown size={13} style={{ color: 'var(--fo-text-muted)' }} />
+          </div>
         ) : (
-          <>
-            <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--success-text)' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--fo-tertiary)' }} />
             <span>Free / Unassigned</span>
-            <ChevronDown size={14} style={{ color: 'var(--success-text)', marginLeft: 2 }} />
-          </>
+            <ChevronDown size={13} style={{ color: 'var(--fo-tertiary)' }} />
+          </div>
         )}
       </button>
 
@@ -211,10 +216,10 @@ function InlineDriverSelect({
               left: coords.left,
               zIndex: 999999,
               width: 300,
-              backgroundColor: 'var(--surface)',
-              border: '1px solid var(--border)',
+              backgroundColor: 'var(--fo-surface-high)',
+              border: '1px solid var(--fo-border)',
               borderRadius: 12,
-              boxShadow: '0 16px 36px -4px rgba(0, 0, 0, 0.6), 0 8px 16px -4px rgba(0, 0, 0, 0.4)',
+              boxShadow: '0 16px 36px -4px rgba(0, 0, 0, 0.7), 0 8px 16px -4px rgba(0, 0, 0, 0.5)',
               overflow: 'hidden',
               display: 'flex',
               flexDirection: 'column',
@@ -222,19 +227,19 @@ function InlineDriverSelect({
             }}
           >
             {/* Search Box Header */}
-            <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border)', backgroundColor: 'var(--bg)' }}>
+            <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--fo-border-subtle)', backgroundColor: 'var(--fo-surface-low)' }}>
               <div
                 style={{
                   display: 'flex',
                   alignItems: 'center',
                   gap: 8,
-                  backgroundColor: 'var(--surface)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 8,
+                  backgroundColor: 'var(--fo-surface)',
+                  border: '1px solid var(--fo-border)',
+                  borderRadius: 6,
                   padding: '5px 10px',
                 }}
               >
-                <Search size={14} style={{ color: 'var(--muted)', flexShrink: 0 }} />
+                <Search size={13} style={{ color: 'var(--fo-text-muted)', flexShrink: 0 }} />
                 <input
                   type="text"
                   autoFocus
@@ -246,7 +251,7 @@ function InlineDriverSelect({
                     background: 'none',
                     outline: 'none',
                     fontSize: 12,
-                    color: 'var(--text)',
+                    color: 'var(--fo-text)',
                     width: '100%',
                   }}
                 />
@@ -254,7 +259,7 @@ function InlineDriverSelect({
                   <button
                     type="button"
                     onClick={() => setSearch('')}
-                    style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--muted)', padding: 0 }}
+                    style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--fo-text-muted)', padding: 0 }}
                   >
                     <X size={12} />
                   </button>
@@ -274,18 +279,18 @@ function InlineDriverSelect({
                   alignItems: 'center',
                   justifyContent: 'space-between',
                   padding: '8px 10px',
-                  borderRadius: 8,
+                  borderRadius: 6,
                   border: 'none',
-                  background: !vehicle.driverId ? 'rgba(16, 185, 129, 0.15)' : 'transparent',
-                  color: !vehicle.driverId ? 'var(--success-text)' : 'var(--text)',
+                  background: !vehicle.driverId ? 'rgba(76, 215, 246, 0.15)' : 'transparent',
+                  color: !vehicle.driverId ? 'var(--fo-tertiary)' : 'var(--fo-text)',
                   cursor: 'pointer',
                   textAlign: 'left',
-                  fontSize: 13,
-                  fontWeight: !vehicle.driverId ? 800 : 500,
+                  fontSize: 12,
+                  fontWeight: !vehicle.driverId ? 700 : 500,
                   marginBottom: 4,
                 }}
                 onMouseEnter={(e) => {
-                  if (vehicle.driverId) e.currentTarget.style.backgroundColor = 'var(--bg)';
+                  if (vehicle.driverId) e.currentTarget.style.backgroundColor = 'var(--fo-surface)';
                 }}
                 onMouseLeave={(e) => {
                   if (vehicle.driverId) e.currentTarget.style.backgroundColor = 'transparent';
@@ -297,28 +302,28 @@ function InlineDriverSelect({
                       width: 22,
                       height: 22,
                       borderRadius: '50%',
-                      background: 'rgba(16, 185, 129, 0.2)',
+                      background: 'rgba(76, 215, 246, 0.2)',
                       display: 'inline-flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      color: 'var(--success-text)',
+                      color: 'var(--fo-tertiary)',
                     }}
                   >
-                    <UserX size={13} />
+                    <UserX size={12} />
                   </span>
                   <div>
-                    <div style={{ fontWeight: 700 }}>Unassign Driver</div>
-                    <div style={{ fontSize: 10, color: 'var(--muted)' }}>Mark vehicle as Free / Available</div>
+                    <div style={{ fontWeight: 600 }}>Unassign Driver</div>
+                    <div style={{ fontSize: 10, color: 'var(--fo-text-muted)' }}>Mark vehicle as Free / Available</div>
                   </div>
                 </div>
-                {!vehicle.driverId && <Check size={16} color="var(--success-text)" />}
+                {!vehicle.driverId && <Check size={14} color="var(--fo-tertiary)" />}
               </button>
 
-              <div style={{ height: 1, backgroundColor: 'var(--border)', margin: '4px 0' }} />
+              <div style={{ height: 1, backgroundColor: 'var(--fo-border-subtle)', margin: '4px 0' }} />
 
               {/* Drivers List */}
               {filteredDrivers.length === 0 ? (
-                <div style={{ padding: '16px 8px', fontSize: 12, color: 'var(--muted)', textAlign: 'center' }}>
+                <div style={{ padding: '16px 8px', fontSize: 12, color: 'var(--fo-text-muted)', textAlign: 'center' }}>
                   No drivers found matching "{search}"
                 </div>
               ) : (
@@ -338,36 +343,36 @@ function InlineDriverSelect({
                         alignItems: 'center',
                         justifyContent: 'space-between',
                         padding: '8px 10px',
-                        borderRadius: 8,
+                        borderRadius: 6,
                         border: 'none',
                         background: isSelected
-                          ? 'rgba(59, 130, 246, 0.15)'
+                          ? 'rgba(59, 130, 246, 0.18)'
                           : isAssignedToOther
-                          ? 'rgba(239, 68, 68, 0.04)'
+                          ? 'rgba(239, 68, 68, 0.06)'
                           : 'transparent',
-                        color: isSelected ? 'var(--accent)' : 'var(--text)',
+                        color: isSelected ? 'var(--fo-primary)' : 'var(--fo-text)',
                         cursor: 'pointer',
                         textAlign: 'left',
                         marginBottom: 2,
                         opacity: isAssignedToOther ? 0.75 : 1,
                       }}
                       onMouseEnter={(e) => {
-                        if (!isSelected) e.currentTarget.style.backgroundColor = isAssignedToOther ? 'rgba(239, 68, 68, 0.08)' : 'var(--bg)';
+                        if (!isSelected) e.currentTarget.style.backgroundColor = isAssignedToOther ? 'rgba(239, 68, 68, 0.1)' : 'var(--fo-surface)';
                       }}
                       onMouseLeave={(e) => {
-                        if (!isSelected) e.currentTarget.style.backgroundColor = isAssignedToOther ? 'rgba(239, 68, 68, 0.04)' : 'transparent';
+                        if (!isSelected) e.currentTarget.style.backgroundColor = isAssignedToOther ? 'rgba(239, 68, 68, 0.06)' : 'transparent';
                       }}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span
                           style={{
-                            width: 24,
-                            height: 24,
+                            width: 22,
+                            height: 22,
                             borderRadius: '50%',
-                            background: isSelected ? 'var(--accent)' : isAssignedToOther ? 'rgba(239, 68, 68, 0.15)' : 'var(--border)',
-                            color: isSelected ? '#ffffff' : isAssignedToOther ? 'var(--danger-text)' : 'var(--text)',
-                            fontSize: 11,
-                            fontWeight: 800,
+                            background: isSelected ? 'var(--fo-primary)' : isAssignedToOther ? 'rgba(239, 68, 68, 0.2)' : 'var(--fo-surface)',
+                            color: isSelected ? '#001a42' : isAssignedToOther ? 'var(--fo-error-text)' : 'var(--fo-text)',
+                            fontSize: 10,
+                            fontWeight: 700,
                             display: 'inline-flex',
                             alignItems: 'center',
                             justifyContent: 'center',
@@ -377,19 +382,18 @@ function InlineDriverSelect({
                           {driver.firstName[0]}
                         </span>
                         <div>
-                          <div style={{ fontSize: 13, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <div style={{ fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
                             <span>
                               {driver.firstName} {driver.lastName}
                             </span>
                             {isAssignedToOther && (
                               <span
                                 style={{
-                                  fontSize: 10,
-                                  padding: '1px 5px',
+                                  fontSize: 9,
+                                  padding: '1px 4px',
                                   borderRadius: 4,
-                                  backgroundColor: 'var(--danger-bg)',
-                                  color: 'var(--danger-text)',
-                                  border: '1px solid var(--danger-border)',
+                                  backgroundColor: 'rgba(239, 68, 68, 0.2)',
+                                  color: 'var(--fo-error-text)',
                                   fontWeight: 700,
                                 }}
                               >
@@ -399,11 +403,11 @@ function InlineDriverSelect({
                             {!assignedInfo && (
                               <span
                                 style={{
-                                  fontSize: 10,
-                                  padding: '1px 5px',
+                                  fontSize: 9,
+                                  padding: '1px 4px',
                                   borderRadius: 4,
-                                  backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                                  color: 'var(--success-text)',
+                                  backgroundColor: 'rgba(76, 215, 246, 0.12)',
+                                  color: 'var(--fo-tertiary)',
                                   fontWeight: 600,
                                 }}
                               >
@@ -411,12 +415,12 @@ function InlineDriverSelect({
                               </span>
                             )}
                           </div>
-                          <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                          <div style={{ fontSize: 10, color: 'var(--fo-text-muted)' }}>
                             ID: {driver.employeeId} {driver.licenseNumber ? `• Lic: ${driver.licenseNumber}` : ''}
                           </div>
                         </div>
                       </div>
-                      {isSelected && <Check size={16} color="var(--accent)" />}
+                      {isSelected && <Check size={14} color="var(--fo-primary)" />}
                     </button>
                   );
                 })
@@ -437,7 +441,7 @@ export function VehiclesPage(): ReactElement {
   const [wheelFilter, setWheelFilter] = useState('ALL');
   const [assignmentFilter, setAssignmentFilter] = useState<'ALL' | 'ASSIGNED' | 'FREE'>('ALL');
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const [pageSize, setPageSize] = useState(15);
   const [updatingDriverVehicleId, setUpdatingDriverVehicleId] = useState<string | null>(null);
 
   // Modal State
@@ -453,7 +457,7 @@ export function VehiclesPage(): ReactElement {
   const [modelNumber, setModelNumber] = useState('');
   const [chassisNumber, setChassisNumber] = useState('');
   const [wheels, setWheels] = useState('10 Wheeler');
-  const [agreementStatus, setAgreementStatus] = useState('FMS Pack 1');
+  const [agreementStatus, setAgreementStatus] = useState('ACTIVE');
   const [make, setMake] = useState('');
   const [year, setYear] = useState<string>('');
   const [driverId, setDriverId] = useState<string>('');
@@ -550,7 +554,7 @@ export function VehiclesPage(): ReactElement {
   const filteredVehicles = useMemo(() => {
     return vehiclesList.filter((v) => {
       if (statusFilter !== 'ALL') {
-        const vStatus = (v.agreementStatus || 'Active').toLowerCase();
+        const vStatus = (v.agreementStatus || 'ACTIVE').toLowerCase();
         const target = statusFilter.toLowerCase();
         if (vStatus !== target && v.agreementStatus !== statusFilter) {
           return false;
@@ -595,6 +599,7 @@ export function VehiclesPage(): ReactElement {
   }).length;
   const freeVehiclesCount = vehiclesList.filter((v) => !v.driverId).length;
   const assignedVehiclesCount = vehiclesList.filter((v) => Boolean(v.driverId)).length;
+  const fleetUtilizationPct = vehiclesList.length > 0 ? Math.round((assignedVehiclesCount / vehiclesList.length) * 100) : 0;
 
   const handleOpenCreate = () => {
     setEditingVehicle(null);
@@ -604,7 +609,7 @@ export function VehiclesPage(): ReactElement {
     setModelNumber('');
     setChassisNumber('');
     setWheels('10 Wheeler');
-    setAgreementStatus('FMS Pack 1');
+    setAgreementStatus('ACTIVE');
     setMake('');
     setYear(new Date().getFullYear().toString());
     setDriverId('');
@@ -621,7 +626,7 @@ export function VehiclesPage(): ReactElement {
     setModelNumber(vehicle.modelNumber || '');
     setChassisNumber(vehicle.chassisNumber || vehicle.vin || '');
     setWheels(vehicle.wheels || '10 Wheeler');
-    setAgreementStatus(vehicle.agreementStatus || 'FMS Pack 1');
+    setAgreementStatus(vehicle.agreementStatus || 'ACTIVE');
     setMake(vehicle.make || '');
     setYear(vehicle.year ? vehicle.year.toString() : '');
     setDriverId(vehicle.driverId || '');
@@ -715,7 +720,7 @@ export function VehiclesPage(): ReactElement {
         registrationDate: registrationDate.trim() || undefined,
         chassisNumber: normChassis || undefined,
         wheels: wheels.trim() || undefined,
-        agreementStatus: agreementStatus.trim() || 'FMS Pack 1',
+        agreementStatus: agreementStatus.trim() || 'ACTIVE',
         year: parsedYear,
         vin: normChassis || undefined,
         driverId: trimmedDriverId ? trimmedDriverId : null,
@@ -753,13 +758,13 @@ export function VehiclesPage(): ReactElement {
   };
 
   const getAgreementBadge = (status?: string | null) => {
-    const s = status || 'FMS Pack 1';
+    const s = status || 'ACTIVE';
     const opt = AGREEMENT_STATUS_OPTIONS.find((o) => o.value.toLowerCase() === s.toLowerCase()) || {
       value: s,
       label: s,
-      colorVar: 'var(--muted)',
-      bgVar: 'var(--surface)',
-      borderVar: 'var(--border)',
+      colorVar: 'var(--fo-text-muted)',
+      bgVar: 'var(--fo-surface)',
+      borderVar: 'var(--fo-border-subtle)',
     };
 
     return (
@@ -768,16 +773,17 @@ export function VehiclesPage(): ReactElement {
           display: 'inline-flex',
           alignItems: 'center',
           gap: 6,
-          padding: '4px 10px',
-          borderRadius: 20,
-          fontSize: 12,
-          fontWeight: 700,
+          padding: '3px 8px',
+          borderRadius: 4,
+          fontSize: 11,
+          fontWeight: 600,
           color: opt.colorVar,
           backgroundColor: opt.bgVar,
           border: `1px solid ${opt.borderVar}`,
+          whiteSpace: 'nowrap',
         }}
       >
-        <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: opt.colorVar }} />
+        <span style={{ width: 5, height: 5, borderRadius: '50%', backgroundColor: opt.colorVar }} />
         {opt.label}
       </span>
     );
@@ -786,288 +792,574 @@ export function VehiclesPage(): ReactElement {
   const hasActiveFilters = searchQuery !== '' || statusFilter !== 'ALL' || wheelFilter !== 'ALL' || assignmentFilter !== 'ALL';
 
   return (
-    <div className="page-container">
-      {/* Top Header */}
-      <div className="page-header">
-        <div>
-          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Truck size={26} color="var(--accent)" /> Vehicle Directory & Entry
-          </h1>
-          <p className="page-subtitle">Manage fleet vehicles, chassis numbers, wheel configs, driver assignments, and agreement statuses</p>
+    <div className="fleetops-view">
+      <div className="fleetops-container">
+        {/* Header Section */}
+        <div className="fo-mission-header">
+          <div className="fo-header-glow" />
+          <div className="fo-header-content">
+            <div className="fo-header-titles">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div
+                  style={{
+                    width: 42,
+                    height: 42,
+                    borderRadius: 8,
+                    background: 'var(--fo-surface)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    border: '1px solid var(--fo-border-subtle)',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                  }}
+                >
+                  <Truck size={24} color="var(--fo-primary)" />
+                </div>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>Vehicle Directory & Entry</h1>
+                    <span className="fo-live-pill">
+                      <span className="fo-ping-dot" /> LIVE SYNC
+                    </span>
+                  </div>
+                  <p className="fo-header-sub">Manage fleet vehicles, chassis numbers, wheel configs, driver assignments, and agreement statuses</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="fo-header-actions">
+              <button
+                type="button"
+                className="fo-btn-sync"
+                onClick={() => vehiclesResource.reload()}
+                disabled={vehiclesResource.loading}
+              >
+                <RotateCw size={14} className={vehiclesResource.loading ? 'spin' : ''} />
+                <span>{vehiclesResource.loading ? 'Refreshing…' : 'Refresh'}</span>
+              </button>
+
+              {canAddVehicle && (
+                <button
+                  type="button"
+                  onClick={handleOpenCreate}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '8px 16px',
+                    borderRadius: 8,
+                    background: 'var(--fo-primary)',
+                    color: '#001a42',
+                    fontWeight: 700,
+                    fontSize: 13,
+                    border: 'none',
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 14px rgba(173, 198, 255, 0.3)',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <Plus size={16} />
+                  <span>+ Add Vehicle Entry</span>
+                </button>
+              )}
+            </div>
+          </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 12 }}>
-          <button
-            type="button"
-            className="btn-secondary"
-            onClick={() => vehiclesResource.reload()}
-            disabled={vehiclesResource.loading}
-          >
-            <RotateCw size={14} style={{ marginRight: 6 }} className={vehiclesResource.loading ? 'spin' : ''} />
-            {vehiclesResource.loading ? 'Refreshing…' : 'Refresh'}
-          </button>
+        <ErrorBanner error={vehiclesResource.error} />
 
-          {canAddVehicle && (
+        {/* Top KPI Metric Cards (4-Column Bento Layout) */}
+        <div className="fo-kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
+          {/* Card 1: Total Fleet Vehicles */}
+          <div className="fo-kpi-card" style={{ background: 'var(--fo-surface-low)', border: '1px solid var(--fo-border-subtle)', borderRadius: 12, padding: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+              <span className="font-mono" style={{ fontSize: 11, color: 'var(--fo-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
+                TOTAL FLEET VEHICLES
+              </span>
+              <div
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: '50%',
+                  background: 'var(--fo-surface)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Truck size={16} color="var(--fo-primary)" />
+              </div>
+            </div>
+            <div className="font-mono" style={{ fontSize: 28, fontWeight: 700, color: 'var(--fo-text)', margin: '10px 0 6px 0' }}>
+              {vehiclesList.length}
+            </div>
             <button
               type="button"
-              className="btn-primary"
-              onClick={handleOpenCreate}
-              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+              onClick={() => {
+                setSearchQuery('');
+                setStatusFilter('ALL');
+                setWheelFilter('ALL');
+                setAssignmentFilter('ALL');
+                setPage(1);
+                document.getElementById('master-table')?.scrollIntoView({ behavior: 'smooth' });
+              }}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: 0,
+                cursor: 'pointer',
+                color: 'var(--fo-primary)',
+                fontSize: 12,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                fontWeight: 600,
+              }}
             >
-              <Plus size={16} /> Add Vehicle Entry
+              <span>Registered fleet units</span>
+              <ChevronRight size={14} />
             </button>
-          )}
-        </div>
-      </div>
-
-      <ErrorBanner error={vehiclesResource.error} />
-
-      {/* Stat KPI Cards Grid */}
-      <div className="stat-cards-grid">
-        <div className="stat-card">
-          <div className="stat-card-header">
-            <span className="stat-card-title">Total Fleet Vehicles</span>
-            <Truck size={22} color="var(--accent)" />
           </div>
-          <div className="stat-card-value">{vehiclesList.length}</div>
-          <div className="stat-card-footer">Registered fleet units</div>
-        </div>
 
-        <div className="stat-card stat-success">
-          <div className="stat-card-header">
-            <span className="stat-card-title">Free / Available Vehicles</span>
-            <CheckCircle2 size={22} color="var(--success-text)" />
+          {/* Card 2: Free / Available */}
+          <div className="fo-kpi-card" style={{ background: 'var(--fo-surface-low)', border: '1px solid var(--fo-border-subtle)', borderRadius: 12, padding: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+              <span className="font-mono" style={{ fontSize: 11, color: 'var(--fo-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
+                FREE / AVAILABLE VEHICLES
+              </span>
+              <div
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: '50%',
+                  background: 'var(--fo-surface)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <CheckCircle2 size={16} color="var(--fo-tertiary)" />
+              </div>
+            </div>
+            <div className="font-mono" style={{ fontSize: 28, fontWeight: 700, color: 'var(--fo-tertiary)', margin: '10px 0 6px 0' }}>
+              {freeVehiclesCount}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setAssignmentFilter('FREE');
+                setPage(1);
+                document.getElementById('master-table')?.scrollIntoView({ behavior: 'smooth' });
+              }}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: 0,
+                cursor: 'pointer',
+                color: 'var(--fo-tertiary)',
+                fontSize: 12,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                fontWeight: 600,
+              }}
+            >
+              <span>Unassigned & ready to allocate</span>
+              <ChevronRight size={14} />
+            </button>
           </div>
-          <div className="stat-card-value" style={{ color: 'var(--success-text)' }}>{freeVehiclesCount}</div>
-          <div className="stat-card-footer">Unassigned & ready to allocate</div>
-        </div>
 
-        <div className="stat-card stat-info">
-          <div className="stat-card-header">
-            <span className="stat-card-title">Assigned to Drivers</span>
-            <Clock size={22} color="#0284c7" />
+          {/* Card 3: Assigned to Drivers */}
+          <div className="fo-kpi-card" style={{ background: 'var(--fo-surface-low)', border: '1px solid var(--fo-border-subtle)', borderRadius: 12, padding: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+              <span className="font-mono" style={{ fontSize: 11, color: 'var(--fo-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
+                ASSIGNED TO DRIVERS
+              </span>
+              <div
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: '50%',
+                  background: 'var(--fo-surface)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Clock size={16} color="var(--fo-secondary)" />
+              </div>
+            </div>
+            <div className="font-mono" style={{ fontSize: 28, fontWeight: 700, color: 'var(--fo-secondary)', margin: '10px 0 6px 0' }}>
+              {assignedVehiclesCount}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setAssignmentFilter('ASSIGNED');
+                setPage(1);
+                document.getElementById('master-table')?.scrollIntoView({ behavior: 'smooth' });
+              }}
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: 0,
+                cursor: 'pointer',
+                color: 'var(--fo-secondary)',
+                fontSize: 12,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                fontWeight: 600,
+              }}
+            >
+              <span>Currently operational</span>
+              <ChevronRight size={14} />
+            </button>
           </div>
-          <div className="stat-card-value">{assignedVehiclesCount}</div>
-          <div className="stat-card-footer">Currently operational</div>
-        </div>
 
-        <div className="stat-card stat-warning">
-          <div className="stat-card-header">
-            <span className="stat-card-title">Active Agreements</span>
-            <AlertCircle size={22} color="var(--warning-text)" />
+          {/* Card 4: Active Agreements */}
+          <div className="fo-kpi-card" style={{ background: 'var(--fo-surface-low)', border: '1px solid var(--fo-border-subtle)', borderRadius: 12, padding: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+              <span className="font-mono" style={{ fontSize: 11, color: 'var(--fo-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
+                ACTIVE AGREEMENTS
+              </span>
+              <div
+                style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: '50%',
+                  background: 'var(--fo-surface)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <ShieldCheck size={16} color="var(--fo-primary-accent)" />
+              </div>
+            </div>
+            <div className="font-mono" style={{ fontSize: 28, fontWeight: 700, color: 'var(--fo-primary)', margin: '10px 0 6px 0' }}>
+              {activeAgreementsCount}
+            </div>
+            <div style={{ color: 'var(--fo-text-muted)', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <span>FMS & Platinum active packs</span>
+              <ChevronRight size={14} />
+            </div>
           </div>
-          <div className="stat-card-value" style={{ color: 'var(--warning-text)' }}>{activeAgreementsCount}</div>
-          <div className="stat-card-footer">FMS & Platinum active packs</div>
         </div>
-      </div>
 
-      {/* Main Table Card */}
-      <div className="table-card">
-        {/* Clean Responsive Filter Bar */}
+        {/* Live Telemetry / Telematics Bar */}
+        <div className="fo-telematics-bar">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span className="fo-ping-dot" />
+              <span className="font-mono" style={{ fontSize: 11, color: 'var(--fo-tertiary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Hub Status: Optimal
+              </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: 'var(--fo-text-muted)' }}>
+              <span>GPS Fix: 99.8%</span>
+              <span>•</span>
+              <span>Avg Route Latency: 22ms</span>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{ fontSize: 11, color: 'var(--fo-text-muted)', fontWeight: 600 }}>Fleet Utilization Index</span>
+            <div style={{ width: 140, height: 8, borderRadius: 9999, background: 'var(--fo-surface)', overflow: 'hidden' }}>
+              <div
+                style={{
+                  width: `${fleetUtilizationPct}%`,
+                  height: '100%',
+                  borderRadius: 9999,
+                  background: 'linear-gradient(90deg, var(--fo-primary-accent) 0%, var(--fo-tertiary) 100%)',
+                  transition: 'width 0.4s ease',
+                }}
+              />
+            </div>
+            <span className="font-mono" style={{ fontSize: 12, fontWeight: 700, color: 'var(--fo-text)' }}>
+              {fleetUtilizationPct}%
+            </span>
+          </div>
+        </div>
+
+        {/* Main Data Table Container */}
         <div
+          id="master-table"
           style={{
-            padding: '16px 20px',
-            borderBottom: '1px solid var(--border)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: 12,
+            background: 'var(--fo-surface-low)',
+            border: '1px solid var(--fo-border-subtle)',
+            borderRadius: 14,
+            overflow: 'hidden',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <h2 className="table-card-title" style={{ margin: 0, fontSize: 16 }}>
-              Fleet Vehicle Master <span className="badge-pill">{totalItems}</span>
-            </h2>
-          </div>
-
+          {/* Toolbar Header */}
           <div
             style={{
+              padding: '16px 20px',
+              backgroundColor: 'var(--fo-surface)',
+              borderBottom: '1px solid var(--fo-border-subtle)',
               display: 'flex',
-              alignItems: 'center',
-              gap: 10,
               flexWrap: 'wrap',
-              flex: '1 1 auto',
-              justifyContent: 'flex-end',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 12,
             }}
           >
-            {/* Search Input */}
-            <div style={{ position: 'relative', minWidth: 200, flex: '1 1 200px', maxWidth: 300 }}>
-              <Search
-                size={15}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span className="font-head" style={{ fontSize: 16, fontWeight: 700, color: '#ffffff' }}>
+                Fleet Vehicle Master
+              </span>
+              <span
+                className="font-mono"
                 style={{
-                  position: 'absolute',
-                  left: 10,
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  color: 'var(--muted)',
+                  padding: '2px 8px',
+                  borderRadius: 9999,
+                  backgroundColor: 'var(--fo-surface-high)',
+                  color: 'var(--fo-primary)',
+                  fontSize: 11,
+                  fontWeight: 700,
+                  border: '1px solid var(--fo-border-subtle)',
                 }}
-              />
-              <input
-                type="text"
-                className="filter-select"
-                placeholder="Search plate, model, chassis..."
-                value={searchQuery}
+              >
+                {totalItems}
+              </span>
+            </div>
+
+            {/* Filter Strip */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', flex: '1 1 auto', justifyContent: 'flex-end' }}>
+              {/* Search Box */}
+              <div style={{ position: 'relative', minWidth: 200, flex: '1 1 200px', maxWidth: 280 }}>
+                <Search
+                  size={14}
+                  style={{
+                    position: 'absolute',
+                    left: 10,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    color: 'var(--fo-text-muted)',
+                  }}
+                />
+                <input
+                  type="text"
+                  placeholder="Search plate, model, chassis..."
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setPage(1);
+                  }}
+                  style={{
+                    width: '100%',
+                    height: 32,
+                    paddingLeft: 30,
+                    paddingRight: searchQuery ? 28 : 10,
+                    backgroundColor: 'var(--fo-surface-high)',
+                    border: '1px solid var(--fo-border-subtle)',
+                    borderRadius: 6,
+                    color: 'var(--fo-text)',
+                    fontSize: 12,
+                    outline: 'none',
+                    boxSizing: 'border-box',
+                  }}
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchQuery('');
+                      setPage(1);
+                    }}
+                    style={{
+                      position: 'absolute',
+                      right: 8,
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--fo-text-muted)',
+                      cursor: 'pointer',
+                      padding: 0,
+                    }}
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+              </div>
+
+              {/* Assignment Filter */}
+              <select
+                value={assignmentFilter}
                 onChange={(e) => {
-                  setSearchQuery(e.target.value);
+                  setAssignmentFilter(e.target.value as any);
                   setPage(1);
                 }}
-                style={{ width: '100%', paddingLeft: 32, paddingRight: searchQuery ? 28 : 10 }}
-              />
-              {searchQuery ? (
+                style={{
+                  height: 32,
+                  padding: '0 10px',
+                  backgroundColor: 'var(--fo-surface-high)',
+                  border: '1px solid var(--fo-border-subtle)',
+                  borderRadius: 6,
+                  color: 'var(--fo-text)',
+                  fontSize: 12,
+                  outline: 'none',
+                  cursor: 'pointer',
+                }}
+              >
+                <option value="ALL">All Assignments</option>
+                <option value="FREE">Free / Unassigned</option>
+                <option value="ASSIGNED">Assigned to Drivers</option>
+              </select>
+
+              {/* Agreement Status Filter */}
+              <select
+                value={statusFilter}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value);
+                  setPage(1);
+                }}
+                style={{
+                  height: 32,
+                  padding: '0 10px',
+                  backgroundColor: 'var(--fo-surface-high)',
+                  border: '1px solid var(--fo-border-subtle)',
+                  borderRadius: 6,
+                  color: 'var(--fo-text)',
+                  fontSize: 12,
+                  outline: 'none',
+                  cursor: 'pointer',
+                }}
+              >
+                <option value="ALL">All Agreements</option>
+                <option value="ACTIVE">ACTIVE</option>
+                <option value="FMS Pack 1">FMS Pack 1</option>
+                <option value="Platinum Plus">Platinum Plus</option>
+                <option value="Platinum:ComprehensiveCovrg">Platinum:ComprehensiveCovrg</option>
+                <option value="LEASED">LEASED</option>
+              </select>
+
+              {/* Wheel Filter */}
+              <select
+                value={wheelFilter}
+                onChange={(e) => {
+                  setWheelFilter(e.target.value);
+                  setPage(1);
+                }}
+                style={{
+                  height: 32,
+                  padding: '0 10px',
+                  backgroundColor: 'var(--fo-surface-high)',
+                  border: '1px solid var(--fo-border-subtle)',
+                  borderRadius: 6,
+                  color: 'var(--fo-text)',
+                  fontSize: 12,
+                  outline: 'none',
+                  cursor: 'pointer',
+                }}
+              >
+                <option value="ALL">All Wheels</option>
+                {WHEEL_OPTIONS.map((w) => (
+                  <option key={w} value={w}>
+                    {w}
+                  </option>
+                ))}
+              </select>
+
+              {hasActiveFilters && (
                 <button
                   type="button"
                   onClick={() => {
                     setSearchQuery('');
+                    setStatusFilter('ALL');
+                    setWheelFilter('ALL');
+                    setAssignmentFilter('ALL');
                     setPage(1);
                   }}
                   style={{
-                    position: 'absolute',
-                    right: 8,
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    background: 'none',
-                    border: 'none',
-                    color: 'var(--muted)',
+                    height: 32,
+                    padding: '0 12px',
+                    borderRadius: 6,
+                    border: '1px solid var(--fo-border-subtle)',
+                    background: 'var(--fo-surface-highest)',
+                    color: 'var(--fo-text)',
+                    fontSize: 12,
                     cursor: 'pointer',
-                    padding: 2,
                   }}
                 >
-                  <X size={14} />
+                  Reset
                 </button>
-              ) : null}
+              )}
             </div>
-
-            {/* Assignment Filter */}
-            <select
-              className="filter-select"
-              value={assignmentFilter}
-              onChange={(e) => {
-                setAssignmentFilter(e.target.value as any);
-                setPage(1);
-              }}
-              style={{ width: 'auto', minWidth: 140, flex: '1 1 auto' }}
-            >
-              <option value="ALL">All Assignments</option>
-              <option value="ASSIGNED">Assigned Only</option>
-              <option value="FREE">Free / Unassigned</option>
-            </select>
-
-            {/* Agreement Status Filter */}
-            <select
-              className="filter-select"
-              value={statusFilter}
-              onChange={(e) => {
-                setStatusFilter(e.target.value);
-                setPage(1);
-              }}
-              style={{ width: 'auto', minWidth: 160, flex: '1 1 auto' }}
-            >
-              <option value="ALL">All Agreements</option>
-              {AGREEMENT_STATUS_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-
-            {/* Wheel Filter */}
-            <select
-              className="filter-select"
-              value={wheelFilter}
-              onChange={(e) => {
-                setWheelFilter(e.target.value);
-                setPage(1);
-              }}
-              style={{ width: 'auto', minWidth: 120, flex: '1 1 auto' }}
-            >
-              <option value="ALL">All Wheels</option>
-              {WHEEL_OPTIONS.map((w) => (
-                <option key={w} value={w}>
-                  {w}
-                </option>
-              ))}
-            </select>
-
-            {hasActiveFilters && (
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={() => {
-                  setSearchQuery('');
-                  setStatusFilter('ALL');
-                  setWheelFilter('ALL');
-                  setAssignmentFilter('ALL');
-                  setPage(1);
-                }}
-                style={{ padding: '6px 12px', fontSize: 12, flexShrink: 0 }}
-              >
-                Reset
-              </button>
-            )}
           </div>
-        </div>
 
-        {vehiclesResource.loading && vehiclesList.length === 0 ? (
-          <div className="loading-state">Loading vehicle directory…</div>
-        ) : filteredVehicles.length === 0 ? (
-          <div className="empty-table-state">
-            <p>No vehicles found matching your search or filters.</p>
-          </div>
-        ) : (
-          <>
-            <div className="table-responsive" style={{ width: '100%', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-              <table className="admin-table" style={{ minWidth: 1100, width: '100%', borderCollapse: 'collapse' }}>
+          {/* Table Body */}
+          {vehiclesResource.loading && vehiclesList.length === 0 ? (
+            <div style={{ padding: 40, textAlign: 'center', color: 'var(--fo-text-muted)', fontSize: 13 }}>
+              <RotateCw size={20} className="spin" style={{ margin: '0 auto 10px auto' }} />
+              Loading vehicle directory…
+            </div>
+          ) : filteredVehicles.length === 0 ? (
+            <div style={{ padding: 40, textAlign: 'center', color: 'var(--fo-text-muted)', fontSize: 13 }}>
+              No fleet vehicles found matching your search or filters.
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto', width: '100%' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: 1100 }}>
                 <thead>
-                  <tr>
-                    <th style={{ minWidth: 140 }}>Vehicle Number</th>
-                    <th style={{ minWidth: 140 }}>Vehicle Model</th>
-                    <th style={{ minWidth: 110 }}>Model No</th>
-                    <th style={{ minWidth: 130 }}>Registration Date</th>
-                    <th style={{ minWidth: 160 }}>Chassis No (VIN)</th>
-                    <th style={{ minWidth: 110 }}>Wheel</th>
-                    <th style={{ minWidth: 170 }}>Site In-charge</th>
-                    <th style={{ minWidth: 170 }}>Status of Agreements</th>
-                    <th style={{ minWidth: 190 }}>Assigned Driver</th>
-                    <th style={{ minWidth: 120 }}>Make & Year</th>
-                    {isSuperAdmin(user) && <th style={{ textAlign: 'right', minWidth: 90 }}>Actions</th>}
+                  <tr
+                    className="font-mono"
+                    style={{
+                      backgroundColor: 'var(--fo-canvas)',
+                      fontSize: 11,
+                      color: 'var(--fo-text-muted)',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                      borderBottom: '1px solid var(--fo-border-subtle)',
+                    }}
+                  >
+                    <th style={{ padding: '12px 16px', fontWeight: 600 }}>VEHICLE NUMBER</th>
+                    <th style={{ padding: '12px 16px', fontWeight: 600 }}>VEHICLE MODEL</th>
+                    <th style={{ padding: '12px 16px', fontWeight: 600 }}>MODEL NO</th>
+                    <th style={{ padding: '12px 16px', fontWeight: 600 }}>REGISTRATION DATE</th>
+                    <th style={{ padding: '12px 16px', fontWeight: 600 }}>CHASSIS NO (VIN)</th>
+                    <th style={{ padding: '12px 16px', fontWeight: 600 }}>WHEEL</th>
+                    <th style={{ padding: '12px 16px', fontWeight: 600 }}>SITE IN-CHARGE</th>
+                    <th style={{ padding: '12px 16px', fontWeight: 600 }}>STATUS OF AGREEMENTS</th>
+                    <th style={{ padding: '12px 16px', fontWeight: 600 }}>ASSIGNED DRIVER</th>
+                    <th style={{ padding: '12px 16px', fontWeight: 600 }}>MAKE & YEAR</th>
+                    {isSuperAdmin(user) && <th style={{ padding: '12px 16px', fontWeight: 600, textAlign: 'right' }}>ACTIONS</th>}
                   </tr>
                 </thead>
-                <tbody>
-                  {paginatedVehicles.map((vehicle) => (
-                    <tr key={vehicle.id}>
-                      <td>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span
-                            style={{
-                              fontFamily: 'monospace',
-                              fontWeight: 800,
-                              fontSize: 13,
-                              letterSpacing: '0.04em',
-                              padding: '5px 10px',
-                              background: 'var(--bg)',
-                              color: 'var(--text)',
-                              border: '1px solid var(--border)',
-                              borderRadius: 6,
-                              whiteSpace: 'nowrap',
-                            }}
-                          >
-                            {vehicle.plateNumber}
-                          </span>
-                        </div>
-                      </td>
-                      <td>
-                        <div style={{ fontWeight: 700, color: 'var(--text)', fontSize: 13 }}>
+                <tbody style={{ fontSize: 12 }}>
+                  {paginatedVehicles.map((vehicle, idx) => {
+                    const isEven = idx % 2 === 0;
+                    return (
+                      <tr
+                        key={vehicle.id}
+                        style={{
+                          backgroundColor: isEven ? 'var(--fo-surface-low)' : 'var(--fo-canvas)',
+                          borderBottom: '1px solid rgba(66, 71, 84, 0.2)',
+                          transition: 'background-color 0.15s ease',
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--fo-surface)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = isEven ? 'var(--fo-surface-low)' : 'var(--fo-canvas)')}
+                      >
+                        {/* Vehicle Number (Plate) */}
+                        <td style={{ padding: '10px 16px', whiteSpace: 'nowrap' }}>
+                          <span className="fo-vehicle-plate-badge">{vehicle.plateNumber}</span>
+                        </td>
+
+                        {/* Model */}
+                        <td style={{ padding: '10px 16px', whiteSpace: 'nowrap', color: 'var(--fo-text)', fontWeight: 600 }}>
                           {vehicle.model || '—'}
-                        </div>
-                      </td>
-                      <td>
-                        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap' }}>
+                        </td>
+
+                        {/* Model No */}
+                        <td style={{ padding: '10px 16px', whiteSpace: 'nowrap', color: 'var(--fo-text-muted)' }}>
                           {vehicle.modelNumber || '—'}
-                        </span>
-                      </td>
-                      <td>
-                        <span style={{ fontSize: 13, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
+                        </td>
+
+                        {/* Registration Date */}
+                        <td style={{ padding: '10px 16px', whiteSpace: 'nowrap', color: 'var(--fo-text-muted)' }}>
                           {vehicle.registrationDate
                             ? new Date(vehicle.registrationDate).toLocaleDateString(undefined, {
                                 year: 'numeric',
@@ -1075,516 +1367,753 @@ export function VehiclesPage(): ReactElement {
                                 day: 'numeric',
                               })
                             : '—'}
-                        </span>
-                      </td>
-                      <td>
-                        <span
-                          style={{
-                            fontFamily: 'monospace',
-                            fontSize: 12,
-                            padding: '3px 8px',
-                            background: 'var(--bg)',
-                            color: 'var(--muted)',
-                            border: '1px solid var(--border)',
-                            borderRadius: 4,
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {vehicle.chassisNumber || vehicle.vin || '—'}
-                        </span>
-                      </td>
-                      <td>
-                        <span
-                          style={{
-                            display: 'inline-block',
-                            fontSize: 12,
-                            fontWeight: 700,
-                            padding: '3px 10px',
-                            borderRadius: 6,
-                            background: 'rgba(59, 130, 246, 0.15)',
-                            color: 'var(--accent)',
-                            border: '1px solid rgba(59, 130, 246, 0.3)',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {vehicle.wheels || '10 Wheeler'}
-                        </span>
-                      </td>
-                      <td>
-                        {(() => {
-                          const execUser = allUsers.find((u) => u.id === vehicle.siteInchargeId);
-                          const name = vehicle.siteInchargeName || (execUser ? `${execUser.firstName} ${execUser.lastName}` : null);
-                          const siteName = vehicle.siteInchargeSite || execUser?.site;
-                          if (!name) return <span style={{ fontSize: 12, color: 'var(--muted)' }}>—</span>;
-                          return (
-                            <span
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 6,
-                                fontSize: 12,
-                                fontWeight: 700,
-                                padding: '4px 8px',
-                                borderRadius: 6,
-                                background: 'rgba(59, 130, 246, 0.12)',
-                                color: 'var(--accent)',
-                                border: '1px solid rgba(59, 130, 246, 0.3)',
-                                whiteSpace: 'nowrap',
-                              }}
-                            >
-                              <span>👤 {name}</span>
-                              {siteName && (
-                                <span
-                                  style={{
-                                    fontSize: 10,
-                                    fontWeight: 700,
-                                    padding: '1px 5px',
-                                    borderRadius: 4,
-                                    backgroundColor: 'rgba(59, 130, 246, 0.2)',
-                                    color: 'var(--text)',
-                                  }}
-                                >
-                                  {siteName}
-                                </span>
-                              )}
-                            </span>
-                          );
-                        })()}
-                      </td>
-                      <td>{getAgreementBadge(vehicle.agreementStatus)}</td>
-                      <td>
-                        {/* Inline Searchable Driver Dropdown with Right-Checkmark Icon */}
-                        <InlineDriverSelect
-                          vehicle={vehicle}
-                          driversList={driversList}
-                          driverAssignedVehicleMap={driverAssignedVehicleMap}
-                          onAssign={handleInlineAssignDriver}
-                          isUpdating={updatingDriverVehicleId === vehicle.id}
-                        />
-                      </td>
-                      <td>
-                        <div style={{ fontSize: 13, color: 'var(--text)', whiteSpace: 'nowrap' }}>
+                        </td>
+
+                        {/* Chassis No (VIN) */}
+                        <td style={{ padding: '10px 16px', whiteSpace: 'nowrap' }}>
+                          <span className="fo-chassis-badge">{vehicle.chassisNumber || vehicle.vin || '—'}</span>
+                        </td>
+
+                        {/* Wheel Configuration */}
+                        <td style={{ padding: '10px 16px', whiteSpace: 'nowrap' }}>
+                          <span
+                            style={{
+                              padding: '3px 8px',
+                              borderRadius: 4,
+                              backgroundColor: 'rgba(59, 130, 246, 0.14)',
+                              color: 'var(--fo-primary)',
+                              border: '1px solid rgba(59, 130, 246, 0.3)',
+                              fontSize: 11,
+                              fontWeight: 600,
+                            }}
+                          >
+                            {vehicle.wheels || '10 Wheeler'}
+                          </span>
+                        </td>
+
+                        {/* Site In-charge */}
+                        <td style={{ padding: '10px 16px', whiteSpace: 'nowrap' }}>
+                          {(() => {
+                            const execUser = allUsers.find((u) => u.id === vehicle.siteInchargeId);
+                            const name = vehicle.siteInchargeName || (execUser ? `${execUser.firstName} ${execUser.lastName}` : null);
+                            const siteName = vehicle.siteInchargeSite || execUser?.site;
+                            if (!name) return <span style={{ color: 'var(--fo-text-muted)' }}>—</span>;
+                            return (
+                              <span
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 6,
+                                  padding: '3px 8px',
+                                  borderRadius: 4,
+                                  backgroundColor: 'var(--fo-surface-high)',
+                                  color: 'var(--fo-secondary)',
+                                  border: '1px solid var(--fo-border-subtle)',
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                }}
+                              >
+                                <span>{name}</span>
+                                {siteName && (
+                                  <span
+                                    style={{
+                                      fontSize: 9,
+                                      padding: '1px 4px',
+                                      borderRadius: 3,
+                                      backgroundColor: 'var(--fo-surface)',
+                                      color: 'var(--fo-primary)',
+                                    }}
+                                  >
+                                    {siteName}
+                                  </span>
+                                )}
+                              </span>
+                            );
+                          })()}
+                        </td>
+
+                        {/* Status of Agreements */}
+                        <td style={{ padding: '10px 16px', whiteSpace: 'nowrap' }}>
+                          {getAgreementBadge(vehicle.agreementStatus)}
+                        </td>
+
+                        {/* Assigned Driver (Inline selector) */}
+                        <td style={{ padding: '10px 16px', whiteSpace: 'nowrap' }}>
+                          <InlineDriverSelect
+                            vehicle={vehicle}
+                            driversList={driversList}
+                            driverAssignedVehicleMap={driverAssignedVehicleMap}
+                            onAssign={handleInlineAssignDriver}
+                            isUpdating={updatingDriverVehicleId === vehicle.id}
+                          />
+                        </td>
+
+                        {/* Make & Year */}
+                        <td style={{ padding: '10px 16px', whiteSpace: 'nowrap', color: 'var(--fo-text)' }}>
                           {vehicle.make ? <span style={{ fontWeight: 600 }}>{vehicle.make}</span> : null}
                           {vehicle.year ? (
-                            <span style={{ color: 'var(--muted)', fontSize: 12, marginLeft: vehicle.make ? 4 : 0 }}>
+                            <span style={{ color: 'var(--fo-text-muted)', fontSize: 11, marginLeft: vehicle.make ? 4 : 0 }}>
                               {vehicle.make ? `(${vehicle.year})` : vehicle.year}
                             </span>
                           ) : null}
-                          {!vehicle.make && !vehicle.year && <span style={{ color: 'var(--muted)' }}>—</span>}
-                        </div>
-                      </td>
-                      {isSuperAdmin(user) && (
-                        <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
-                            <button
-                              type="button"
-                              onClick={() => handleOpenEdit(vehicle)}
-                              title="Edit Vehicle Details"
-                              style={{
-                                padding: '6px 10px',
-                                borderRadius: 6,
-                                border: '1px solid var(--border)',
-                                background: 'var(--bg)',
-                                color: 'var(--accent)',
-                                cursor: 'pointer',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                              }}
-                            >
-                              <Edit2 size={14} />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteVehicle(vehicle)}
-                              title="Delete Vehicle"
-                              style={{
-                                padding: '6px 10px',
-                                borderRadius: 6,
-                                border: '1px solid var(--danger-border)',
-                                background: 'var(--danger-bg)',
-                                color: 'var(--danger-text)',
-                                cursor: 'pointer',
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                              }}
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
+                          {!vehicle.make && !vehicle.year && <span style={{ color: 'var(--fo-text-muted)' }}>—</span>}
                         </td>
-                      )}
-                    </tr>
-                  ))}
+
+                        {/* Actions */}
+                        {isSuperAdmin(user) && (
+                          <td style={{ padding: '10px 16px', whiteSpace: 'nowrap', textAlign: 'right' }}>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEdit(vehicle)}
+                                title="Edit Vehicle Specs"
+                                style={{
+                                  width: 28,
+                                  height: 28,
+                                  borderRadius: 6,
+                                  border: '1px solid var(--fo-border-subtle)',
+                                  background: 'var(--fo-surface)',
+                                  color: 'var(--fo-primary)',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  transition: 'all 0.15s ease',
+                                }}
+                              >
+                                <Edit2 size={13} />
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteVehicle(vehicle)}
+                                title="Delete Vehicle"
+                                style={{
+                                  width: 28,
+                                  height: 28,
+                                  borderRadius: 6,
+                                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                                  background: 'rgba(239, 68, 68, 0.1)',
+                                  color: 'var(--fo-error-text)',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  transition: 'all 0.15s ease',
+                                }}
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
+          )}
 
-            <Pagination
-              meta={{ page, pageSize, total: totalItems, totalPages }}
-              onPageChange={setPage}
-              onPageSizeChange={(sz) => {
-                setPageSize(sz);
-                setPage(1);
-              }}
-              itemLabel="vehicle"
-            />
-          </>
-        )}
-      </div>
-
-      {/* Add / Edit Vehicle Modal */}
-      {showModal && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.75)',
-            backdropFilter: 'blur(4px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            padding: 16,
-          }}
-          onClick={() => setShowModal(false)}
-        >
+          {/* Pagination Footer */}
           <div
             style={{
-              backgroundColor: 'var(--surface)',
-              borderRadius: 16,
-              width: '100%',
-              maxWidth: 640,
-              maxHeight: '90vh',
+              padding: '12px 20px',
+              backgroundColor: 'var(--fo-surface)',
+              borderTop: '1px solid var(--fo-border-subtle)',
               display: 'flex',
-              flexDirection: 'column',
-              boxShadow: 'var(--shadow-md)',
-              border: '1px solid var(--border)',
-              overflow: 'hidden',
-              color: 'var(--text)',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 12,
             }}
-            onClick={(e) => e.stopPropagation()}
           >
-            {/* Modal Header */}
-            <div
-              style={{
-                padding: '18px 24px',
-                borderBottom: '1px solid var(--border)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                backgroundColor: 'var(--bg)',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ width: 38, height: 38, borderRadius: 10, background: 'rgba(59, 130, 246, 0.15)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Truck size={22} />
-                </div>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--text)' }}>
-                    {editingVehicle ? 'Edit Vehicle Entry' : 'New Fleet Vehicle Entry'}
-                  </h3>
-                  <p style={{ margin: 0, fontSize: 12, color: 'var(--muted)' }}>
-                    Fill out registration details, wheel specs & agreement status
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowModal(false)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 6, color: 'var(--muted)' }}
-              >
-                <X size={20} />
-              </button>
-            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              <span style={{ fontSize: 12, color: 'var(--fo-text-muted)' }}>
+                Showing {totalItems > 0 ? (page - 1) * pageSize + 1 : 0}–{Math.min(page * pageSize, totalItems)} of {totalItems} vehicles
+              </span>
 
-            {/* Modal Form Content */}
-            <form onSubmit={handleSubmitVehicle} style={{ padding: 24, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 16 }}>
-              {modalError && (
-                <div
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--fo-text-muted)' }}>
+                <span>Rows:</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setPage(1);
+                  }}
                   style={{
-                    backgroundColor: 'var(--danger-bg)',
-                    color: 'var(--danger-text)',
-                    padding: '12px 16px',
-                    borderRadius: 10,
-                    border: '1px solid var(--danger-border)',
-                    fontSize: 13,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
+                    height: 24,
+                    padding: '0 6px',
+                    backgroundColor: 'var(--fo-surface-high)',
+                    border: '1px solid var(--fo-border-subtle)',
+                    borderRadius: 4,
+                    color: 'var(--fo-text)',
+                    fontSize: 11,
+                    outline: 'none',
+                    cursor: 'pointer',
                   }}
                 >
-                  <ShieldAlert size={16} style={{ flexShrink: 0 }} />
-                  <div>{modalError}</div>
-                </div>
-              )}
+                  <option value={10}>10</option>
+                  <option value={15}>15</option>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                </select>
+              </div>
+            </div>
 
-              {/* Row 1: Vehicle Number & Model */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-                <div>
-                  <label style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                    Vehicle Number <span style={{ color: 'var(--danger-text)' }}>*</span>
-                  </label>
-                  <input
-                    type="text"
-                    className="filter-select"
-                    placeholder="e.g. MH-12-AB-1234"
-                    value={plateNumber}
-                    onChange={(e) => setPlateNumber(e.target.value.toUpperCase())}
-                    style={{ width: '100%', textTransform: 'uppercase', fontWeight: 700 }}
-                    required
-                  />
-                </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1}
+                style={{
+                  height: 28,
+                  padding: '0 10px',
+                  borderRadius: 6,
+                  border: '1px solid var(--fo-border-subtle)',
+                  background: 'var(--fo-surface-high)',
+                  color: page <= 1 ? 'var(--fo-text-muted)' : 'var(--fo-text)',
+                  fontSize: 11,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  cursor: page <= 1 ? 'not-allowed' : 'pointer',
+                  opacity: page <= 1 ? 0.5 : 1,
+                }}
+              >
+                <ChevronLeft size={13} />
+                <span>Prev</span>
+              </button>
 
-                <div>
-                  <label style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                    Vehicle Model
-                  </label>
-                  <input
-                    type="text"
-                    className="filter-select"
-                    placeholder="e.g. Tata Signa, Ashok Leyland"
-                    value={model}
-                    onChange={(e) => setModel(e.target.value)}
-                    style={{ width: '100%' }}
-                  />
+              <span
+                style={{
+                  minWidth: 28,
+                  height: 28,
+                  borderRadius: 6,
+                  background: 'var(--fo-primary)',
+                  color: '#001a42',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontWeight: 700,
+                  fontSize: 12,
+                }}
+              >
+                {page}
+              </span>
+
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages}
+                style={{
+                  height: 28,
+                  padding: '0 10px',
+                  borderRadius: 6,
+                  border: '1px solid var(--fo-border-subtle)',
+                  background: 'var(--fo-surface-high)',
+                  color: page >= totalPages ? 'var(--fo-text-muted)' : 'var(--fo-text)',
+                  fontSize: 11,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  cursor: page >= totalPages ? 'not-allowed' : 'pointer',
+                  opacity: page >= totalPages ? 0.5 : 1,
+                }}
+              >
+                <span>Next</span>
+                <ChevronRight size={13} />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Add / Edit Vehicle Modal */}
+        {showModal && (
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              backgroundColor: 'rgba(0, 15, 33, 0.8)',
+              backdropFilter: 'blur(6px)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 1000,
+              padding: 16,
+            }}
+            onClick={() => setShowModal(false)}
+          >
+            <div
+              style={{
+                backgroundColor: 'var(--fo-surface-high)',
+                borderRadius: 14,
+                width: '100%',
+                maxWidth: 620,
+                maxHeight: '90vh',
+                display: 'flex',
+                flexDirection: 'column',
+                boxShadow: '0 20px 48px rgba(0,0,0,0.8)',
+                border: '1px solid var(--fo-border-subtle)',
+                overflow: 'hidden',
+                color: 'var(--fo-text)',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Modal Header */}
+              <div
+                style={{
+                  padding: '16px 20px',
+                  borderBottom: '1px solid var(--fo-border-subtle)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  backgroundColor: 'var(--fo-surface)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ width: 34, height: 34, borderRadius: 8, background: 'rgba(59, 130, 246, 0.15)', color: 'var(--fo-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Truck size={18} />
+                  </div>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#ffffff' }}>
+                      {editingVehicle ? 'Edit Vehicle Entry' : 'New Fleet Vehicle Entry'}
+                    </h3>
+                    <p style={{ margin: 0, fontSize: 11, color: 'var(--fo-text-muted)' }}>
+                      Fill out registration details, wheel specs & agreement status
+                    </p>
+                  </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setShowModal(false)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'var(--fo-text-muted)' }}
+                >
+                  <X size={18} />
+                </button>
               </div>
 
-              {/* Row 2: Registration Date & Model No */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-                <div>
-                  <label style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                    Registration Date
-                  </label>
-                  <input
-                    type="date"
-                    className="filter-select"
-                    value={registrationDate}
-                    onChange={(e) => setRegistrationDate(e.target.value)}
-                    style={{ width: '100%' }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                    Model No
-                  </label>
-                  <input
-                    type="text"
-                    className="filter-select"
-                    placeholder="e.g. 4825.TK, 2820.T, 6028"
-                    value={modelNumber}
-                    onChange={(e) => setModelNumber(e.target.value)}
-                    style={{ width: '100%' }}
-                  />
-                </div>
-              </div>
-
-              {/* Row 3: Chassis No & Wheel Configuration */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-                <div>
-                  <label style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                    Chassis No (VIN)
-                  </label>
-                  <input
-                    type="text"
-                    className="filter-select"
-                    placeholder="e.g. MAT612034XYZ56789"
-                    value={chassisNumber}
-                    onChange={(e) => setChassisNumber(e.target.value.toUpperCase())}
-                    style={{ width: '100%', fontFamily: 'monospace' }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                    Wheel
-                  </label>
-                  <select
-                    className="filter-select"
-                    value={wheels}
-                    onChange={(e) => setWheels(e.target.value)}
-                    style={{ width: '100%' }}
+              {/* Modal Form Content */}
+              <form onSubmit={handleSubmitVehicle} style={{ padding: 20, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
+                {modalError && (
+                  <div
+                    style={{
+                      backgroundColor: 'rgba(239, 68, 68, 0.15)',
+                      color: 'var(--fo-error-text)',
+                      padding: '10px 14px',
+                      borderRadius: 8,
+                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                      fontSize: 12,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                    }}
                   >
-                    {WHEEL_OPTIONS.map((w) => (
-                      <option key={w} value={w}>
-                        {w}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+                    <ShieldAlert size={16} style={{ flexShrink: 0 }} />
+                    <div>{modalError}</div>
+                  </div>
+                )}
 
-              {/* Row 4: Site In-charge & Status of Agreements */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-                <div>
-                  <label style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                    Select Under Site In-charge (Executive)
-                  </label>
-                  <select
-                    className="filter-select"
-                    value={siteInchargeId}
-                    onChange={(e) => setSiteInchargeId(e.target.value)}
-                    style={{ width: '100%', fontWeight: 600 }}
-                  >
-                    <option value="">-- Select Site In-charge (Executive) --</option>
-                    {siteInchargesList.length === 0 ? (
-                      <option value="" disabled>No active Executives found</option>
-                    ) : (
-                      siteInchargesList.map((user) => {
-                        const supervisingAdmin = user.createdByAdminId ? adminMap.get(user.createdByAdminId) : null;
-                        const adminPart = supervisingAdmin
-                          ? ` • Under: ${supervisingAdmin.firstName} ${supervisingAdmin.lastName}${supervisingAdmin.category ? ` (${supervisingAdmin.category})` : ''}`
-                          : '';
-                        const sitePart = user.site ? ` • Site: ${user.site}` : ' • Site: Unassigned';
-                        return (
-                          <option key={user.id} value={user.id}>
-                            {user.firstName} {user.lastName} ({user.employeeId}){sitePart}{adminPart}
-                          </option>
-                        );
-                      })
-                    )}
-                  </select>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
-                    Select the executive on-ground who oversees this vehicle and its operating hub.
+                {/* Row 1: Vehicle Number & Model */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--fo-text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                      Vehicle Number / Plate <span style={{ color: 'var(--fo-error)' }}>*</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. WB40R9901"
+                      value={plateNumber}
+                      onChange={(e) => setPlateNumber(e.target.value.toUpperCase())}
+                      style={{
+                        width: '100%',
+                        height: 36,
+                        padding: '0 10px',
+                        backgroundColor: 'var(--fo-surface)',
+                        border: '1px solid var(--fo-border-subtle)',
+                        borderRadius: 6,
+                        color: 'var(--fo-text)',
+                        fontSize: 12,
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        outline: 'none',
+                        boxSizing: 'border-box',
+                      }}
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--fo-text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                      Vehicle Model <span style={{ color: 'var(--fo-error)' }}>*</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. TATA Prima / Tipper"
+                      value={model}
+                      onChange={(e) => setModel(e.target.value)}
+                      style={{
+                        width: '100%',
+                        height: 36,
+                        padding: '0 10px',
+                        backgroundColor: 'var(--fo-surface)',
+                        border: '1px solid var(--fo-border-subtle)',
+                        borderRadius: 6,
+                        color: 'var(--fo-text)',
+                        fontSize: 12,
+                        outline: 'none',
+                        boxSizing: 'border-box',
+                      }}
+                      required
+                    />
                   </div>
                 </div>
 
+                {/* Row 2: Registration Date & Model No */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--fo-text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                      Registration Date
+                    </label>
+                    <input
+                      type="date"
+                      value={registrationDate}
+                      onChange={(e) => setRegistrationDate(e.target.value)}
+                      style={{
+                        width: '100%',
+                        height: 36,
+                        padding: '0 10px',
+                        backgroundColor: 'var(--fo-surface)',
+                        border: '1px solid var(--fo-border-subtle)',
+                        borderRadius: 6,
+                        color: 'var(--fo-text)',
+                        fontSize: 12,
+                        outline: 'none',
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--fo-text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                      Model No
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 5863TK, 4825.TK"
+                      value={modelNumber}
+                      onChange={(e) => setModelNumber(e.target.value)}
+                      style={{
+                        width: '100%',
+                        height: 36,
+                        padding: '0 10px',
+                        backgroundColor: 'var(--fo-surface)',
+                        border: '1px solid var(--fo-border-subtle)',
+                        borderRadius: 6,
+                        color: 'var(--fo-text)',
+                        fontSize: 12,
+                        outline: 'none',
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Row 3: Chassis No & Wheel Configuration */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--fo-text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                      Chassis No (VIN)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. MTS520 / MAT612034"
+                      value={chassisNumber}
+                      onChange={(e) => setChassisNumber(e.target.value.toUpperCase())}
+                      style={{
+                        width: '100%',
+                        height: 36,
+                        padding: '0 10px',
+                        backgroundColor: 'var(--fo-surface)',
+                        border: '1px solid var(--fo-border-subtle)',
+                        borderRadius: 6,
+                        color: 'var(--fo-text)',
+                        fontSize: 12,
+                        fontFamily: 'var(--fo-font-mono)',
+                        outline: 'none',
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--fo-text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                      Wheel Configuration
+                    </label>
+                    <select
+                      value={wheels}
+                      onChange={(e) => setWheels(e.target.value)}
+                      style={{
+                        width: '100%',
+                        height: 36,
+                        padding: '0 10px',
+                        backgroundColor: 'var(--fo-surface)',
+                        border: '1px solid var(--fo-border-subtle)',
+                        borderRadius: 6,
+                        color: 'var(--fo-text)',
+                        fontSize: 12,
+                        outline: 'none',
+                        cursor: 'pointer',
+                        boxSizing: 'border-box',
+                      }}
+                    >
+                      {WHEEL_OPTIONS.map((w) => (
+                        <option key={w} value={w}>
+                          {w}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Row 4: Site In-charge & Status of Agreements */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--fo-text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                      Site In-charge (Executive)
+                    </label>
+                    <select
+                      value={siteInchargeId}
+                      onChange={(e) => setSiteInchargeId(e.target.value)}
+                      style={{
+                        width: '100%',
+                        height: 36,
+                        padding: '0 10px',
+                        backgroundColor: 'var(--fo-surface)',
+                        border: '1px solid var(--fo-border-subtle)',
+                        borderRadius: 6,
+                        color: 'var(--fo-text)',
+                        fontSize: 12,
+                        outline: 'none',
+                        cursor: 'pointer',
+                        boxSizing: 'border-box',
+                      }}
+                    >
+                      <option value="">-- Select Executive --</option>
+                      {siteInchargesList.length === 0 ? (
+                        <option value="" disabled>No active Executives found</option>
+                      ) : (
+                        siteInchargesList.map((u) => {
+                          const supervisingAdmin = u.createdByAdminId ? adminMap.get(u.createdByAdminId) : null;
+                          const adminPart = supervisingAdmin
+                            ? ` • Under: ${supervisingAdmin.firstName} ${supervisingAdmin.lastName}`
+                            : '';
+                          const sitePart = u.site ? ` • Site: ${u.site}` : '';
+                          return (
+                            <option key={u.id} value={u.id}>
+                              {u.firstName} {u.lastName} ({u.employeeId}){sitePart}{adminPart}
+                            </option>
+                          );
+                        })
+                      )}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--fo-text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                      Agreement Status
+                    </label>
+                    <select
+                      value={agreementStatus}
+                      onChange={(e) => setAgreementStatus(e.target.value)}
+                      style={{
+                        width: '100%',
+                        height: 36,
+                        padding: '0 10px',
+                        backgroundColor: 'var(--fo-surface)',
+                        border: '1px solid var(--fo-border-subtle)',
+                        borderRadius: 6,
+                        color: 'var(--fo-primary)',
+                        fontSize: 12,
+                        fontWeight: 700,
+                        outline: 'none',
+                        cursor: 'pointer',
+                        boxSizing: 'border-box',
+                      }}
+                    >
+                      {AGREEMENT_STATUS_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Row 4b: Assigned Driver */}
                 <div>
-                  <label style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                    Status of Agreements
+                  <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--fo-text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                    Assigned Driver
                   </label>
                   <select
-                    className="filter-select"
-                    value={agreementStatus}
-                    onChange={(e) => setAgreementStatus(e.target.value)}
-                    style={{ width: '100%', fontWeight: 700, color: 'var(--accent)' }}
+                    value={driverId}
+                    onChange={(e) => {
+                      const selectedVal = e.target.value;
+                      if (selectedVal) {
+                        const assignedInfo = driverAssignedVehicleMap.get(selectedVal);
+                        if (assignedInfo && assignedInfo.vehicleId !== editingVehicle?.id) {
+                          const driverObj = driversList.find((d) => d.id === selectedVal);
+                          const dName = driverObj ? `${driverObj.firstName} ${driverObj.lastName}` : 'This driver';
+                          alert(
+                            `Driver ${dName} is already assigned on vehicle "${assignedInfo.plateNumber}".\n\nPlease free from vehicle "${assignedInfo.plateNumber}" first then assign to a new vehicle.`
+                          );
+                          setModalError(`Driver ${dName} is already assigned on vehicle "${assignedInfo.plateNumber}". Please free from that vehicle first.`);
+                          setDriverId('');
+                          return;
+                        }
+                      }
+                      setModalError(null);
+                      setDriverId(selectedVal);
+                    }}
+                    style={{
+                      width: '100%',
+                      height: 36,
+                      padding: '0 10px',
+                      backgroundColor: 'var(--fo-surface)',
+                      border: '1px solid var(--fo-border-subtle)',
+                      borderRadius: 6,
+                      color: 'var(--fo-text)',
+                      fontSize: 12,
+                      outline: 'none',
+                      cursor: 'pointer',
+                      boxSizing: 'border-box',
+                    }}
                   >
-                    {AGREEMENT_STATUS_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
-                    ))}
+                    <option value="">-- No Driver (Free / Unassigned Vehicle) --</option>
+                    {driversList.map((d) => {
+                      const assignedInfo = driverAssignedVehicleMap.get(d.id);
+                      const isAssignedElsewhere = Boolean(assignedInfo && assignedInfo.vehicleId !== editingVehicle?.id);
+                      const isAssignedHere = Boolean(assignedInfo && assignedInfo.vehicleId === editingVehicle?.id);
+
+                      return (
+                        <option
+                          key={d.id}
+                          value={d.id}
+                          style={isAssignedElsewhere ? { color: 'var(--fo-error-text)', fontWeight: 600 } : undefined}
+                        >
+                          {d.firstName} {d.lastName} ({d.employeeId}) {isAssignedElsewhere ? `[⚠️ Already on ${assignedInfo!.plateNumber}]` : isAssignedHere ? '[Currently Assigned Here]' : '[Free / Available]'}
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
-              </div>
 
-              {/* Row 4b: Assigned Driver */}
-              <div>
-                <label style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                  Assigned Driver
-                </label>
-                <select
-                  className="filter-select"
-                  value={driverId}
-                  onChange={(e) => {
-                    const selectedVal = e.target.value;
-                    if (selectedVal) {
-                      const assignedInfo = driverAssignedVehicleMap.get(selectedVal);
-                      if (assignedInfo && assignedInfo.vehicleId !== editingVehicle?.id) {
-                        const driverObj = driversList.find((d) => d.id === selectedVal);
-                        const dName = driverObj ? `${driverObj.firstName} ${driverObj.lastName}` : 'This driver';
-                        alert(
-                          `Driver ${dName} is already assigned on vehicle "${assignedInfo.plateNumber}".\n\nPlease free from vehicle "${assignedInfo.plateNumber}" first then assign to a new vehicle.`
-                        );
-                        setModalError(`Driver ${dName} is already assigned on vehicle "${assignedInfo.plateNumber}". Please free from that vehicle first.`);
-                        setDriverId('');
-                        return;
-                      }
-                    }
-                    setModalError(null);
-                    setDriverId(selectedVal);
+                {/* Row 5: Make & Year */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--fo-text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                      Make / OEM (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. TATA Motors, BharatBenz"
+                      value={make}
+                      onChange={(e) => setMake(e.target.value)}
+                      style={{
+                        width: '100%',
+                        height: 36,
+                        padding: '0 10px',
+                        backgroundColor: 'var(--fo-surface)',
+                        border: '1px solid var(--fo-border-subtle)',
+                        borderRadius: 6,
+                        color: 'var(--fo-text)',
+                        fontSize: 12,
+                        outline: 'none',
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--fo-text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                      Manufacturing Year (Optional)
+                    </label>
+                    <input
+                      type="number"
+                      placeholder="e.g. 2024"
+                      value={year}
+                      onChange={(e) => setYear(e.target.value)}
+                      min="1990"
+                      max="2035"
+                      style={{
+                        width: '100%',
+                        height: 36,
+                        padding: '0 10px',
+                        backgroundColor: 'var(--fo-surface)',
+                        border: '1px solid var(--fo-border-subtle)',
+                        borderRadius: 6,
+                        color: 'var(--fo-text)',
+                        fontSize: 12,
+                        outline: 'none',
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Modal Footer Buttons */}
+                <div
+                  style={{
+                    marginTop: 8,
+                    paddingTop: 14,
+                    borderTop: '1px solid var(--fo-border-subtle)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'flex-end',
+                    gap: 10,
                   }}
-                  style={{ width: '100%' }}
                 >
-                  <option value="">-- No Driver (Free / Unassigned Vehicle) --</option>
-                  {driversList.map((d) => {
-                    const assignedInfo = driverAssignedVehicleMap.get(d.id);
-                    const isAssignedElsewhere = Boolean(assignedInfo && assignedInfo.vehicleId !== editingVehicle?.id);
-                    const isAssignedHere = Boolean(assignedInfo && assignedInfo.vehicleId === editingVehicle?.id);
+                  <button
+                    type="button"
+                    onClick={() => setShowModal(false)}
+                    disabled={submitting}
+                    style={{
+                      padding: '8px 16px',
+                      borderRadius: 6,
+                      border: '1px solid var(--fo-border-subtle)',
+                      background: 'var(--fo-surface)',
+                      color: 'var(--fo-text)',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Cancel
+                  </button>
 
-                    return (
-                      <option
-                        key={d.id}
-                        value={d.id}
-                        style={isAssignedElsewhere ? { color: 'var(--danger-text)', fontWeight: 600 } : undefined}
-                      >
-                        {d.firstName} {d.lastName} ({d.employeeId}) {isAssignedElsewhere ? `[⚠️ Already on ${assignedInfo!.plateNumber}]` : isAssignedHere ? '[Currently Assigned Here]' : '[Free / Available]'}
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
-
-              {/* Row 5: Make & Year (Optional Details) */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-                <div>
-                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', display: 'block', marginBottom: 6 }}>
-                    Manufacturer / Make (Optional)
-                  </label>
-                  <input
-                    type="text"
-                    className="filter-select"
-                    placeholder="e.g. Tata Motors, BharatBenz"
-                    value={make}
-                    onChange={(e) => setMake(e.target.value)}
-                    style={{ width: '100%' }}
-                  />
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    style={{
+                      padding: '8px 18px',
+                      borderRadius: 6,
+                      border: 'none',
+                      background: 'var(--fo-primary)',
+                      color: '#001a42',
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor: submitting ? 'wait' : 'pointer',
+                      boxShadow: '0 4px 14px rgba(173, 198, 255, 0.25)',
+                    }}
+                  >
+                    {submitting ? 'Saving…' : editingVehicle ? 'Save Changes' : 'Save Vehicle Entry'}
+                  </button>
                 </div>
-
-                <div>
-                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', display: 'block', marginBottom: 6 }}>
-                    Manufacturing Year (Optional)
-                  </label>
-                  <input
-                    type="number"
-                    className="filter-select"
-                    placeholder="e.g. 2024"
-                    value={year}
-                    onChange={(e) => setYear(e.target.value)}
-                    min="1990"
-                    max="2035"
-                    style={{ width: '100%' }}
-                  />
-                </div>
-              </div>
-
-              {/* Modal Footer Buttons */}
-              <div
-                style={{
-                  marginTop: 12,
-                  paddingTop: 16,
-                  borderTop: '1px solid var(--border)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'flex-end',
-                  gap: 12,
-                }}
-              >
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => setShowModal(false)}
-                  disabled={submitting}
-                >
-                  Cancel
-                </button>
-
-                <button
-                  type="submit"
-                  className="btn-primary"
-                  disabled={submitting}
-                  style={{ minWidth: 140 }}
-                >
-                  {submitting ? 'Saving…' : editingVehicle ? 'Save Changes' : 'Create Vehicle Entry'}
-                </button>
-              </div>
-            </form>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

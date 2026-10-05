@@ -316,6 +316,9 @@ export const maintenance = {
   stats: (query?: { startDate?: string; endDate?: string; vehicleId?: string }): Promise<any> =>
     request(z.any(), '/maintenance/stats', { query: query as Record<string, QueryValue> }),
 
+  create: (body: FormData | Record<string, any>): Promise<any> =>
+    request(z.any(), '/maintenance', { method: 'POST', body }),
+
   exportCsv: (query?: MaintenanceFilterQuery): Promise<void> =>
     download(
       '/maintenance/export-csv',
@@ -408,6 +411,11 @@ export const spareParts = {
       { query },
       filename || `spare-parts-requisitions-${Date.now()}.xlsx`,
     ),
+  confirmReturns: (id: string, input: { itemIndexes: number[] }): Promise<SparePartRequestPublic> =>
+    request(z.any(), `/spare-parts/${id}/return-items`, {
+      method: 'PATCH',
+      body: input,
+    }),
 };
 
 export const support = {

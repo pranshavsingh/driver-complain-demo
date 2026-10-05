@@ -178,8 +178,9 @@ export async function handleGetMonthlyTripSummaries(req: Request, res: Response)
   const month = req.query.month ? Number(req.query.month) : undefined;
   const driverId = typeof req.query.driverId === 'string' ? req.query.driverId : undefined;
   const search = typeof req.query.search === 'string' ? req.query.search : undefined;
+  const status = typeof req.query.status === 'string' ? req.query.status : undefined;
 
-  const summaries = await getDriverMonthlyTripSummaries({ year, month, driverId, search });
+  const summaries = await getDriverMonthlyTripSummaries({ year, month, driverId, search, status });
   sendSuccess(res, { data: summaries });
 }
 

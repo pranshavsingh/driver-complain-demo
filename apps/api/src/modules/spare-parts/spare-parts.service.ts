@@ -15,6 +15,8 @@ import type {
   SparePartListQuery,
   SparePartRequestPublic,
   SparePartStatsSummary,
+  IssuedProductItem,
+  ConfirmReturnItemsInput,
 } from '@driver-complaint/shared-types';
 
 export interface SparePartEvidence {
@@ -112,6 +114,7 @@ export function toSparePartPublic(row: any): SparePartRequestPublic {
     issuedPartName: row.issuedPartName ?? null,
     issuedPartNo: row.issuedPartNo ?? null,
     issuedQty: row.issuedQty ?? null,
+    issuedItems: Array.isArray(row.issuedItems) ? (row.issuedItems as IssuedProductItem[]) : null,
     returnedPartNo: row.returnedPartNo ?? null,
     returnedPartCondition: row.returnedPartCondition ?? null,
     adminNotes: row.adminNotes ?? null,
@@ -467,6 +470,20 @@ export async function proposeIssueRequest(
     }
   }
 
+  // Build structured issuedItems JSON from items array
+  const finalIssuedItems: IssuedProductItem[] | null =
+    input.items && input.items.filter((i) => i.name && i.name.trim().length > 0).length > 0
+      ? input.items
+          .filter((i) => i.name && i.name.trim().length > 0)
+          .map((i) => ({
+            name: i.name.trim(),
+            quantity: Number(i.quantity) || 1,
+            serialNumber: i.serialNumber?.trim() ?? '',
+            returned: false,
+            returnedAt: null,
+          }))
+      : null;
+
   if (!finalPartName) {
     throw ApiError.badRequest('Please enter at least one product name');
   }
@@ -485,6 +502,7 @@ export async function proposeIssueRequest(
         issuedPartName: finalPartName,
         issuedPartNo: finalPartNo,
         issuedQty: finalQty,
+        issuedItems: finalIssuedItems ? (finalIssuedItems as any) : undefined,
         returnedPartNo: input.returnedPartNo ? input.returnedPartNo.trim() : null,
         returnedPartCondition: input.returnedPartCondition ? input.returnedPartCondition.trim() : null,
         adminNotes: input.adminNotes ? input.adminNotes.trim() : null,
@@ -570,6 +588,24 @@ export async function approveAndIssueRequest(
   const finalReturnedCondition = input?.returnedPartCondition !== undefined ? (input.returnedPartCondition?.trim() || null) : existing.returnedPartCondition;
   const finalAdminNotes = input?.adminNotes !== undefined ? (input.adminNotes?.trim() || null) : existing.adminNotes;
 
+  // Carry over existing issuedItems JSON (preserving already-confirmed returns)
+  const existingItems = Array.isArray((existing as any).issuedItems)
+    ? ((existing as any).issuedItems as IssuedProductItem[])
+    : null;
+
+  const finalIssuedItems: IssuedProductItem[] | null =
+    input?.items && input.items.filter((i) => i.name && i.name.trim().length > 0).length > 0
+      ? input.items
+          .filter((i) => i.name && i.name.trim().length > 0)
+          .map((i) => ({
+            name: i.name.trim(),
+            quantity: Number(i.quantity) || 1,
+            serialNumber: i.serialNumber?.trim() ?? '',
+            returned: false,
+            returnedAt: null,
+          }))
+      : existingItems;
+
   const now = new Date();
 
   const updated = await prisma.$transaction(async (tx) => {
@@ -586,6 +622,7 @@ export async function approveAndIssueRequest(
         issuedPartName: finalPartName,
         issuedPartNo: finalPartNo,
         issuedQty: finalQty,
+        issuedItems: finalIssuedItems ? (finalIssuedItems as any) : undefined,
         returnedPartNo: finalReturnedPartNo,
         returnedPartCondition: finalReturnedCondition,
         adminNotes: finalAdminNotes,
@@ -717,4 +754,45 @@ export async function* iterateForExport(query: SparePartListQuery) {
     if (result.data.length < batchSize) hasMore = false;
     page += 1;
   }
+}
+
+/**
+ * Confirm that specific items (by index) have been physically returned by the driver.
+ * Toggles `returned: true` and stamps `returnedAt` on matching items in the JSON array.
+ */
+export async function confirmReturnItems(
+  actorUserId: string,
+  id: string,
+  input: ConfirmReturnItemsInput,
+): Promise<SparePartRequestPublic> {
+  const existing = await prisma.sparePartRequest.findUnique({
+    where: { id },
+    include: sparePartInclude,
+  });
+  if (!existing) throw ApiError.notFound('Spare part request not found');
+
+  const items = Array.isArray((existing as any).issuedItems)
+    ? ([...(existing as any).issuedItems] as IssuedProductItem[])
+    : null;
+
+  if (!items || items.length === 0) {
+    throw ApiError.badRequest('This request has no structured issued items to confirm returns for');
+  }
+
+  const now = new Date().toISOString();
+
+  for (const idx of input.itemIndexes) {
+    if (idx < 0 || idx >= items.length) {
+      throw ApiError.badRequest(`Item index ${idx} is out of range`);
+    }
+    items[idx] = { ...items[idx]!, returned: true, returnedAt: now };
+  }
+
+  const updated = await prisma.sparePartRequest.update({
+    where: { id },
+    data: { issuedItems: items as any },
+    include: sparePartInclude,
+  });
+
+  return toSparePartPublic(updated);
 }

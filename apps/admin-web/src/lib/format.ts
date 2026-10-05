@@ -12,6 +12,16 @@ export function formatDateTime(iso: string | null | undefined): string {
   return Number.isNaN(date.getTime()) ? '—' : dateTimeFormat.format(date);
 }
 
+/** ISO timestamp → separate date string "Sep 22, 2026" and time string "03:35 PM" */
+export function splitDateTime(iso: string | null | undefined): { date: string; time: string } {
+  if (!iso) return { date: '—', time: '' };
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return { date: String(iso), time: '' };
+  const date = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const time = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+  return { date, time };
+}
+
 /** SCREAMING_SNAKE enum → "Screaming snake", for labels and table cells. */
 export function formatEnum(value: string): string {
   const words = value.replace(/_/g, ' ').toLowerCase();

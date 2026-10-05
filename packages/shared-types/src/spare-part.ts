@@ -23,6 +23,21 @@ export const SparePartProductItemSchema = z.object({
 
 export type SparePartProductItem = z.infer<typeof SparePartProductItemSchema>;
 
+/** A single issued product item stored as JSON on the request, with per-item return tracking. */
+export interface IssuedProductItem {
+  name: string;
+  quantity: number;
+  serialNumber: string;
+  returned: boolean;
+  returnedAt?: string | null;
+}
+
+/** Body for PATCH /:id/return-items — confirm which item indexes have been physically returned. */
+export const ConfirmReturnItemsSchema = z.object({
+  itemIndexes: z.array(z.number().int().min(0)).min(1, 'Select at least one item'),
+});
+export type ConfirmReturnItemsInput = z.infer<typeof ConfirmReturnItemsSchema>;
+
 export const ProposeIssueSparePartSchema = z.object({
   warehouseId: z.string().uuid('Warehouse is required'),
   type: SparePartTypeSchema.default('NEW'),
@@ -111,6 +126,8 @@ export interface SparePartRequestPublic {
   issuedPartName: string | null;
   issuedPartNo: string | null;
   issuedQty: number | null;
+  /** Structured per-item list with individual return tracking. */
+  issuedItems: IssuedProductItem[] | null;
   returnedPartNo: string | null;
   returnedPartCondition: string | null;
   adminNotes: string | null;

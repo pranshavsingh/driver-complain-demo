@@ -13,6 +13,7 @@ import {
   createWarehouse,
   updateWarehouse,
   deleteWarehouse,
+  confirmReturnItems,
 } from './spare-parts.controller';
 import { authenticate } from '../../middleware/authenticate';
 import { requireRole } from '../../middleware/authorize';
@@ -76,3 +77,4 @@ sparePartsRouter.patch('/:id/propose-issue', validateUuidParam('id'), requireRol
 sparePartsRouter.patch('/:id/issue', validateUuidParam('id'), requireRole('SUPER_ADMIN'), approveAndIssue);
 sparePartsRouter.patch('/:id/approve', validateUuidParam('id'), requireRole('SUPER_ADMIN'), approveAndIssue);
 sparePartsRouter.patch('/:id/reject', validateUuidParam('id'), requireRole('SUPER_ADMIN', 'ADMIN', 'EXECUTIVE'), rejectRequest);
+sparePartsRouter.patch('/:id/return-items', validateUuidParam('id'), requireRole('SUPER_ADMIN', 'ADMIN'), confirmReturnItems);

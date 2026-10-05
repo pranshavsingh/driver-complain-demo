@@ -525,6 +525,8 @@ model SparePartRequest {
   issuedPartName        String?
   issuedPartNo          String?
   issuedQty             Int?
+  // Structured per-item list with per-item return tracking
+  issuedItems           Json?
 
   // Exchange details (item received back from driver)
   returnedPartNo        String?

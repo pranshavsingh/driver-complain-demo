@@ -4,6 +4,7 @@ import type {
   AdminSummary,
   ComplaintDetail,
   ComplaintStatus,
+  TripPhase,
 } from '@driver-complaint/shared-types';
 import * as api from '../api/endpoints';
 import { useApiResource } from '../hooks/useApiResource';
@@ -42,6 +43,43 @@ function formatGpsCoords(lat?: number | null, lng?: number | null): string | nul
   const lngSec = ((lngMinFloat - lngMin) * 60).toFixed(1);
 
   return `${latDeg}°${latMin}'${latSec}"${latRef} ${lngDeg}°${lngMin}'${lngSec}"${lngRef}`;
+}
+
+interface LinkedChatMessage {
+  id: string;
+  timestamp: string;
+  message: string;
+}
+
+function parseComplaintDescription(fullDesc: string | null | undefined): {
+  cleanDescription: string;
+  linkedChats: LinkedChatMessage[];
+} {
+  if (!fullDesc) {
+    return { cleanDescription: '', linkedChats: [] };
+  }
+
+  const linkedChats: LinkedChatMessage[] = [];
+  const chatBlockPattern = /\[Linked Support Chat(?:\s*[•·:-]\s*([^\]]+))?\]:?([\s\S]*?)(?=(\n*\[Linked Support Chat|$))/gi;
+
+  let match: RegExpExecArray | null;
+  while ((match = chatBlockPattern.exec(fullDesc)) !== null) {
+    const rawTimestamp = match[1]?.trim() || '';
+    const rawMessage = match[2]?.trim() || '';
+    if (rawMessage || rawTimestamp) {
+      linkedChats.push({
+        id: `chat-${linkedChats.length}-${rawTimestamp}`,
+        timestamp: rawTimestamp || 'Support Session',
+        message: rawMessage,
+      });
+    }
+  }
+
+  const cleanDescription = fullDesc
+    .replace(/\[Linked Support Chat(?:\s*[•·:-]\s*[^\]]+)?\]:?[\s\S]*?(?=(\n*\[Linked Support Chat|$))/gi, '')
+    .trim();
+
+  return { cleanDescription, linkedChats };
 }
 
 export function ComplaintDetailPage(): ReactElement {
@@ -114,6 +152,17 @@ export function ComplaintDetailPage(): ReactElement {
   const photoAttachments = useMemo(() => {
     return complaint?.attachments?.filter((a) => a.kind === 'PHOTO') ?? [];
   }, [complaint?.attachments]);
+
+  // Parse description to separate clean text from linked support chat history
+  const { cleanDescription, linkedChats } = useMemo(
+    () => parseComplaintDescription(complaint?.description),
+    [complaint?.description],
+  );
+
+  const cleanTranscription = useMemo(() => {
+    if (!complaint?.transcription) return null;
+    return parseComplaintDescription(complaint.transcription).cleanDescription;
+  }, [complaint?.transcription]);
 
   // Dynamically resolve complaint origin phase from real complaint data
   // Do NOT guess phase from category — a BREAKDOWN can happen in any phase
@@ -189,7 +238,11 @@ export function ComplaintDetailPage(): ReactElement {
     setSelectedLang(target);
     if (translationsCache[target] || !complaint) return;
 
-    const sourceText = complaint.transcription || complaint.description;
+    const sourceText =
+      (complaint.transcription ? parseComplaintDescription(complaint.transcription).cleanDescription : null) ||
+      (complaint.description ? parseComplaintDescription(complaint.description).cleanDescription : null) ||
+      complaint.transcription ||
+      complaint.description;
     if (!sourceText) return;
 
     setTranslating(true);
@@ -256,20 +309,6 @@ export function ComplaintDetailPage(): ReactElement {
       .finally(() => setUpdatingStatus(false));
   };
 
-  // Escalate Action
-  const handleEscalate = () => {
-    if (!complaint) return;
-    setActionError(null);
-    setUpdatingStatus(true);
-    api.complaints
-      .updateStatus(complaint.id, {
-        status: complaint.status === 'NEW' ? 'IN_PROGRESS' : complaint.status,
-        note: '🚨 ESCALATED to Regional Head & Priority Response Dispatch.',
-      })
-      .then(() => reload())
-      .catch((err) => setActionError(err instanceof Error ? err.message : 'Failed to escalate incident'))
-      .finally(() => setUpdatingStatus(false));
-  };
 
   // Post Note Action
   const handlePostNote = (e?: FormEvent) => {
@@ -340,13 +379,18 @@ export function ComplaintDetailPage(): ReactElement {
   const driverEmpId = complaint.driverEmployeeId || complaint.driver?.employeeId || complaint.driverId || '—';
   const assignedTechName = complaint.assignedToName || (complaint.assignedTo ? `${complaint.assignedTo.firstName} ${complaint.assignedTo.lastName}`.trim() : 'Unassigned');
 
+
   // Active transcript text based on selected language
   const displayedTranscript =
     translationsCache[selectedLang] ||
-    complaint.transcription ||
-    (voiceNoteAttachment?.transcription) ||
-    complaint.description ||
-    'No description or transcription logged for this incident.';
+    cleanTranscription ||
+    (voiceNoteAttachment?.transcription
+      ? parseComplaintDescription(voiceNoteAttachment.transcription).cleanDescription
+      : null) ||
+    cleanDescription ||
+    (voiceNoteAttachment
+      ? 'Voice memo attached. AI transcription can be generated using the button below.'
+      : 'No text description or voice transcription recorded for this incident.');
 
   return (
     <div className="fleetops-view">
@@ -438,17 +482,6 @@ export function ComplaintDetailPage(): ReactElement {
                 <span>{complaint.status.replace('_', ' ')}</span>
               </button>
 
-              <button
-                type="button"
-                className="fo-btn-workflow danger"
-                onClick={handleEscalate}
-                disabled={updatingStatus}
-              >
-                <span className="material-symbols-outlined" style={{ fontSize: 14 }}>
-                  report
-                </span>
-                <span>Escalate to Regional Head</span>
-              </button>
 
               <button
                 type="button"
@@ -534,7 +567,7 @@ export function ComplaintDetailPage(): ReactElement {
                     }}
                   >
                     <span className="fo-ping-dot" style={{ background: '#ef4444' }} />
-                    Complaint Origin: {activeOriginPhase === 'YARD_IDLE' ? 'PARKING / SAFE YARD' : activeOriginPhase.replace(/_/g, ' ')}
+                    Complaint Origin: {activeOriginPhase === 'YARD_IDLE' ? 'PARKING' : activeOriginPhase.replace(/_/g, ' ')}
                   </span>
                 </div>
                 <div className="fo-inv-card-subtitle" style={{ fontSize: 11, color: '#8c909f' }}>
@@ -561,133 +594,187 @@ export function ComplaintDetailPage(): ReactElement {
           </div>
 
           {/* 4 Phase Stage Grid */}
-          <div className="fo-phase-tracker-grid">
-            {/* PHASE 1: AT_LOADING_PLANT */}
-            <div className={`fo-phase-box ${activeOriginPhase === 'AT_LOADING_PLANT' ? 'active-origin' : ''}`}>
-              <div className="fo-phase-head">
-                <span className={`fo-phase-badge ${activeOriginPhase === 'AT_LOADING_PLANT' ? 'alert' : 'success'}`}>
-                  {activeOriginPhase === 'AT_LOADING_PLANT' ? '● COMPLAINT RAISED HERE' : '✓ PHASE 1: PRE-INCIDENT'}
-                </span>
-                <span className="fo-phase-time">{formatDateTime(complaint.createdAt)}</span>
-              </div>
-              <div className="fo-phase-body">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span className="material-symbols-outlined" style={{ fontSize: 22, color: activeOriginPhase === 'AT_LOADING_PLANT' ? '#ef4444' : '#6ee7b7' }}>
-                    factory
-                  </span>
-                  <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    <span style={{ fontWeight: 700, fontSize: 13, color: '#ffffff' }}>At Loading Plant</span>
-                    <span style={{ fontSize: 10, color: activeOriginPhase === 'AT_LOADING_PLANT' ? '#ffb4ab' : '#8c909f' }}>
-                      {activeOriginPhase === 'AT_LOADING_PLANT' ? `SOS: ${complaint.category || 'Loading'}` : 'Completed Prior to Incident'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <div className="fo-phase-foot">
-                <span style={{ fontSize: 10, color: '#8c909f', fontFamily: 'var(--fo-font-mono)' }}>
-                  {complaint.vehiclePlateNumber || 'Loading Inspection'}
-                </span>
-              </div>
-            </div>
+          {(() => {
+            const phaseOrder: Record<TripPhase, number> = {
+              AT_LOADING_PLANT: 0,
+              IN_TRANSIT: 1,
+              AT_UNLOADING_POINT: 2,
+              YARD_IDLE: 3,
+            };
+            const currentOriginOrder = phaseOrder[activeOriginPhase as TripPhase] ?? 3;
 
-            {/* PHASE 2: IN_TRANSIT */}
-            <div className={`fo-phase-box ${activeOriginPhase === 'IN_TRANSIT' ? 'active-origin' : ''}`}>
-              <div className="fo-phase-head">
-                <span className={`fo-phase-badge ${activeOriginPhase === 'IN_TRANSIT' ? 'alert' : 'muted'}`}>
-                  {activeOriginPhase === 'IN_TRANSIT' ? '● COMPLAINT RAISED HERE' : 'PHASE 2: IN TRANSIT'}
-                </span>
-                <span className="fo-phase-time">{formatDateTime(complaint.createdAt)}</span>
-              </div>
-              <div className="fo-phase-body">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <div style={{ width: 28, height: 28, borderRadius: 6, background: activeOriginPhase === 'IN_TRANSIT' ? '#ef4444' : '#1b2b3f', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ffffff', flexShrink: 0 }}>
-                    <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
-                      {activeOriginPhase === 'IN_TRANSIT' ? 'emergency' : 'directions_bus'}
+            const getPhaseStatusBadge = (phaseKey: TripPhase, phaseNumber: number) => {
+              const thisOrder = phaseOrder[phaseKey] ?? 0;
+              if (thisOrder === currentOriginOrder) {
+                return {
+                  className: 'alert',
+                  label: '● COMPLAINT RAISED HERE',
+                };
+              }
+              if (thisOrder < currentOriginOrder) {
+                return {
+                  className: 'success',
+                  label: `✓ PHASE ${phaseNumber}: COMPLETED`,
+                };
+              }
+              return {
+                className: 'muted',
+                label: `PHASE ${phaseNumber}: IMPACTED`,
+              };
+            };
+
+            const p1Badge = getPhaseStatusBadge('AT_LOADING_PLANT', 1);
+            const p2Badge = getPhaseStatusBadge('IN_TRANSIT', 2);
+            const p3Badge = getPhaseStatusBadge('AT_UNLOADING_POINT', 3);
+            const p4Badge = getPhaseStatusBadge('YARD_IDLE', 4);
+
+            return (
+              <div className="fo-phase-tracker-grid">
+                {/* PHASE 1: AT_LOADING_PLANT */}
+                <div className={`fo-phase-box ${activeOriginPhase === 'AT_LOADING_PLANT' ? 'active-origin' : ''}`}>
+                  <div className="fo-phase-head">
+                    <span className={`fo-phase-badge ${p1Badge.className}`}>
+                      {p1Badge.label}
                     </span>
+                    <span className="fo-phase-time">{formatDateTime(complaint.createdAt)}</span>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    <span style={{ fontWeight: 800, fontSize: 13, color: '#ffffff' }}>
-                      Phase 2: In Transit
-                    </span>
-                    <span style={{ fontSize: 10, color: activeOriginPhase === 'IN_TRANSIT' ? '#ffb4ab' : '#8c909f' }}>
-                      {activeOriginPhase === 'IN_TRANSIT' ? `Driver SOS: ${complaint.category || 'Breakdown'}` : 'Highway Movement'}
-                    </span>
-                    {complaint.tripLocationName ? (
-                      <span style={{ fontSize: 10, color: '#8c909f', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>
-                        {complaint.tripLocationName}
+                  <div className="fo-phase-body">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span className="material-symbols-outlined" style={{ fontSize: 22, color: activeOriginPhase === 'AT_LOADING_PLANT' ? '#ef4444' : '#6ee7b7' }}>
+                        factory
                       </span>
-                    ) : null}
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span style={{ fontWeight: 700, fontSize: 13, color: '#ffffff' }}>At Loading Plant</span>
+                        <span style={{ fontSize: 10, color: activeOriginPhase === 'AT_LOADING_PLANT' ? '#ffb4ab' : '#8c909f' }}>
+                          {activeOriginPhase === 'AT_LOADING_PLANT' ? `SOS: ${complaint.category || 'Loading'}` : 'Completed Prior to Incident'}
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
-              <div className="fo-phase-foot">
-                <span style={{ fontSize: 10, color: activeOriginPhase === 'IN_TRANSIT' ? '#ffb4ab' : '#8c909f', fontFamily: 'var(--fo-font-mono)' }}>
-                  {photoAttachments.length} Evidence Photo(s) Attached
-                </span>
-              </div>
-            </div>
-
-            {/* PHASE 3: AT_UNLOADING_POINT */}
-            <div className={`fo-phase-box ${activeOriginPhase === 'AT_UNLOADING_POINT' ? 'active-origin' : ''}`}>
-              <div className="fo-phase-head">
-                <span className={`fo-phase-badge ${activeOriginPhase === 'AT_UNLOADING_POINT' ? 'alert' : 'muted'}`}>
-                  {activeOriginPhase === 'AT_UNLOADING_POINT' ? '● COMPLAINT RAISED HERE' : 'PHASE 3: IMPACTED'}
-                </span>
-                <span className="fo-phase-time">{activeOriginPhase === 'AT_UNLOADING_POINT' ? formatDateTime(complaint.createdAt) : 'Target SLA'}</span>
-              </div>
-              <div className="fo-phase-body">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span className="material-symbols-outlined" style={{ fontSize: 22, color: activeOriginPhase === 'AT_UNLOADING_POINT' ? '#ef4444' : '#8c909f' }}>
-                    inventory_2
-                  </span>
-                  <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    <span style={{ fontWeight: 700, fontSize: 13, color: '#ffffff' }}>At Unloading Point</span>
-                    <span style={{ fontSize: 10, color: activeOriginPhase === 'AT_UNLOADING_POINT' ? '#ffb4ab' : '#8c909f' }}>
-                      {activeOriginPhase === 'AT_UNLOADING_POINT' ? `Driver SOS: ${complaint.category || 'Unloading'}` : 'Interrupted by Incident'}
+                  <div className="fo-phase-foot">
+                    <span style={{ fontSize: 10, color: '#8c909f', fontFamily: 'var(--fo-font-mono)' }}>
+                      {complaint.vehiclePlateNumber || 'Loading Inspection'}
                     </span>
                   </div>
                 </div>
-              </div>
-              <div className="fo-phase-foot">
-                <span style={{ fontSize: 10, color: '#8c909f', fontFamily: 'var(--fo-font-mono)' }}>
-                  {complaint.loadingStatus ? `Status: ${complaint.loadingStatus}` : 'POD Delivery Pending'}
-                </span>
-              </div>
-            </div>
 
-            {/* PHASE 4: YARD_IDLE (PARKING / SAFE YARD) */}
-            <div className={`fo-phase-box ${activeOriginPhase === 'YARD_IDLE' ? 'active-origin' : ''}`}>
-              <div className="fo-phase-head">
-                <span className={`fo-phase-badge ${activeOriginPhase === 'YARD_IDLE' ? 'alert' : 'muted'}`}>
-                  {activeOriginPhase === 'YARD_IDLE' ? '● COMPLAINT RAISED HERE' : 'CURRENT STOPPAGE'}
-                </span>
-                <span className="fo-phase-time">{activeOriginPhase === 'YARD_IDLE' ? formatDateTime(complaint.createdAt) : 'Staging Zone'}</span>
-              </div>
-              <div className="fo-phase-body">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <div style={{ width: 26, height: 26, borderRadius: 6, background: activeOriginPhase === 'YARD_IDLE' ? '#ef4444' : '#1b2b3f', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ffffff', fontWeight: 800, fontSize: 13, flexShrink: 0 }}>
-                    P
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    <span style={{ fontWeight: 700, fontSize: 13, color: '#ffffff' }}>Parking / Safe Yard</span>
-                    <span style={{ fontSize: 10, color: activeOriginPhase === 'YARD_IDLE' ? '#ffb4ab' : '#8c909f' }}>
-                      {activeOriginPhase === 'YARD_IDLE' ? `Driver SOS: ${complaint.category || 'Yard'}` : 'Post-Incident Safe Haven'}
+                {/* PHASE 2: IN_TRANSIT */}
+                <div className={`fo-phase-box ${activeOriginPhase === 'IN_TRANSIT' ? 'active-origin' : ''}`}>
+                  <div className="fo-phase-head">
+                    <span className={`fo-phase-badge ${p2Badge.className}`}>
+                      {p2Badge.label}
                     </span>
-                    {complaint.tripLocationName ? (
-                      <span style={{ fontSize: 10, color: '#8c909f', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>
-                        {complaint.tripLocationName}
+                    <span className="fo-phase-time">{formatDateTime(complaint.createdAt)}</span>
+                  </div>
+                  <div className="fo-phase-body">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ width: 28, height: 28, borderRadius: 6, background: activeOriginPhase === 'IN_TRANSIT' ? '#ef4444' : '#1b2b3f', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ffffff', flexShrink: 0 }}>
+                        <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
+                          {activeOriginPhase === 'IN_TRANSIT' ? 'emergency' : 'directions_bus'}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span style={{ fontWeight: 800, fontSize: 13, color: '#ffffff' }}>
+                          Phase 2: In Transit
+                        </span>
+                        <span style={{ fontSize: 10, color: activeOriginPhase === 'IN_TRANSIT' ? '#ffb4ab' : '#8c909f' }}>
+                          {activeOriginPhase === 'IN_TRANSIT' ? `Driver SOS: ${complaint.category || 'Breakdown'}` : 'Highway Movement'}
+                        </span>
+                        {complaint.tripLocationName ? (
+                          <span
+                            title={complaint.tripLocationName}
+                            style={{ fontSize: 10, color: '#8c909f', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160, cursor: 'help' }}
+                          >
+                            {complaint.tripLocationName}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="fo-phase-foot">
+                    {photoAttachments.length > 0 ? (
+                      <span style={{ fontSize: 10, color: activeOriginPhase === 'IN_TRANSIT' ? '#ffb4ab' : '#6ee7b7', fontFamily: 'var(--fo-font-mono)' }}>
+                        ✓ {photoAttachments.length} Evidence Photo(s) Attached
                       </span>
-                    ) : null}
+                    ) : (
+                      <span style={{ fontSize: 10, color: '#f59e0b', fontFamily: 'var(--fo-font-mono)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        ⚠ No Evidence Photos — Add Photos
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* PHASE 3: AT_UNLOADING_POINT */}
+                <div className={`fo-phase-box ${activeOriginPhase === 'AT_UNLOADING_POINT' ? 'active-origin' : ''}`}>
+                  <div className="fo-phase-head">
+                    <span className={`fo-phase-badge ${p3Badge.className}`}>
+                      {p3Badge.label}
+                    </span>
+                    <span className="fo-phase-time" title={activeOriginPhase !== 'AT_UNLOADING_POINT' ? 'Estimated delivery deadline' : undefined}>
+                      {activeOriginPhase === 'AT_UNLOADING_POINT'
+                        ? formatDateTime(complaint.createdAt)
+                        : 'Target SLA: N/A'}
+                    </span>
+                  </div>
+                  <div className="fo-phase-body">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span className="material-symbols-outlined" style={{ fontSize: 22, color: activeOriginPhase === 'AT_UNLOADING_POINT' ? '#ef4444' : '#8c909f' }}>
+                        inventory_2
+                      </span>
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span style={{ fontWeight: 700, fontSize: 13, color: '#ffffff' }}>At Unloading Point</span>
+                        <span style={{ fontSize: 10, color: activeOriginPhase === 'AT_UNLOADING_POINT' ? '#ffb4ab' : '#8c909f' }}>
+                          {activeOriginPhase === 'AT_UNLOADING_POINT' ? `Driver SOS: ${complaint.category || 'Unloading'}` : 'Interrupted by Incident'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="fo-phase-foot">
+                    <span style={{ fontSize: 10, color: complaint.loadingStatus ? '#6ee7b7' : '#f59e0b', fontFamily: 'var(--fo-font-mono)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                      {complaint.loadingStatus
+                        ? `✓ Status: ${complaint.loadingStatus.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}`
+                        : '⏳ POD Delivery Pending'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* PHASE 4: YARD_IDLE (PARKING) */}
+                <div className={`fo-phase-box ${activeOriginPhase === 'YARD_IDLE' ? 'active-origin' : ''}`}>
+                  <div className="fo-phase-head">
+                    <span className={`fo-phase-badge ${p4Badge.className}`}>
+                      {p4Badge.label}
+                    </span>
+                    <span className="fo-phase-time">{activeOriginPhase === 'YARD_IDLE' ? formatDateTime(complaint.createdAt) : 'Parking Zone'}</span>
+                  </div>
+                  <div className="fo-phase-body">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ width: 26, height: 26, borderRadius: 6, background: activeOriginPhase === 'YARD_IDLE' ? '#ef4444' : '#1b2b3f', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ffffff', fontWeight: 800, fontSize: 13, flexShrink: 0 }}>
+                        P
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span style={{ fontWeight: 700, fontSize: 13, color: '#ffffff' }}>Parking</span>
+                        <span style={{ fontSize: 10, color: activeOriginPhase === 'YARD_IDLE' ? '#ffb4ab' : '#8c909f' }}>
+                          {activeOriginPhase === 'YARD_IDLE' ? `Driver SOS: ${complaint.category || 'Parking'}` : 'Post-Incident Parking'}
+                        </span>
+                        {complaint.tripLocationName ? (
+                          <span style={{ fontSize: 10, color: '#8c909f', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }}>
+                            {complaint.tripLocationName}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="fo-phase-foot">
+                    <span style={{ fontSize: 10, color: activeOriginPhase === 'YARD_IDLE' ? '#ffb4ab' : '#8c909f', fontFamily: 'var(--fo-font-mono)' }}>
+                      Status: {complaint.status
+                        ? complaint.status.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())
+                        : '—'}
+                    </span>
                   </div>
                 </div>
               </div>
-              <div className="fo-phase-foot">
-                <span style={{ fontSize: 10, color: activeOriginPhase === 'YARD_IDLE' ? '#ffb4ab' : '#8c909f', fontFamily: 'var(--fo-font-mono)' }}>
-                  Status: {complaint.status}
-                </span>
-              </div>
-            </div>
-          </div>
+            );
+          })()}
         </section>
 
         {/* ==========================================================================
@@ -852,7 +939,92 @@ export function ComplaintDetailPage(): ReactElement {
               </div>
             </div>
 
-            {/* 2. Field Photographic Dossier */}
+            {/* 2. Linked Support Chat Timeline (Only shown if linkedChats.length > 0) */}
+            {linkedChats.length > 0 && (
+              <div className="fo-inv-card">
+                <div className="fo-inv-card-head">
+                  <div className="fo-inv-card-title-group">
+                    <div className="fo-inv-card-icon" style={{ color: '#818cf8' }}>
+                      <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
+                        forum
+                      </span>
+                    </div>
+                    <div>
+                      <h3 className="fo-inv-card-title">Linked Support Chat History</h3>
+                      <div className="fo-inv-card-subtitle">
+                        {linkedChats.length} {linkedChats.length === 1 ? 'chat message linked' : 'chat messages linked'} from live support session
+                      </div>
+                    </div>
+                  </div>
+                  <span
+                    style={{
+                      fontFamily: 'var(--fo-font-mono)',
+                      fontSize: 10,
+                      fontWeight: 800,
+                      color: '#c7d2fe',
+                      background: 'rgba(99, 102, 241, 0.15)',
+                      border: '1px solid rgba(129, 140, 248, 0.4)',
+                      padding: '2px 8px',
+                      borderRadius: 4,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.06em',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                    }}
+                  >
+                    <span className="material-symbols-outlined" style={{ fontSize: 12, color: '#818cf8' }}>
+                      link
+                    </span>
+                    Live Chat Link
+                  </span>
+                </div>
+
+                <div className="fo-inv-timeline" style={{ marginTop: 6 }}>
+                  {linkedChats.map((chat, idx) => (
+                    <div key={chat.id || idx} className="fo-inv-timeline-item">
+                      <div
+                        className="fo-inv-timeline-dot"
+                        style={{
+                          background: '#818cf8',
+                          borderColor: '#0b1c30',
+                          boxShadow: '0 0 6px rgba(129, 140, 248, 0.7)',
+                        }}
+                      />
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
+                        <span style={{ fontFamily: 'var(--fo-font-mono)', fontSize: 10, fontWeight: 700, color: '#a5b4fc', display: 'flex', alignItems: 'center', gap: 5 }}>
+                          <span className="material-symbols-outlined" style={{ fontSize: 13 }}>
+                            support_agent
+                          </span>
+                          LINKED DRIVER SUPPORT MESSAGE #{idx + 1}
+                        </span>
+                        <span style={{ fontFamily: 'var(--fo-font-mono)', fontSize: 10, color: '#8c909f' }}>
+                          {chat.timestamp}
+                        </span>
+                      </div>
+                      <div
+                        style={{
+                          margin: '4px 0 0 0',
+                          fontSize: 12,
+                          lineHeight: 1.55,
+                          color: '#e0e7ff',
+                          background: 'rgba(30, 27, 75, 0.55)',
+                          border: '1px solid rgba(129, 140, 248, 0.28)',
+                          padding: '10px 12px',
+                          borderRadius: 8,
+                          whiteSpace: 'pre-wrap',
+                          wordBreak: 'break-word',
+                        }}
+                      >
+                        {chat.message}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 3. Field Photographic Dossier */}
             <div className="fo-inv-card">
               <div className="fo-inv-card-head">
                 <div className="fo-inv-card-title-group">

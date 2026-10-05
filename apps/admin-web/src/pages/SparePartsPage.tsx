@@ -4,6 +4,7 @@ import type {
   WarehousePublic,
   SparePartRequestStatus,
   SparePartType,
+  IssuedProductItem,
 } from '@driver-complaint/shared-types';
 import {
   Package,
@@ -73,6 +74,11 @@ export function SparePartsPage(): ReactElement {
   const [exporting, setExporting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+
+  // Return tracking state (inside the detail modal)
+  const [returnChecked, setReturnChecked] = useState<Record<number, boolean>>({});
+  const [returnLoading, setReturnLoading] = useState(false);
+  const [returnError, setReturnError] = useState<string | null>(null);
 
   // Propose / Issue Form State
   const [issueWarehouseId, setIssueWarehouseId] = useState('');
@@ -240,6 +246,32 @@ export function SparePartsPage(): ReactElement {
     setRejectingRequest(req);
     setRejectionReason('');
     setActionError(null);
+  };
+
+  const handleOpenViewModal = (req: SparePartRequestPublic): void => {
+    setViewingRequest(req);
+    setReturnChecked({});
+    setReturnError(null);
+  };
+
+  const handleConfirmReturns = async (): Promise<void> => {
+    if (!viewingRequest) return;
+    const itemIndexes = Object.entries(returnChecked)
+      .filter(([, checked]) => checked)
+      .map(([idx]) => Number(idx));
+    if (itemIndexes.length === 0) return;
+    try {
+      setReturnLoading(true);
+      setReturnError(null);
+      const updated = await api.spareParts.confirmReturns(viewingRequest.id, { itemIndexes });
+      setViewingRequest(updated);
+      setReturnChecked({});
+      void requestsResource.reload();
+    } catch (err: any) {
+      setReturnError(err?.message || 'Failed to confirm returns');
+    } finally {
+      setReturnLoading(false);
+    }
   };
 
   const handleOpenAddWarehouse = (): void => {
@@ -1147,7 +1179,7 @@ export function SparePartsPage(): ReactElement {
                               {req.voiceUrl ? (
                                 <button
                                   type="button"
-                                  onClick={() => setViewingRequest(req)}
+                                  onClick={() => handleOpenViewModal(req)}
                                   title="Listen to Voice Note"
                                   style={{
                                     padding: '4px 8px',
@@ -1226,7 +1258,33 @@ export function SparePartsPage(): ReactElement {
                                 <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                                   S/N: {req.issuedPartNo || 'N/A'} • {req.warehouse?.name}
                                 </div>
-                                {req.returnedPartNo ? (
+                                {req.issuedItems && req.issuedItems.length > 0 ? (
+                                  <div style={{ marginTop: 4 }}>
+                                    {(() => {
+                                      const returnedCount = req.issuedItems.filter((i) => i.returned).length;
+                                      const totalCount = req.issuedItems.length;
+                                      const allReturned = returnedCount === totalCount && totalCount > 0;
+                                      return (
+                                        <span
+                                          style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: 4,
+                                            padding: '2px 6px',
+                                            borderRadius: 4,
+                                            fontSize: 10,
+                                            fontWeight: 700,
+                                            backgroundColor: allReturned ? 'rgba(34, 197, 94, 0.12)' : 'rgba(234, 88, 12, 0.12)',
+                                            color: allReturned ? '#16a34a' : '#ea580c',
+                                            border: `1px solid ${allReturned ? 'rgba(34, 197, 94, 0.25)' : 'rgba(234, 88, 12, 0.25)'}`,
+                                          }}
+                                        >
+                                          {allReturned ? '✓ Returns Done' : `Returns: ${returnedCount}/${totalCount}`}
+                                        </span>
+                                      );
+                                    })()}
+                                  </div>
+                                ) : req.returnedPartNo ? (
                                   <div style={{ fontSize: 11, color: '#b45309', marginTop: 2 }}>
                                     Returned: {req.returnedPartNo}
                                   </div>
@@ -1258,7 +1316,7 @@ export function SparePartsPage(): ReactElement {
                               <button
                                 type="button"
                                 className="btn-secondary"
-                                onClick={() => setViewingRequest(req)}
+                                onClick={() => handleOpenViewModal(req)}
                                 style={{ padding: '5px 10px', fontSize: 12 }}
                                 title="View Full Details"
                               >
@@ -1823,35 +1881,203 @@ export function SparePartsPage(): ReactElement {
               </div>
             )}
 
-            {/* Completed Issue Record */}
+            {/* Completed Issue Record & Return Tracking */}
             {viewingRequest.status === 'ISSUED' && (
               <div
                 style={{
-                  padding: 14,
-                  backgroundColor: 'var(--success-bg)',
-                  borderRadius: 'var(--radius)',
-                  border: '1px solid var(--success-border)',
+                  padding: 16,
+                  backgroundColor: 'var(--card-bg, #ffffff)',
+                  borderRadius: 'var(--radius, 8px)',
+                  border: '1px solid var(--border)',
                   marginBottom: 16,
                 }}
               >
-                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--success-text)', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                  <CheckCircle2 size={16} /> Issuance & Fulfillment Record
+                <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--success-text)' }}>
+                    <CheckCircle2 size={16} /> Issuance & Fulfillment Record
+                  </div>
+                  {viewingRequest.issuedAt && (
+                    <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>
+                      Issued: {formatDateTime(viewingRequest.issuedAt)}
+                    </span>
+                  )}
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 13 }}>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 13, padding: 10, backgroundColor: 'var(--bg)', borderRadius: 6, marginBottom: 14 }}>
                   <div><strong>Issued Part:</strong> {viewingRequest.issuedPartName}</div>
                   <div><strong>Part / Serial No:</strong> {viewingRequest.issuedPartNo}</div>
                   <div><strong>Quantity:</strong> {viewingRequest.issuedQty}</div>
                   <div><strong>Warehouse:</strong> {viewingRequest.warehouse?.name}</div>
                   <div><strong>Requisition Type:</strong> {viewingRequest.type}</div>
-                  {viewingRequest.returnedPartNo && (
-                    <>
+                  <div><strong>Authorized By:</strong> {viewingRequest.approvedBy ? `${viewingRequest.approvedBy.firstName} ${viewingRequest.approvedBy.lastName}` : 'SuperAdmin'}</div>
+                </div>
+
+                {/* Per-Product Return Tracking Panel */}
+                {viewingRequest.issuedItems && viewingRequest.issuedItems.length > 0 ? (
+                  <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <RotateCw size={14} color="var(--primary)" />
+                        <span>Driver Old / Core Part Returns</span>
+                      </div>
+                      {(() => {
+                        const items = viewingRequest.issuedItems!;
+                        const returnedCount = items.filter((i) => i.returned).length;
+                        const allReturned = returnedCount === items.length && items.length > 0;
+                        return (
+                          <span
+                            style={{
+                              fontSize: 11,
+                              fontWeight: 700,
+                              padding: '2px 8px',
+                              borderRadius: 12,
+                              backgroundColor: allReturned ? 'rgba(34, 197, 94, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                              color: allReturned ? '#16a34a' : '#d97706',
+                              border: `1px solid ${allReturned ? 'rgba(34, 197, 94, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`,
+                            }}
+                          >
+                            {allReturned ? '✓ All Items Returned' : `${returnedCount} of ${items.length} Returned`}
+                          </span>
+                        );
+                      })()}
+                    </div>
+
+                    <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>
+                      When the driver brings back the old/defective part, check the box and confirm to record return timestamp into the system and Excel exports.
+                    </div>
+
+                    {returnError && (
+                      <div style={{ padding: '6px 10px', marginBottom: 8, fontSize: 12, color: 'var(--danger-text)', backgroundColor: 'var(--danger-bg)', borderRadius: 6, border: '1px solid var(--danger-border)' }}>
+                        {returnError}
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {viewingRequest.issuedItems.map((item: IssuedProductItem, index: number) => {
+                        const isReturned = Boolean(item.returned);
+                        const isChecked = Boolean(returnChecked[index]);
+                        return (
+                          <div
+                            key={index}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              padding: '8px 12px',
+                              borderRadius: 6,
+                              backgroundColor: isReturned ? 'rgba(34, 197, 94, 0.05)' : 'var(--bg)',
+                              border: `1px solid ${isReturned ? 'rgba(34, 197, 94, 0.25)' : 'var(--border)'}`,
+                            }}
+                          >
+                            <label
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 10,
+                                cursor: isReturned ? 'default' : 'pointer',
+                                flex: 1,
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isReturned || isChecked}
+                                disabled={isReturned || returnLoading}
+                                onChange={(e) => {
+                                  if (isReturned) return;
+                                  setReturnChecked((prev) => ({
+                                    ...prev,
+                                    [index]: e.target.checked,
+                                  }));
+                                }}
+                                style={{
+                                  width: 16,
+                                  height: 16,
+                                  cursor: isReturned ? 'default' : 'pointer',
+                                  accentColor: 'var(--primary)',
+                                }}
+                              />
+                              <div>
+                                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
+                                  {item.name} <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(Qty: {item.quantity})</span>
+                                </div>
+                                {item.serialNumber ? (
+                                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                                    S/N: {item.serialNumber}
+                                  </div>
+                                ) : null}
+                              </div>
+                            </label>
+
+                            <div>
+                              {isReturned ? (
+                                <span
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                    fontSize: 11,
+                                    fontWeight: 700,
+                                    padding: '3px 8px',
+                                    borderRadius: 4,
+                                    backgroundColor: 'rgba(34, 197, 94, 0.15)',
+                                    color: '#16a34a',
+                                  }}
+                                >
+                                  <CheckCircle2 size={12} /> Returned {item.returnedAt ? `(${formatDateTime(item.returnedAt)})` : ''}
+                                </span>
+                              ) : (
+                                <span
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                    fontSize: 11,
+                                    fontWeight: 600,
+                                    padding: '3px 8px',
+                                    borderRadius: 4,
+                                    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+                                    color: '#b45309',
+                                  }}
+                                >
+                                  <Clock size={12} /> Pending Return
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Button to confirm newly checked items */}
+                    {Object.values(returnChecked).some(Boolean) && (
+                      <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
+                        <button
+                          type="button"
+                          className="btn-primary"
+                          disabled={returnLoading}
+                          onClick={handleConfirmReturns}
+                          style={{
+                            padding: '6px 14px',
+                            fontSize: 12,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 6,
+                          }}
+                        >
+                          <CheckCircle2 size={14} />
+                          <span>{returnLoading ? 'Saving...' : 'Confirm Return of Checked Products'}</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  viewingRequest.returnedPartNo && (
+                    <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10, marginTop: 10, fontSize: 13 }}>
                       <div><strong>Returned Part No:</strong> {viewingRequest.returnedPartNo}</div>
                       <div><strong>Condition:</strong> {viewingRequest.returnedPartCondition || 'N/A'}</div>
-                    </>
-                  )}
-                  <div><strong>Authorized By:</strong> {viewingRequest.approvedBy ? `${viewingRequest.approvedBy.firstName} ${viewingRequest.approvedBy.lastName}` : 'SuperAdmin'}</div>
-                  <div><strong>Issued At:</strong> {viewingRequest.issuedAt ? formatDateTime(viewingRequest.issuedAt) : 'N/A'}</div>
-                </div>
+                    </div>
+                  )
+                )}
               </div>
             )}
 
