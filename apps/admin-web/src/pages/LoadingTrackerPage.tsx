@@ -38,6 +38,25 @@ function getInitials(name?: string | null): string {
 
 type TabFilter = 'ALL' | 'WAITING' | 'COMPLETED' | 'BREACHED';
 
+const MONTH_OPTIONS = [
+  { value: '', label: 'All Months' },
+  { value: 1, label: 'January' },
+  { value: 2, label: 'February' },
+  { value: 3, label: 'March' },
+  { value: 4, label: 'April' },
+  { value: 5, label: 'May' },
+  { value: 6, label: 'June' },
+  { value: 7, label: 'July' },
+  { value: 8, label: 'August' },
+  { value: 9, label: 'September' },
+  { value: 10, label: 'October' },
+  { value: 11, label: 'November' },
+  { value: 12, label: 'December' },
+];
+
+const currentYear = new Date().getFullYear();
+const YEAR_OPTIONS = [currentYear, currentYear - 1, currentYear - 2];
+
 export function LoadingTrackerPage(): ReactElement {
   const [selectedProofRecord, setSelectedProofRecord] = useState<LoadingRecord | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -45,8 +64,8 @@ export function LoadingTrackerPage(): ReactElement {
   const [pageSize, setPageSize] = useState(15);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<TabFilter>('ALL');
-  const [selectedPlant, setSelectedPlant] = useState('ALL');
-  const [selectedDateRange, setSelectedDateRange] = useState('TODAY_SHIFT_2');
+  const [selectedMonth, setSelectedMonth] = useState<number | ''>('');
+  const [selectedYear, setSelectedYear] = useState<number | ''>('');
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const loadingResource = useApiResource('admin:loading', () => api.loading.list());
@@ -70,21 +89,37 @@ export function LoadingTrackerPage(): ReactElement {
     return () => window.clearInterval(interval);
   }, [rawRecords]);
 
-  // Overall metric counts (unfiltered)
-  const totalCount = rawRecords.length;
-  const activeWaitingCount = useMemo(() => rawRecords.filter((r) => r.status === 'REACHED').length, [rawRecords]);
-  const completedCount = useMemo(() => rawRecords.filter((r) => r.status === 'COMPLETED').length, [rawRecords]);
+  // Records filtered by Month & Year (base for KPI cards and tab counts)
+  const monthFilteredRecords = useMemo(() => {
+    return rawRecords.filter((r) => {
+      const recDate = new Date(r.reachedAt || r.createdAt);
+      if (!isNaN(recDate.getTime())) {
+        if (selectedMonth !== '' && recDate.getMonth() + 1 !== Number(selectedMonth)) {
+          return false;
+        }
+        if (selectedYear !== '' && recDate.getFullYear() !== Number(selectedYear)) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [rawRecords, selectedMonth, selectedYear]);
+
+  // Overall metric counts (scoped to selected month/year)
+  const totalCount = monthFilteredRecords.length;
+  const activeWaitingCount = useMemo(() => monthFilteredRecords.filter((r) => r.status === 'REACHED').length, [monthFilteredRecords]);
+  const completedCount = useMemo(() => monthFilteredRecords.filter((r) => r.status === 'COMPLETED').length, [monthFilteredRecords]);
   const highDetentionCount = useMemo(
-    () => rawRecords.filter((r) => (waitingMinutes(r, now) ?? 0) > 120).length,
-    [rawRecords, now],
+    () => monthFilteredRecords.filter((r) => (waitingMinutes(r, now) ?? 0) > 120).length,
+    [monthFilteredRecords, now],
   );
 
   // Compliance metrics calculations
   const completedWithDurations = useMemo(() => {
-    return rawRecords
+    return monthFilteredRecords
       .filter((r) => r.status === 'COMPLETED')
       .map((r) => waitingMinutes(r, now) ?? 0);
-  }, [rawRecords, now]);
+  }, [monthFilteredRecords, now]);
 
   const avgTurnaround = useMemo(() => {
     if (completedWithDurations.length === 0) return 38;
@@ -93,9 +128,9 @@ export function LoadingTrackerPage(): ReactElement {
   }, [completedWithDurations]);
 
 
-  // Filter records based on tab, search query, and plant
+  // Filter records based on tab, search query, and month
   const filteredRecords = useMemo(() => {
-    return rawRecords.filter((r) => {
+    return monthFilteredRecords.filter((r) => {
       const mins = waitingMinutes(r, now) ?? 0;
       const isBreached = mins > 120;
 
@@ -115,7 +150,7 @@ export function LoadingTrackerPage(): ReactElement {
 
       return true;
     });
-  }, [rawRecords, activeTab, searchQuery, now]);
+  }, [monthFilteredRecords, activeTab, searchQuery, now]);
 
   const totalFiltered = filteredRecords.length;
   const totalPages = Math.ceil(totalFiltered / pageSize) || 1;
@@ -176,40 +211,48 @@ export function LoadingTrackerPage(): ReactElement {
             ========================================================================== */}
         <div className="fo-loading-filters-bar">
           <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>
-            {/* Date Selector */}
+            {/* Month Filter */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--fo-surface)', padding: '4px 10px', borderRadius: 6, border: '1px solid var(--fo-border-subtle)' }}>
+              <span className="material-symbols-outlined" style={{ fontSize: 16, color: 'var(--fo-text-muted)' }}>
+                calendar_month
+              </span>
+              <select
+                className="fo-loading-filter-select"
+                style={{ border: 'none', background: 'transparent', padding: 0, color: '#ffffff', colorScheme: 'dark' }}
+                value={selectedMonth}
+                onChange={(e) => {
+                  setSelectedMonth(e.target.value === '' ? '' : Number(e.target.value));
+                  setPage(1);
+                }}
+              >
+                {MONTH_OPTIONS.map((m) => (
+                  <option key={m.label} value={m.value} style={{ backgroundColor: '#102034', color: '#ffffff' }}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Year Filter */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--fo-surface)', padding: '4px 10px', borderRadius: 6, border: '1px solid var(--fo-border-subtle)' }}>
               <span className="material-symbols-outlined" style={{ fontSize: 16, color: 'var(--fo-text-muted)' }}>
                 calendar_today
               </span>
               <select
                 className="fo-loading-filter-select"
-                style={{ border: 'none', background: 'transparent', padding: 0 }}
-                value={selectedDateRange}
-                onChange={(e) => setSelectedDateRange(e.target.value)}
+                style={{ border: 'none', background: 'transparent', padding: 0, color: '#ffffff', colorScheme: 'dark' }}
+                value={selectedYear}
+                onChange={(e) => {
+                  setSelectedYear(e.target.value === '' ? '' : Number(e.target.value));
+                  setPage(1);
+                }}
               >
-                <option value="TODAY_SHIFT_2">Today (Shift 02 - Active)</option>
-                <option value="TODAY_SHIFT_1">Today (Shift 01 - Finished)</option>
-                <option value="YESTERDAY">Yesterday (Full Day)</option>
-                <option value="PAST_7_DAYS">Past 7 Days Rolling</option>
-              </select>
-            </div>
-
-            {/* Plant / Yard Location */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--fo-surface)', padding: '4px 10px', borderRadius: 6, border: '1px solid var(--fo-border-subtle)' }}>
-              <span className="material-symbols-outlined" style={{ fontSize: 16, color: 'var(--fo-text-muted)' }}>
-                warehouse
-              </span>
-              <select
-                className="fo-loading-filter-select"
-                style={{ border: 'none', background: 'transparent', padding: 0 }}
-                value={selectedPlant}
-                onChange={(e) => setSelectedPlant(e.target.value)}
-              >
-                <option value="ALL">All Plants &amp; Steel Yards</option>
-                <option value="RAIPUR">Raipur Plant - Main Yard</option>
-                <option value="NAGPUR">Nagpur Logistics Hub</option>
-                <option value="JAMSHEDPUR">Jamshedpur Loading Dock</option>
-                <option value="BHILAI">Bhilai Transit Hub</option>
+                <option value="" style={{ backgroundColor: '#102034', color: '#ffffff' }}>All Years</option>
+                {YEAR_OPTIONS.map((y) => (
+                  <option key={y} value={y} style={{ backgroundColor: '#102034', color: '#ffffff' }}>
+                    {y}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -220,24 +263,24 @@ export function LoadingTrackerPage(): ReactElement {
               </span>
               <select
                 className="fo-loading-filter-select"
-                style={{ border: 'none', background: 'transparent', padding: 0 }}
+                style={{ border: 'none', background: 'transparent', padding: 0, color: '#ffffff', colorScheme: 'dark' }}
                 value={activeTab}
                 onChange={(e) => {
                   setActiveTab(e.target.value as TabFilter);
                   setPage(1);
                 }}
               >
-                <option value="ALL">All Statuses</option>
-                <option value="WAITING">Currently Waiting</option>
-                <option value="COMPLETED">Completed</option>
-                <option value="BREACHED">Detention Breached (&gt; 2 hrs)</option>
+                <option value="ALL" style={{ backgroundColor: '#102034', color: '#ffffff' }}>All Statuses</option>
+                <option value="WAITING" style={{ backgroundColor: '#102034', color: '#ffffff' }}>Currently Waiting</option>
+                <option value="COMPLETED" style={{ backgroundColor: '#102034', color: '#ffffff' }}>Completed</option>
+                <option value="BREACHED" style={{ backgroundColor: '#102034', color: '#ffffff' }}>Detention Breached (&gt; 2 hrs)</option>
               </select>
             </div>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'var(--fo-font-mono)', fontSize: 11, color: 'var(--fo-text-muted)' }}>
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--fo-tertiary)', display: 'inline-block' }} />
-            <span>Telemetry Geofence: <strong style={{ color: 'var(--fo-tertiary)' }}>4 Plants Monitored</strong></span>
+            <span>Telemetry Geofence: <strong style={{ color: 'var(--fo-tertiary)' }}>Radar Monitored</strong></span>
           </div>
         </div>
 
@@ -720,12 +763,12 @@ export function LoadingTrackerPage(): ReactElement {
                       setPageSize(Number(e.target.value));
                       setPage(1);
                     }}
-                    style={{ padding: '2px 8px', fontSize: 11 }}
+                    style={{ padding: '2px 8px', fontSize: 11, colorScheme: 'dark', backgroundColor: '#102034', color: '#ffffff' }}
                   >
-                    <option value={10}>10</option>
-                    <option value={15}>15</option>
-                    <option value={30}>30</option>
-                    <option value={50}>50</option>
+                    <option value={10} style={{ backgroundColor: '#102034', color: '#ffffff' }}>10</option>
+                    <option value={15} style={{ backgroundColor: '#102034', color: '#ffffff' }}>15</option>
+                    <option value={30} style={{ backgroundColor: '#102034', color: '#ffffff' }}>30</option>
+                    <option value={50} style={{ backgroundColor: '#102034', color: '#ffffff' }}>50</option>
                   </select>
                 </div>
               </div>

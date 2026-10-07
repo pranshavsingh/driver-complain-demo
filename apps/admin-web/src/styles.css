@@ -65,6 +65,18 @@
   --warning-bg: #2e1d0c;
   --warning-border: #a16207;
   --warning-text: #fbbf24;
+  color-scheme: dark;
+}
+
+[data-theme="dark"] select,
+.fleetops-view select {
+  color-scheme: dark;
+}
+
+[data-theme="dark"] select option,
+.fleetops-view select option {
+  background-color: #0b1c30;
+  color: #ffffff;
 }
 
 * {

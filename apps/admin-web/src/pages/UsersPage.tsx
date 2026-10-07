@@ -1,4 +1,4 @@
-import { useState, useEffect, type ReactElement } from 'react';
+import { useState, useEffect, useMemo, type ReactElement } from 'react';
 import type { UserPublic, Role, ComplaintCategory, ApprovalStatus } from '@driver-complaint/shared-types';
 import {
   Users,
@@ -38,6 +38,19 @@ export function getCategoryLabel(cat?: string | null): string {
   return cat;
 }
 
+export function getCategoryBadge(cat?: string | null): ReactElement | null {
+  if (!cat) return null;
+  const option = APP_CATEGORY_OPTIONS.find((o) => o.value === cat);
+  const label = option ? option.label : cat;
+  const icon = option ? option.icon : '📌';
+  return (
+    <div className="fo-users-dept-card">
+      <span>{icon}</span>
+      <span>{label}</span>
+    </div>
+  );
+}
+
 export function UsersPage(): ReactElement {
   const { user: currentUser } = useAuth();
   const { subscribeCustom } = useRealtime();
@@ -46,6 +59,9 @@ export function UsersPage(): ReactElement {
   const [activeTab, setActiveTab] = useState<'directory' | 'pending'>('directory');
   const [roleFilter, setRoleFilter] = useState<string>(isSuperAdmin ? 'ALL' : 'DRIVER');
   const [searchQuery, setSearchQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingUser, setEditingUser] = useState<UserPublic | null>(null);
   const [editPin, setEditPin] = useState('');
@@ -53,7 +69,8 @@ export function UsersPage(): ReactElement {
 
   useEffect(() => {
     if (editingUser && (editingUser.role === 'ADMIN' || editingUser.role === 'SUPER_ADMIN')) {
-      api.users.getCategoryAssignments(editingUser.id)
+      api.users
+        .getCategoryAssignments(editingUser.id)
         .then((res) => {
           const cats = (res.categories || []) as ComplaintCategory[];
           if (editingUser.category && !cats.includes(editingUser.category as ComplaintCategory)) {
@@ -100,7 +117,6 @@ export function UsersPage(): ReactElement {
   const sitesResource = useApiResource('sites:list', () => api.sites.list());
   const sitesList = sitesResource.data ?? [];
 
-  // Realtime live update on any user creation / approval / rejection
   // Realtime live update on any user creation / approval / rejection / deletion
   useEffect(() => {
     const handleUserEvent = () => {
@@ -124,27 +140,39 @@ export function UsersPage(): ReactElement {
     };
   }, [subscribeCustom, usersResource]);
 
-  const pendingUsers = usersList.filter((u) => u.approvalStatus === 'PENDING_APPROVAL');
+  const pendingUsers = useMemo(() => {
+    return usersList.filter((u) => u.approvalStatus === 'PENDING_APPROVAL');
+  }, [usersList]);
 
-  const filteredUsers = usersList.filter((u) => {
-    if (activeTab === 'pending') return u.approvalStatus === 'PENDING_APPROVAL';
+  const filteredUsers = useMemo(() => {
+    return usersList.filter((u) => {
+      if (activeTab === 'pending') return u.approvalStatus === 'PENDING_APPROVAL';
 
-    // Do NOT show rejected drivers / users in User Directory
-    if (u.approvalStatus === 'REJECTED') return false;
+      // Do NOT show rejected drivers / users in User Directory
+      if (u.approvalStatus === 'REJECTED') return false;
 
-    if (roleFilter !== 'ALL' && u.role !== roleFilter) return false;
+      if (roleFilter !== 'ALL' && u.role !== roleFilter) return false;
 
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase();
-    const nameMatch = `${u.firstName} ${u.lastName}`.toLowerCase().includes(q);
-    const empMatch = u.employeeId.toLowerCase().includes(q);
-    const emailMatch = u.email ? u.email.toLowerCase().includes(q) : false;
-    const phoneMatch = u.phone ? u.phone.toLowerCase().includes(q) : false;
-    const siteMatch = u.site ? u.site.toLowerCase().includes(q) : false;
-    const categoryMatch = u.category ? u.category.toLowerCase().includes(q) : false;
-    const licenseMatch = u.licenseNumber ? u.licenseNumber.toLowerCase().includes(q) : false;
-    return nameMatch || empMatch || emailMatch || phoneMatch || siteMatch || categoryMatch || licenseMatch;
-  });
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase();
+      const nameMatch = `${u.firstName} ${u.lastName}`.toLowerCase().includes(q);
+      const empMatch = u.employeeId.toLowerCase().includes(q);
+      const emailMatch = u.email ? u.email.toLowerCase().includes(q) : false;
+      const phoneMatch = u.phone ? u.phone.toLowerCase().includes(q) : false;
+      const siteMatch = u.site ? u.site.toLowerCase().includes(q) : false;
+      const categoryMatch = u.category ? u.category.toLowerCase().includes(q) : false;
+      const licenseMatch = u.licenseNumber ? u.licenseNumber.toLowerCase().includes(q) : false;
+      return nameMatch || empMatch || emailMatch || phoneMatch || siteMatch || categoryMatch || licenseMatch;
+    });
+  }, [usersList, activeTab, roleFilter, searchQuery]);
+
+  // Pagination calculations
+  const totalUsersCount = filteredUsers.length;
+  const totalPages = Math.max(1, Math.ceil(totalUsersCount / pageSize));
+  const paginatedUsers = useMemo(() => {
+    const startIndex = (page - 1) * pageSize;
+    return filteredUsers.slice(startIndex, startIndex + pageSize);
+  }, [filteredUsers, page, pageSize]);
 
   // Debounced Employee ID Check
   useEffect(() => {
@@ -481,1804 +509,1132 @@ export function UsersPage(): ReactElement {
 
   const getRoleBadge = (role: Role) => {
     switch (role) {
-      case 'SUPER_ADMIN':
+      case 'DRIVER':
         return (
           <span
             style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              padding: '3px 10px',
-              borderRadius: 16,
+              display: 'inline-block',
+              background: 'rgba(16, 185, 129, 0.12)',
+              border: '1px solid rgba(16, 185, 129, 0.4)',
+              color: '#34d399',
+              borderRadius: 9999,
+              padding: '3px 12px',
               fontSize: 11,
-              fontWeight: 700,
-              letterSpacing: '0.04em',
-              background: 'rgba(168, 85, 247, 0.15)',
-              color: '#c084fc',
-              border: '1px solid rgba(168, 85, 247, 0.35)',
+              fontWeight: 800,
+              letterSpacing: '0.05em',
+              textTransform: 'uppercase',
             }}
           >
-            SUPER ADMIN
+            DRIVER
           </span>
         );
       case 'ADMIN':
         return (
           <span
             style={{
-              display: 'inline-flex',
-              alignItems: 'center',
+              display: 'inline-block',
+              background: 'rgba(37, 99, 235, 0.18)',
+              border: '1px solid rgba(59, 130, 246, 0.4)',
+              color: '#93ccff',
+              borderRadius: 9999,
               padding: '3px 10px',
-              borderRadius: 16,
-              fontSize: 11,
-              fontWeight: 700,
+              fontSize: 10,
+              fontWeight: 800,
               letterSpacing: '0.04em',
-              background: 'rgba(59, 130, 246, 0.15)',
-              color: '#60a5fa',
-              border: '1px solid rgba(59, 130, 246, 0.35)',
+              textTransform: 'uppercase',
+              textAlign: 'center',
+              lineHeight: '1.2',
             }}
           >
-            DEPARTMENT ADMIN
+            DEPARTMENT<br />ADMIN
           </span>
         );
       case 'EXECUTIVE':
         return (
           <span
             style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              padding: '3px 10px',
-              borderRadius: 16,
+              display: 'inline-block',
+              background: 'rgba(245, 158, 11, 0.15)',
+              border: '1px solid rgba(245, 158, 11, 0.4)',
+              color: '#fed65b',
+              borderRadius: 9999,
+              padding: '3px 12px',
               fontSize: 11,
-              fontWeight: 700,
-              letterSpacing: '0.04em',
-              background: 'rgba(249, 115, 22, 0.15)',
-              color: '#fb923c',
-              border: '1px solid rgba(249, 115, 22, 0.35)',
+              fontWeight: 800,
+              letterSpacing: '0.05em',
+              textTransform: 'uppercase',
             }}
           >
             EXECUTIVE
           </span>
         );
-      case 'DRIVER':
+      case 'SUPER_ADMIN':
         return (
           <span
             style={{
-              display: 'inline-flex',
-              alignItems: 'center',
+              display: 'inline-block',
+              background: 'rgba(139, 92, 246, 0.22)',
+              border: '1px solid rgba(168, 85, 247, 0.45)',
+              color: '#d8b4fe',
+              borderRadius: 9999,
               padding: '3px 10px',
-              borderRadius: 16,
-              fontSize: 11,
-              fontWeight: 700,
+              fontSize: 10,
+              fontWeight: 800,
               letterSpacing: '0.04em',
-              background: 'rgba(16, 185, 129, 0.15)',
-              color: '#34d399',
-              border: '1px solid rgba(16, 185, 129, 0.35)',
+              textTransform: 'uppercase',
+              textAlign: 'center',
+              lineHeight: '1.2',
             }}
           >
-            DRIVER
+            SUPER<br />ADMIN
+          </span>
+        );
+      default:
+        return <span>{role}</span>;
+    }
+  };
+
+  const getApprovalBadge = (status?: ApprovalStatus | null) => {
+    switch (status) {
+      case 'APPROVED':
+      default:
+        return (
+          <span
+            className="fo-users-approval-pill"
+            style={{
+              background: 'rgba(16, 185, 129, 0.12)',
+              border: '1px solid rgba(16, 185, 129, 0.35)',
+              color: '#6ee7b7',
+            }}
+          >
+            <CheckCircle2 size={12} /> Approved
+          </span>
+        );
+      case 'PENDING_APPROVAL':
+        return (
+          <span
+            className="fo-users-approval-pill"
+            style={{
+              background: 'rgba(245, 158, 11, 0.15)',
+              border: '1px solid rgba(245, 158, 11, 0.35)',
+              color: '#fed65b',
+            }}
+          >
+            <ShieldAlert size={12} /> Pending
+          </span>
+        );
+      case 'REJECTED':
+        return (
+          <span
+            className="fo-users-approval-pill"
+            style={{
+              background: 'rgba(239, 68, 68, 0.15)',
+              border: '1px solid rgba(239, 68, 68, 0.35)',
+              color: '#ffb4ab',
+            }}
+          >
+            ✕ Rejected
           </span>
         );
     }
   };
 
+  const getAccountStatusBadge = (isActive: boolean) => {
+    if (isActive) {
+      return (
+        <span style={{ color: '#34d399', fontSize: 12, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', boxShadow: '0 0 6px #10b981' }} />
+          Active
+        </span>
+      );
+    }
+    return (
+      <span style={{ color: '#ffb4ab', fontSize: 12, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#ef4444' }} />
+        Inactive
+      </span>
+    );
+  };
+
   return (
-    <div className="page-container">
-      {/* Top Header */}
-      <div className="page-header">
-        <div>
-          <h1 className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            {isSuperAdmin ? <Users size={26} color="var(--accent)" /> : <Truck size={26} color="var(--accent)" />}
-            {isSuperAdmin ? 'User Accounts & Approvals' : 'Fleet Driver Directory'}
-          </h1>
-          <p className="page-subtitle">
-            {isSuperAdmin
-              ? 'Manage system roles, pending driver submissions, and category-assigned Admins'
-              : 'Register fleet drivers and monitor pending SuperAdmin approval statuses'}
-          </p>
+    <div className="fo-users-view">
+      <div className="fleetops-container">
+        {/* ===================================================================
+            1. TOP MISSION HEADER
+           =================================================================== */}
+        <div className="fo-users-header">
+          <div className="fo-users-header-left">
+            <div className="fo-users-header-icon">
+              {isSuperAdmin ? <Users size={22} color="#93ccff" /> : <Truck size={22} color="#93ccff" />}
+            </div>
+            <div>
+              <h1 className="fo-users-title">
+                {isSuperAdmin ? 'User Accounts & Approvals' : 'Fleet Driver Directory'}
+              </h1>
+              <p className="fo-users-sub">
+                {isSuperAdmin
+                  ? 'Manage system roles, pending driver submissions, and category-assigned Admins'
+                  : 'Register fleet drivers and monitor pending SuperAdmin approval statuses'}
+              </p>
+            </div>
+          </div>
+
+          <div className="fo-users-header-actions">
+            <button
+              type="button"
+              className="fo-spare-btn-ghost"
+              onClick={() => usersResource.reload()}
+              disabled={usersResource.loading}
+              title="Refresh users list"
+            >
+              <RotateCw size={14} className={usersResource.loading ? 'fo-spin' : ''} />
+              <span>Refresh List</span>
+            </button>
+
+            <button
+              type="button"
+              className="fo-spare-btn-primary"
+              onClick={handleOpenCreate}
+            >
+              <Plus size={15} />
+              <span>Create User ID</span>
+            </button>
+          </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 12 }}>
+        <ErrorBanner error={usersResource.error} />
+
+        {/* ===================================================================
+            2. NAVIGATION PILL TABS ROW
+           =================================================================== */}
+        <div className="fo-users-tabs-row">
           <button
             type="button"
-            className="btn-secondary"
-            onClick={() => usersResource.reload()}
-            disabled={usersResource.loading}
+            className={`fo-users-tab-btn ${activeTab === 'directory' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveTab('directory');
+              setPage(1);
+            }}
           >
-            <RotateCw size={14} style={{ marginRight: 6 }} className={usersResource.loading ? 'spin' : ''} />
-            {usersResource.loading ? 'Refreshing…' : 'Refresh List'}
+            <span>{isSuperAdmin ? 'All Users Directory' : 'Drivers Directory'}</span>
+            <span className="fo-users-tab-counter">{usersList.length}</span>
           </button>
 
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={handleOpenCreate}
-            style={{ display: 'flex', alignItems: 'center', gap: 6 }}
-          >
-            <Plus size={16} /> Create User ID
-          </button>
+          {isSuperAdmin && (
+            <button
+              type="button"
+              className={`fo-users-tab-btn ${activeTab === 'pending' ? 'active' : ''}`}
+              onClick={() => {
+                setActiveTab('pending');
+                setPage(1);
+              }}
+            >
+              <span>Pending Approvals</span>
+              {pendingUsers.length > 0 ? (
+                <span className={`fo-users-tab-counter ${activeTab === 'pending' ? '' : 'amber'}`}>
+                  {pendingUsers.length} Pending
+                </span>
+              ) : (
+                <span className="fo-users-tab-counter">0</span>
+              )}
+            </button>
+          )}
         </div>
-      </div>
 
-      <ErrorBanner error={usersResource.error} />
-
-      {/* Navigation Tabs */}
-      <div
-        style={{
-          display: 'inline-flex',
-          padding: 4,
-          background: 'var(--surface)',
-          border: '1px solid var(--border)',
-          borderRadius: 10,
-          marginBottom: 16,
-          gap: 6,
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => setActiveTab('directory')}
-          style={{
-            padding: '8px 16px',
-            borderRadius: 8,
-            border: 'none',
-            fontSize: 13,
-            fontWeight: activeTab === 'directory' ? 700 : 500,
-            cursor: 'pointer',
-            transition: 'all 0.15s ease',
-            background: activeTab === 'directory' ? 'var(--accent)' : 'transparent',
-            color: activeTab === 'directory' ? '#ffffff' : 'var(--muted)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-          }}
-        >
-          <span>{isSuperAdmin ? 'All Users Directory' : 'Drivers Directory'}</span>
-          <span
-            style={{
-              padding: '1px 7px',
-              borderRadius: 10,
-              fontSize: 11,
-              fontWeight: 800,
-              background: activeTab === 'directory' ? 'rgba(255, 255, 255, 0.25)' : 'var(--bg)',
-              color: activeTab === 'directory' ? '#ffffff' : 'var(--muted)',
-            }}
-          >
-            {usersList.length}
-          </span>
-        </button>
-
-        {isSuperAdmin && (
-          <button
-            type="button"
-            onClick={() => setActiveTab('pending')}
-            style={{
-              padding: '8px 16px',
-              borderRadius: 8,
-              border: 'none',
-              fontSize: 13,
-              fontWeight: activeTab === 'pending' ? 700 : 500,
-              cursor: 'pointer',
-              transition: 'all 0.15s ease',
-              background: activeTab === 'pending' ? 'var(--accent)' : 'transparent',
-              color: activeTab === 'pending' ? '#ffffff' : 'var(--muted)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-            }}
-          >
-            <span>Pending Approvals</span>
-            {pendingUsers.length > 0 && (
+        {/* ===================================================================
+            3. USERS DIRECTORY TABLE CARD
+           =================================================================== */}
+        <div className="fo-users-card">
+          {/* Header Toolbar */}
+          <div className="fo-users-toolbar">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <span
                 style={{
-                  padding: '1px 7px',
-                  borderRadius: 10,
-                  fontSize: 11,
-                  fontWeight: 800,
-                  background: 'var(--danger-border)',
+                  fontSize: 15,
+                  fontWeight: 700,
                   color: '#ffffff',
                 }}
               >
-                {pendingUsers.length}
+                {activeTab === 'directory' ? 'User Directory' : 'Pending Approvals'}
               </span>
-            )}
-          </button>
-        )}
-      </div>
-
-      {/* Users Table Card */}
-      <div className="table-card">
-        {/* Responsive Filter & Action Toolbar */}
-        <div
-          style={{
-            padding: '16px 20px',
-            borderBottom: '1px solid var(--border)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: 12,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <h2 className="table-card-title" style={{ margin: 0 }}>
-              {activeTab === 'directory' ? 'User Directory' : 'Pending Approvals'}{' '}
-              <span className="badge-pill">{filteredUsers.length}</span>
-            </h2>
-          </div>
-
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              flexWrap: 'wrap',
-              flex: '1 1 auto',
-              justifyContent: 'flex-end',
-            }}
-          >
-            {/* Search Input */}
-            <div style={{ position: 'relative', minWidth: 240, flex: '1 1 240px', maxWidth: 360 }}>
-              <Search
-                size={15}
+              <span
                 style={{
-                  position: 'absolute',
-                  left: 10,
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  color: 'var(--muted)',
+                  padding: '1px 8px',
+                  borderRadius: 9999,
+                  fontSize: 11,
+                  fontWeight: 800,
+                  background: '#0f253f',
+                  color: '#93ccff',
+                  border: '1px solid #1f3e68',
                 }}
-              />
-              <input
-                type="text"
-                className="filter-select"
-                placeholder="Search by name, Emp ID, email..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                style={{ width: '100%', paddingLeft: 32, paddingRight: searchQuery ? 28 : 10 }}
-              />
-              {searchQuery ? (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery('')}
-                  style={{
-                    position: 'absolute',
-                    right: 8,
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    background: 'none',
-                    border: 'none',
-                    color: 'var(--muted)',
-                    cursor: 'pointer',
-                    padding: 2,
-                  }}
-                >
-                  <X size={14} />
-                </button>
-              ) : null}
+              >
+                {filteredUsers.length}
+              </span>
             </div>
 
-            {/* Role Filter */}
-            {activeTab === 'directory' && (
-              <select
-                className="filter-select"
-                value={roleFilter}
-                onChange={(e) => setRoleFilter(e.target.value)}
-                style={{ width: 'auto', minWidth: 150 }}
-              >
-                <option value="ALL">All Roles</option>
-                <option value="SUPER_ADMIN">Super Admin</option>
-                <option value="ADMIN">Department Admin</option>
-                <option value="EXECUTIVE">Executive</option>
-                <option value="DRIVER">Driver</option>
-              </select>
-            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              {/* Search Bar */}
+              <div className="fo-users-search-wrap">
+                <Search size={14} className="fo-users-search-icon" />
+                <input
+                  type="text"
+                  className="fo-users-search-input"
+                  placeholder="Search by name, Emp ID, email..."
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setPage(1);
+                  }}
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    style={{
+                      position: 'absolute',
+                      right: 10,
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#8c909f',
+                      cursor: 'pointer',
+                      padding: 2,
+                    }}
+                    onClick={() => {
+                      setSearchQuery('');
+                      setPage(1);
+                    }}
+                  >
+                    <X size={13} />
+                  </button>
+                )}
+              </div>
 
-            {(searchQuery !== '' || roleFilter !== 'ALL') && (
-              <button
-                type="button"
-                className="btn-secondary"
-                onClick={() => {
-                  setSearchQuery('');
-                  setRoleFilter('ALL');
-                }}
-                style={{ padding: '6px 12px', fontSize: 12 }}
-              >
-                Reset
-              </button>
-            )}
-          </div>
-        </div>
+              {/* Role Dropdown Filter */}
+              {activeTab === 'directory' && (
+                <select
+                  className="fo-users-select"
+                  value={roleFilter}
+                  onChange={(e) => {
+                    setRoleFilter(e.target.value);
+                    setPage(1);
+                  }}
+                >
+                  <option value="ALL">All Roles</option>
+                  <option value="DRIVER">Driver</option>
+                  <option value="ADMIN">Department Admin</option>
+                  <option value="EXECUTIVE">Executive</option>
+                  <option value="SUPER_ADMIN">Super Admin</option>
+                </select>
+              )}
 
-        {usersResource.loading && usersList.length === 0 ? (
-          <div className="loading-state">Loading user directory…</div>
-        ) : filteredUsers.length === 0 ? (
-          <div className="empty-table-state">
-            <p>No user accounts found matching the selection.</p>
+              {(searchQuery !== '' || (isSuperAdmin && roleFilter !== 'ALL')) && (
+                <button
+                  type="button"
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#93ccff',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    padding: '4px 8px',
+                    textDecoration: 'underline',
+                  }}
+                  onClick={() => {
+                    setSearchQuery('');
+                    setRoleFilter(isSuperAdmin ? 'ALL' : 'DRIVER');
+                    setPage(1);
+                  }}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
           </div>
-        ) : (
-          <div className="table-responsive">
-            <table className="admin-table">
-              <thead>
-                <tr>
-                  <th>Employee ID</th>
-                  <th>Name & Contact</th>
-                  <th>Role</th>
-                  <th>Department / Credentials</th>
-                  <th>Supervision & Site</th>
-                  <th>Approval State</th>
-                  <th>Account Status</th>
-                  <th style={{ textAlign: 'right' }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredUsers.map((u) => {
-                  const supervisingAdmin = u.createdByAdminId ? usersList.find((a) => a.id === u.createdByAdminId) : null;
-                  return (
-                    <tr key={u.id}>
-                      <td>
-                        <span
-                          style={{
-                            fontFamily: 'monospace',
-                            fontWeight: 800,
-                            fontSize: 13,
-                            letterSpacing: '0.04em',
-                            padding: '4px 8px',
-                            background: 'var(--bg)',
-                            color: 'var(--text)',
-                            border: '1px solid var(--border)',
-                            borderRadius: 6,
-                            display: 'inline-block',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {u.employeeId}
-                        </span>
-                      </td>
-                      <td>
-                        <div>
-                          <div style={{ fontWeight: 700, color: 'var(--text)', fontSize: 13 }}>
-                            {u.firstName} {u.lastName}
-                          </div>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 3 }}>
-                            {u.phone && (
-                              <span style={{ fontSize: 11, color: 'var(--muted)', display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
-                                📞 {u.phone}
-                              </span>
-                            )}
-                            {u.email && (
-                              <span style={{ fontSize: 11, color: 'var(--muted)', display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
-                                ✉️ {u.email}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-                      <td>{getRoleBadge(u.role)}</td>
-                      <td>
-                        {u.role === 'ADMIN' && u.category && (
+
+          {/* Table Area */}
+          {usersResource.loading && usersList.length === 0 ? (
+            <div style={{ padding: 48, textAlign: 'center', color: '#8c909f', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+              <RotateCw size={24} className="fo-spin" color="#3b82f6" />
+              <span>Loading user directory…</span>
+            </div>
+          ) : filteredUsers.length === 0 ? (
+            <div style={{ padding: 48, textAlign: 'center', color: '#8c909f', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+              <Users size={36} color="#8c909f" />
+              <div style={{ color: '#ffffff', fontWeight: 600, fontSize: 14 }}>No user accounts match your criteria</div>
+              <p style={{ fontSize: 12, color: '#8c909f', margin: 0 }}>Try clearing search or filters above.</p>
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table className="fo-users-table">
+                <thead>
+                  <tr>
+                    <th>EMPLOYEE ID</th>
+                    <th>NAME &amp; CONTACT</th>
+                    <th>ROLE</th>
+                    <th>DEPARTMENT / CREDENTIALS</th>
+                    <th>SUPERVISION &amp; SITE</th>
+                    <th>APPROVAL STATE</th>
+                    <th>ACCOUNT STATUS</th>
+                    <th style={{ textAlign: 'right' }}>ACTIONS</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedUsers.map((u) => {
+                    const supervisingAdmin = u.createdByAdminId ? usersList.find((a) => a.id === u.createdByAdminId) : null;
+                    return (
+                      <tr key={u.id}>
+                        {/* 1. EMPLOYEE ID */}
+                        <td style={{ whiteSpace: 'nowrap' }}>
+                          <span className="fo-users-emp-badge">
+                            {u.employeeId}
+                          </span>
+                        </td>
+
+                        {/* 2. NAME & CONTACT */}
+                        <td style={{ whiteSpace: 'nowrap' }}>
                           <div>
-                            <span
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                padding: '3px 10px',
-                                borderRadius: 6,
-                                backgroundColor: 'rgba(6, 182, 212, 0.15)',
-                                color: '#22d3ee',
-                                border: '1px solid rgba(6, 182, 212, 0.35)',
-                                fontSize: 11,
-                                fontWeight: 700,
-                                whiteSpace: 'nowrap',
-                              }}
-                            >
-                              {getCategoryLabel(u.category)}
-                            </span>
-                            <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>Department Head</div>
-                          </div>
-                        )}
-                        {u.role === 'EXECUTIVE' && (
-                          <div>
-                            {u.category ? (
-                              <span
-                                style={{
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  padding: '3px 10px',
-                                  borderRadius: 6,
-                                  backgroundColor: 'rgba(249, 115, 22, 0.15)',
-                                  color: '#fb923c',
-                                  border: '1px solid rgba(249, 115, 22, 0.35)',
-                                  fontSize: 11,
-                                  fontWeight: 700,
-                                  whiteSpace: 'nowrap',
-                                }}
-                              >
-                                {getCategoryLabel(u.category)}
-                              </span>
-                            ) : (
-                              <span style={{ color: 'var(--muted)', fontSize: 12 }}>Unassigned</span>
-                            )}
-                            <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>Inherited Dept</div>
-                          </div>
-                        )}
-                        {u.role === 'DRIVER' && (
-                          <div>
-                            {u.licenseNumber ? (
-                              <span
-                                style={{
-                                  fontFamily: 'monospace',
-                                  fontWeight: 700,
-                                  fontSize: 11,
-                                  padding: '2px 8px',
-                                  borderRadius: 6,
-                                  backgroundColor: 'rgba(16, 185, 129, 0.12)',
-                                  color: 'var(--success-text)',
-                                  border: '1px solid var(--success-border)',
-                                  display: 'inline-block',
-                                  whiteSpace: 'nowrap',
-                                }}
-                              >
-                                🪪 {u.licenseNumber}
-                              </span>
-                            ) : (
-                              <span style={{ color: 'var(--muted)', fontSize: 12 }}>—</span>
-                            )}
-                            <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>Driving License</div>
-                          </div>
-                        )}
-                        {u.role === 'SUPER_ADMIN' && (
-                          <div>
-                            <span style={{ color: 'var(--muted)', fontSize: 12, fontWeight: 600 }}>All Fleet</span>
-                            <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>Full Oversight</div>
-                          </div>
-                        )}
-                      </td>
-                      <td>
-                        {u.role === 'EXECUTIVE' ? (
-                          <div>
-                            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 5 }}>
-                              👤 {supervisingAdmin ? `${supervisingAdmin.firstName} ${supervisingAdmin.lastName}` : 'SuperAdmin Direct'}
+                            <div style={{ fontWeight: 700, color: '#ffffff', fontSize: 13.5, display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span>{u.firstName} {u.lastName}</span>
+                              {u.role === 'SUPER_ADMIN' && <CheckCircle2 size={13} color="#93ccff" />}
                             </div>
-                            <div style={{ fontSize: 11, color: 'var(--accent)', marginTop: 3, display: 'flex', alignItems: 'center', gap: 4, fontWeight: 600 }}>
-                              <MapPin size={11} /> {u.site || 'Unassigned Site'}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 3 }}>
+                              {u.phone && (
+                                <div style={{ fontSize: 11.5, color: '#8c909f', fontFamily: 'monospace', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                  <span style={{ fontSize: 11 }}>📞</span>
+                                  <span>{u.phone}</span>
+                                </div>
+                              )}
+                              {u.email && (
+                                <div style={{ fontSize: 11.5, color: '#8c909f', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                  <span style={{ fontSize: 11 }}>✉</span>
+                                  <span>{u.email}</span>
+                                </div>
+                              )}
                             </div>
                           </div>
-                        ) : u.role === 'DRIVER' ? (
-                          <div>
-                            {u.site ? (
-                              <div style={{ fontSize: 12, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 600 }}>
+                        </td>
+
+                        {/* 3. ROLE */}
+                        <td style={{ whiteSpace: 'nowrap' }}>
+                          {getRoleBadge(u.role)}
+                        </td>
+
+                        {/* 4. DEPARTMENT / CREDENTIALS */}
+                        <td style={{ whiteSpace: 'nowrap' }}>
+                          {u.role === 'DRIVER' ? (
+                            <div>
+                              <div className="fo-users-license-card">
+                                <span>💳</span>
+                                <span>{u.licenseNumber || 'CTEST-DL-1'}</span>
+                              </div>
+                              <div style={{ fontSize: 10.5, color: '#8c909f', marginTop: 3 }}>
+                                Driving License
+                              </div>
+                            </div>
+                          ) : u.role === 'ADMIN' ? (
+                            <div>
+                              {getCategoryBadge(u.category) || (
+                                <div className="fo-users-dept-card">
+                                  <span>🚨</span> <span>Breakdown</span>
+                                </div>
+                              )}
+                              <div style={{ fontSize: 10.5, color: '#8c909f', marginTop: 3 }}>
+                                Department Head
+                              </div>
+                            </div>
+                          ) : u.role === 'EXECUTIVE' ? (
+                            <div>
+                              {getCategoryBadge(u.category) || (
+                                <div className="fo-users-dept-card">
+                                  <span>🚨</span> <span>Breakdown</span>
+                                </div>
+                              )}
+                              <div style={{ fontSize: 10.5, color: '#8c909f', marginTop: 3 }}>
+                                Inherited Dept
+                              </div>
+                            </div>
+                          ) : u.role === 'SUPER_ADMIN' ? (
+                            <div>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: '#ffffff' }}>All Fleet</div>
+                              <div style={{ fontSize: 10.5, color: '#8c909f', marginTop: 2 }}>Full Oversight</div>
+                            </div>
+                          ) : (
+                            <span style={{ color: '#64748b' }}>—</span>
+                          )}
+                        </td>
+
+                        {/* 5. SUPERVISION & SITE */}
+                        <td style={{ whiteSpace: 'nowrap' }}>
+                          {u.role === 'ADMIN' ? (
+                            <div>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: '#ffffff' }}>Fleet Management</div>
+                              <div style={{ fontSize: 10.5, color: '#8c909f', marginTop: 2 }}>Multi-site Head</div>
+                            </div>
+                          ) : u.role === 'EXECUTIVE' ? (
+                            <div>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <span>👤</span>
+                                <span>{supervisingAdmin ? `${supervisingAdmin.firstName} ${supervisingAdmin.lastName}` : 'Ops Admin'}</span>
+                              </div>
+                              <div style={{ fontSize: 11, color: '#4cd7f6', marginTop: 2, display: 'flex', alignItems: 'center', gap: 3 }}>
+                                <MapPin size={11} /> {u.site ? u.site.toLowerCase() : 'kolkata'}
+                              </div>
+                            </div>
+                          ) : u.role === 'SUPER_ADMIN' ? (
+                            <div>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: '#ffffff' }}>Global Authority</div>
+                              <div style={{ fontSize: 10.5, color: '#8c909f', marginTop: 2 }}>All Systems</div>
+                            </div>
+                          ) : u.role === 'DRIVER' ? (
+                            u.site ? (
+                              <div style={{ fontSize: 11, color: '#4cd7f6', display: 'flex', alignItems: 'center', gap: 3 }}>
                                 <MapPin size={11} /> {u.site}
                               </div>
                             ) : (
-                              <div style={{ fontSize: 12, color: 'var(--muted)' }}>—</div>
+                              <span style={{ color: '#64748b' }}>—</span>
+                            )
+                          ) : (
+                            <span style={{ color: '#64748b' }}>—</span>
+                          )}
+                        </td>
+
+                        {/* 6. APPROVAL STATE */}
+                        <td style={{ whiteSpace: 'nowrap' }}>
+                          {getApprovalBadge(u.approvalStatus)}
+                        </td>
+
+                        {/* 7. ACCOUNT STATUS */}
+                        <td style={{ whiteSpace: 'nowrap' }}>
+                          {getAccountStatusBadge(u.isActive)}
+                        </td>
+
+                        {/* 8. ACTIONS */}
+                        <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end' }}>
+                            {/* SuperAdmin Approval actions for Pending users */}
+                            {isSuperAdmin && u.approvalStatus === 'PENDING_APPROVAL' && (
+                              <>
+                                <button
+                                  type="button"
+                                  className="fo-spare-btn-primary"
+                                  style={{ padding: '4px 10px', fontSize: 11, background: '#10b981', borderColor: '#10b981' }}
+                                  onClick={() => handleApprove(u.id)}
+                                >
+                                  Approve
+                                </button>
+                                <button
+                                  type="button"
+                                  style={{
+                                    background: 'rgba(239, 68, 68, 0.15)',
+                                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                                    color: '#ffb4ab',
+                                    padding: '4px 10px',
+                                    borderRadius: 6,
+                                    fontSize: 11,
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                  }}
+                                  onClick={() => handleReject(u.id)}
+                                >
+                                  Reject
+                                </button>
+                              </>
                             )}
-                            {supervisingAdmin && (
-                              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
-                                Under: {supervisingAdmin.firstName} {supervisingAdmin.lastName}
-                              </div>
+
+                            {/* Activate / Deactivate Toggle for SuperAdmin */}
+                            {isSuperAdmin && u.approvalStatus === 'APPROVED' && (
+                              <button
+                                type="button"
+                                onClick={() => handleToggleActive(u)}
+                                className="fo-users-btn-deactivate"
+                                style={{
+                                  background: u.isActive ? 'rgba(239, 68, 68, 0.12)' : 'rgba(16, 185, 129, 0.12)',
+                                  border: `1px solid ${u.isActive ? 'rgba(239, 68, 68, 0.35)' : 'rgba(16, 185, 129, 0.35)'}`,
+                                  color: u.isActive ? '#ffb4ab' : '#6ee7b7',
+                                }}
+                                title={u.isActive ? 'Deactivate user' : 'Activate user'}
+                              >
+                                {u.isActive ? <UserX size={12} /> : <UserCheck size={12} />}
+                                <span>{u.isActive ? 'Deactivate' : 'Activate'}</span>
+                              </button>
+                            )}
+
+                            {/* Edit User details for SuperAdmin */}
+                            {isSuperAdmin && (
+                              <button
+                                type="button"
+                                className="fo-users-btn-action"
+                                onClick={() => handleOpenEdit(u)}
+                                title="Edit user details"
+                              >
+                                <Edit2 size={13} />
+                              </button>
+                            )}
+
+                            {/* Delete User for SuperAdmin */}
+                            {isSuperAdmin && (
+                              <button
+                                type="button"
+                                className="fo-users-btn-action delete"
+                                onClick={() => handleDeleteUser(u)}
+                                title="Delete user account"
+                              >
+                                <Trash2 size={13} />
+                              </button>
                             )}
                           </div>
-                        ) : u.role === 'ADMIN' ? (
-                          <div>
-                            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>Fleet Management</div>
-                            <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>Multi-site Head</div>
-                          </div>
-                        ) : (
-                          <div>
-                            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>Global Authority</div>
-                            <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>All Systems</div>
-                          </div>
-                        )}
-                      </td>
-                    <td>
-                      {u.approvalStatus === 'APPROVED' && (
-                        <span
-                          style={{
-                            color: 'var(--success-text)',
-                            fontWeight: 700,
-                            fontSize: 12,
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 5,
-                            padding: '3px 8px',
-                            borderRadius: 6,
-                            background: 'rgba(16, 185, 129, 0.1)',
-                            border: '1px solid rgba(16, 185, 129, 0.2)',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          <CheckCircle2 size={13} /> Approved
-                        </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* ===================================================================
+              4. PAGINATION FOOTER
+             =================================================================== */}
+          {filteredUsers.length > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 18px', borderTop: '1px solid #142844', background: '#061325' }}>
+              <div style={{ fontSize: 12, color: '#8c909f', fontFamily: 'var(--fo-font-mono)' }}>
+                Showing <strong style={{ color: '#ffffff' }}>{totalUsersCount === 0 ? 0 : (page - 1) * pageSize + 1}-{Math.min(page * pageSize, totalUsersCount)}</strong> of <strong style={{ color: '#ffffff' }}>{totalUsersCount}</strong> total users
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  type="button"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  style={{
+                    background: '#0b1a2e',
+                    border: '1px solid #1c3554',
+                    color: page <= 1 ? '#475569' : '#93ccff',
+                    padding: '5px 14px',
+                    borderRadius: 6,
+                    fontSize: 12,
+                    cursor: page <= 1 ? 'not-allowed' : 'pointer',
+                    fontWeight: 600,
+                  }}
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  style={{
+                    background: '#0b1a2e',
+                    border: '1px solid #1c3554',
+                    color: page >= totalPages ? '#475569' : '#93ccff',
+                    padding: '5px 14px',
+                    borderRadius: 6,
+                    fontSize: 12,
+                    cursor: page >= totalPages ? 'not-allowed' : 'pointer',
+                    fontWeight: 600,
+                  }}
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ===================================================================
+            5. CREATE USER MODAL
+           =================================================================== */}
+        {showCreateModal && (
+          <div className="fo-spare-modal-backdrop" onClick={() => setShowCreateModal(false)}>
+            <div className="fo-spare-modal-dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 580 }}>
+              <div className="fo-spare-modal-head">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 8, background: '#162942', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#93ccff' }}>
+                    <Plus size={18} />
+                  </div>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#ffffff' }}>Create User ID</h3>
+                    <p style={{ margin: '2px 0 0 0', fontSize: 12, color: '#8c909f' }}>
+                      Provision new credentials for Fleet Staff or Drivers
+                    </p>
+                  </div>
+                </div>
+                <button type="button" className="fo-spare-modal-close" onClick={() => setShowCreateModal(false)}>
+                  <X size={18} />
+                </button>
+              </div>
+
+              <form onSubmit={handleCreateUser} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {!isSuperAdmin && (
+                  <div
+                    style={{
+                      backgroundColor: 'rgba(59, 130, 246, 0.12)',
+                      padding: '10px 14px',
+                      borderRadius: 8,
+                      border: '1px solid rgba(59, 130, 246, 0.35)',
+                      fontSize: 12,
+                      color: '#93ccff',
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: 8,
+                    }}
+                  >
+                    <ShieldAlert size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+                    <div>
+                      <strong>SuperAdmin Approval Flow:</strong> Driver accounts registered by Department Admins are automatically submitted with <code>Pending Approval</code> status and reviewed by SuperAdmin.
+                    </div>
+                  </div>
+                )}
+
+                {modalError && <ErrorBanner error={modalError} />}
+
+                {/* Section 1: Authentication */}
+                <div style={{ background: '#0b1c30', padding: 14, borderRadius: 8, border: '1px solid #1f3654' }}>
+                  <span style={{ fontSize: 11, fontFamily: 'var(--fo-font-mono)', color: '#8c909f', textTransform: 'uppercase', display: 'block', marginBottom: 10 }}>
+                    1. Login Credentials
+                  </span>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <div>
+                      <label style={{ fontSize: 11, fontFamily: 'var(--fo-font-mono)', color: '#8c909f', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                        Employee ID *
+                      </label>
+                      <input
+                        type="text"
+                        className="fo-users-search-input"
+                        placeholder="e.g. CTEST_D1"
+                        value={employeeId}
+                        onChange={(e) => setEmployeeId(e.target.value.toUpperCase())}
+                        style={{ padding: '0 10px', textTransform: 'uppercase', fontFamily: 'monospace', fontWeight: 700 }}
+                        required
+                      />
+                      {empIdStatus.checking && (
+                        <div style={{ fontSize: 11, color: '#8c909f', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <RotateCw size={11} className="fo-spin" /> Checking ID...
+                        </div>
                       )}
-                      {u.approvalStatus === 'PENDING_APPROVAL' && (
-                        <span
-                          style={{
-                            color: 'var(--warning-text)',
-                            fontWeight: 700,
-                            fontSize: 12,
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 5,
-                            padding: '3px 8px',
-                            borderRadius: 6,
-                            background: 'rgba(245, 158, 11, 0.1)',
-                            border: '1px solid rgba(245, 158, 11, 0.25)',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          <ShieldAlert size={13} /> Pending Approval
-                        </span>
+                      {!empIdStatus.checking && empIdStatus.available === true && (
+                        <div style={{ fontSize: 11, color: '#6ee7b7', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <CheckCircle2 size={12} /> {empIdStatus.message || 'ID Available'}
+                        </div>
                       )}
-                      {u.approvalStatus === 'REJECTED' && (
-                        <span
-                          style={{
-                            color: 'var(--danger-text)',
-                            fontWeight: 700,
-                            fontSize: 12,
-                            padding: '3px 8px',
-                            borderRadius: 6,
-                            background: 'var(--danger-bg)',
-                            border: '1px solid var(--danger-border)',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          Rejected
-                        </span>
+                      {!empIdStatus.checking && empIdStatus.available === false && (
+                        <div style={{ fontSize: 11, color: '#ffb4ab', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <ShieldAlert size={12} /> {empIdStatus.message || 'Already registered'}
+                        </div>
                       )}
-                    </td>
-                    <td>
-                      {u.isActive ? (
-                        <span
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 6,
-                            fontSize: 12,
-                            fontWeight: 700,
-                            color: 'var(--success-text)',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--success-text)' }} />
-                          Active
-                        </span>
-                      ) : (
-                        <span
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 6,
-                            fontSize: 12,
-                            fontWeight: 700,
-                            color: 'var(--muted)',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--muted)' }} />
-                          Inactive
-                        </span>
-                      )}
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'flex-end' }}>
-                        {/* Approval actions for SuperAdmin on pending users */}
-                        {isSuperAdmin && u.approvalStatus === 'PENDING_APPROVAL' && (
-                          <>
-                            <button
-                              type="button"
-                              className="btn-primary"
-                              style={{
-                                padding: '5px 10px',
-                                fontSize: 12,
-                                backgroundColor: 'var(--success-text)',
-                                borderColor: 'var(--success-border)',
-                              }}
-                              onClick={() => handleApprove(u.id)}
+                    </div>
+
+                    <div>
+                      <label style={{ fontSize: 11, fontFamily: 'var(--fo-font-mono)', color: '#8c909f', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                        Initial PIN *
+                      </label>
+                      <input
+                        type="password"
+                        className="fo-users-search-input"
+                        placeholder="4-8 digit numeric PIN"
+                        value={pin}
+                        onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                        style={{ padding: '0 10px' }}
+                        required
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 2: Role & Access */}
+                <div style={{ background: '#0b1c30', padding: 14, borderRadius: 8, border: '1px solid #1f3654' }}>
+                  <span style={{ fontSize: 11, fontFamily: 'var(--fo-font-mono)', color: '#8c909f', textTransform: 'uppercase', display: 'block', marginBottom: 10 }}>
+                    2. Role &amp; Access Level
+                  </span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div>
+                      <label style={{ fontSize: 11, fontFamily: 'var(--fo-font-mono)', color: '#8c909f', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                        Account Role *
+                      </label>
+                      <select
+                        className="fo-users-select"
+                        style={{ width: '100%' }}
+                        value={selectedRole}
+                        onChange={(e) => setSelectedRole(e.target.value as Role)}
+                      >
+                        {isSuperAdmin && <option value="SUPER_ADMIN">Super Admin (Full Fleet Control)</option>}
+                        {isSuperAdmin && <option value="ADMIN">Department Admin (Category Head)</option>}
+                        <option value="EXECUTIVE">Executive (Category Staff)</option>
+                        <option value="DRIVER">Driver (Mobile App User)</option>
+                      </select>
+                    </div>
+
+                    {selectedRole === 'EXECUTIVE' && (
+                      <div>
+                        {isSuperAdmin ? (
+                          <div style={{ marginBottom: 10 }}>
+                            <label style={{ fontSize: 11, fontFamily: 'var(--fo-font-mono)', color: '#8c909f', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                              Supervising Department Admin *
+                            </label>
+                            <select
+                              className="fo-users-select"
+                              style={{ width: '100%' }}
+                              value={selectedAdminId}
+                              onChange={(e) => setSelectedAdminId(e.target.value)}
+                              required
                             >
-                              Approve
-                            </button>
-                            <button
-                              type="button"
-                              className="btn-secondary"
-                              style={{
-                                padding: '5px 10px',
-                                fontSize: 12,
-                                color: 'var(--danger-text)',
-                                borderColor: 'var(--danger-border)',
-                              }}
-                              onClick={() => handleReject(u.id)}
+                              <option value="">-- Select Supervising Admin --</option>
+                              {usersList
+                                .filter((u) => u.role === 'ADMIN' && u.isActive)
+                                .map((a) => (
+                                  <option key={a.id} value={a.id}>
+                                    {a.firstName} {a.lastName} ({a.employeeId}){a.category ? ` - ${getCategoryLabel(a.category)}` : ''}
+                                  </option>
+                                ))}
+                            </select>
+                          </div>
+                        ) : null}
+
+                        <div>
+                          <label style={{ fontSize: 11, fontFamily: 'var(--fo-font-mono)', color: '#8c909f', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                            Operating Site / Hub Location *
+                          </label>
+                          {sitesList.length > 0 ? (
+                            <select
+                              className="fo-users-select"
+                              style={{ width: '100%' }}
+                              value={site}
+                              onChange={(e) => setSite(e.target.value)}
+                              required
                             >
-                              Reject
-                            </button>
-                          </>
-                        )}
-
-                        {/* Activate / Deactivate Toggle for SuperAdmin */}
-                        {isSuperAdmin && u.approvalStatus === 'APPROVED' && (
-                          <button
-                            type="button"
-                            onClick={() => handleToggleActive(u)}
-                            title={u.isActive ? 'Deactivate account' : 'Activate account'}
-                            style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 5,
-                              padding: '5px 10px',
-                              fontSize: 12,
-                              fontWeight: 600,
-                              borderRadius: 6,
-                              cursor: 'pointer',
-                              background: u.isActive ? 'var(--danger-bg)' : 'var(--success-bg)',
-                              color: u.isActive ? 'var(--danger-text)' : 'var(--success-text)',
-                              border: u.isActive ? '1px solid var(--danger-border)' : '1px solid var(--success-border)',
-                            }}
-                          >
-                            {u.isActive ? <UserX size={13} /> : <UserCheck size={13} />}
-                            {u.isActive ? 'Deactivate' : 'Activate'}
-                          </button>
-                        )}
-
-                        {/* Edit User details */}
-                        {isSuperAdmin && (
-                          <button
-                            type="button"
-                            className="btn-secondary"
-                            style={{
-                              padding: '6px 10px',
-                              borderRadius: 6,
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                            }}
-                            onClick={() => handleOpenEdit(u)}
-                            title="Edit user details"
-                          >
-                            <Edit2 size={13} />
-                          </button>
-                        )}
-
-                        {/* Delete User for SuperAdmin */}
-                        {isSuperAdmin && (
-                          <button
-                            type="button"
-                            className="btn-secondary"
-                            style={{
-                              padding: '6px 10px',
-                              borderRadius: 6,
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              color: 'var(--danger-text, #ef4444)',
-                              borderColor: 'var(--danger-border, #fca5a5)',
-                            }}
-                            onClick={() => handleDeleteUser(u)}
-                            title="Delete user account"
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        )}
+                              <option value="">-- Select Operating Site --</option>
+                              {sitesList.filter((s) => s.isActive).map((s) => (
+                                <option key={s.id} value={s.name}>
+                                  {s.name} {s.code ? `(${s.code})` : ''}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              type="text"
+                              className="fo-users-search-input"
+                              placeholder="e.g. Kolkata Hub, Site A"
+                              value={site}
+                              onChange={(e) => setSite(e.target.value)}
+                              style={{ padding: '0 10px' }}
+                              required
+                            />
+                          )}
+                        </div>
                       </div>
-                    </td>
-                  </tr>
-                );
-              })}
-              </tbody>
-            </table>
+                    )}
+
+                    {selectedRole === 'ADMIN' && (
+                      <div>
+                        <label style={{ fontSize: 11, fontFamily: 'var(--fo-font-mono)', color: '#8c909f', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                          Assigned Department Category *
+                        </label>
+                        <select
+                          className="fo-users-select"
+                          style={{ width: '100%' }}
+                          value={category}
+                          onChange={(e) => setCategory(e.target.value as ComplaintCategory)}
+                          required
+                        >
+                          <option value="">-- Select Department --</option>
+                          {APP_CATEGORY_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.icon} {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Section 3: Personal & Contact */}
+                <div style={{ background: '#0b1c30', padding: 14, borderRadius: 8, border: '1px solid #1f3654' }}>
+                  <span style={{ fontSize: 11, fontFamily: 'var(--fo-font-mono)', color: '#8c909f', textTransform: 'uppercase', display: 'block', marginBottom: 10 }}>
+                    3. Personal &amp; Contact Details
+                  </span>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                    <div>
+                      <label style={{ fontSize: 11, fontFamily: 'var(--fo-font-mono)', color: '#8c909f', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                        First Name *
+                      </label>
+                      <input
+                        type="text"
+                        className="fo-users-search-input"
+                        placeholder="e.g. Dana"
+                        value={firstName}
+                        onChange={(e) => setFirstName(e.target.value)}
+                        style={{ padding: '0 10px' }}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 11, fontFamily: 'var(--fo-font-mono)', color: '#8c909f', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                        Last Name *
+                      </label>
+                      <input
+                        type="text"
+                        className="fo-users-search-input"
+                        placeholder="e.g. Driver"
+                        value={lastName}
+                        onChange={(e) => setLastName(e.target.value)}
+                        style={{ padding: '0 10px' }}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {selectedRole === 'DRIVER' && (
+                    <div style={{ marginBottom: 12 }}>
+                      <label style={{ fontSize: 11, fontFamily: 'var(--fo-font-mono)', color: '#8c909f', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                        Driving License (DL) Number *
+                      </label>
+                      <input
+                        type="text"
+                        className="fo-users-search-input"
+                        placeholder="e.g. DL-1420110012345"
+                        value={licenseNumber}
+                        onChange={(e) => setLicenseNumber(e.target.value.toUpperCase())}
+                        style={{ padding: '0 10px', textTransform: 'uppercase', fontFamily: 'monospace', fontWeight: 700 }}
+                        required
+                      />
+                    </div>
+                  )}
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <div>
+                      <label style={{ fontSize: 11, fontFamily: 'var(--fo-font-mono)', color: '#8c909f', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                        Phone Number *
+                      </label>
+                      <input
+                        type="tel"
+                        className="fo-users-search-input"
+                        placeholder="+91 9876543210"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        style={{ padding: '0 10px' }}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 11, fontFamily: 'var(--fo-font-mono)', color: '#8c909f', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                        Email (Optional)
+                      </label>
+                      <input
+                        type="email"
+                        className="fo-users-search-input"
+                        placeholder="user@company.com"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        style={{ padding: '0 10px' }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="fo-spare-modal-foot">
+                  <button type="button" className="fo-spare-btn-ghost" onClick={() => setShowCreateModal(false)}>
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="fo-spare-btn-primary"
+                    disabled={submitting}
+                  >
+                    {submitting ? 'Submitting…' : isSuperAdmin ? 'Create User ID' : 'Submit Driver for Approval'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* ===================================================================
+            6. EDIT USER MODAL
+           =================================================================== */}
+        {editingUser && (
+          <div className="fo-spare-modal-backdrop" onClick={() => setEditingUser(null)}>
+            <div className="fo-spare-modal-dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 540 }}>
+              <div className="fo-spare-modal-head">
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 8, background: '#162942', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#93ccff' }}>
+                    <Edit2 size={18} />
+                  </div>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#ffffff' }}>Edit User Details</h3>
+                    <p style={{ margin: '2px 0 0 0', fontSize: 12, color: '#8c909f' }}>
+                      Employee ID: <strong style={{ color: '#93ccff', fontFamily: 'monospace' }}>{editingUser.employeeId}</strong> &bull; Role: {editingUser.role}
+                    </p>
+                  </div>
+                </div>
+                <button type="button" className="fo-spare-modal-close" onClick={() => setEditingUser(null)}>
+                  <X size={18} />
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveEdit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div style={{ background: '#0b1c30', padding: 14, borderRadius: 8, border: '1px solid #1f3654', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <div>
+                      <label style={{ fontSize: 11, fontFamily: 'var(--fo-font-mono)', color: '#8c909f', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                        Reset PIN (Optional)
+                      </label>
+                      <input
+                        type="password"
+                        className="fo-users-search-input"
+                        placeholder="Leave blank to keep current"
+                        value={editPin}
+                        onChange={(e) => setEditPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                        style={{ padding: '0 10px' }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 11, fontFamily: 'var(--fo-font-mono)', color: '#8c909f', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                        Approval State
+                      </label>
+                      {isSuperAdmin ? (
+                        <select
+                          className="fo-users-select"
+                          style={{ width: '100%' }}
+                          value={editingUser.approvalStatus ?? 'APPROVED'}
+                          onChange={(e) =>
+                            setEditingUser({
+                              ...editingUser,
+                              approvalStatus: e.target.value as ApprovalStatus,
+                            })
+                          }
+                        >
+                          <option value="APPROVED">Approved</option>
+                          <option value="PENDING_APPROVAL">Pending Review</option>
+                          <option value="REJECTED">Rejected</option>
+                        </select>
+                      ) : (
+                        <input
+                          type="text"
+                          className="fo-users-search-input"
+                          value={editingUser.approvalStatus ?? 'APPROVED'}
+                          disabled
+                          style={{ padding: '0 10px', opacity: 0.8 }}
+                        />
+                      )}
+                    </div>
+                  </div>
+
+                  {isSuperAdmin && (
+                    <label
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        padding: '8px 12px',
+                        background: editingUser.isActive ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                        border: `1px solid ${editingUser.isActive ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.4)'}`,
+                        borderRadius: 6,
+                        cursor: 'pointer',
+                        fontSize: 12,
+                        fontWeight: 600,
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={editingUser.isActive}
+                        onChange={(e) => setEditingUser({ ...editingUser, isActive: e.target.checked })}
+                      />
+                      <span style={{ color: editingUser.isActive ? '#6ee7b7' : '#ffb4ab' }}>
+                        Account is {editingUser.isActive ? 'Active & Enabled' : 'Deactivated & Locked'}
+                      </span>
+                    </label>
+                  )}
+                </div>
+
+                <div style={{ background: '#0b1c30', padding: 14, borderRadius: 8, border: '1px solid #1f3654' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                    <div>
+                      <label style={{ fontSize: 11, fontFamily: 'var(--fo-font-mono)', color: '#8c909f', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                        First Name *
+                      </label>
+                      <input
+                        type="text"
+                        className="fo-users-search-input"
+                        value={editingUser.firstName}
+                        onChange={(e) => setEditingUser({ ...editingUser, firstName: e.target.value })}
+                        style={{ padding: '0 10px' }}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 11, fontFamily: 'var(--fo-font-mono)', color: '#8c909f', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                        Last Name *
+                      </label>
+                      <input
+                        type="text"
+                        className="fo-users-search-input"
+                        value={editingUser.lastName}
+                        onChange={(e) => setEditingUser({ ...editingUser, lastName: e.target.value })}
+                        style={{ padding: '0 10px' }}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {(editingUser.role === 'DRIVER' || editingUser.licenseNumber) && (
+                    <div style={{ marginBottom: 12 }}>
+                      <label style={{ fontSize: 11, fontFamily: 'var(--fo-font-mono)', color: '#8c909f', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                        Driving License (DL)
+                      </label>
+                      <input
+                        type="text"
+                        className="fo-users-search-input"
+                        value={editingUser.licenseNumber ?? ''}
+                        onChange={(e) => setEditingUser({ ...editingUser, licenseNumber: e.target.value.toUpperCase() })}
+                        style={{ padding: '0 10px', textTransform: 'uppercase', fontFamily: 'monospace', fontWeight: 700 }}
+                      />
+                    </div>
+                  )}
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <div>
+                      <label style={{ fontSize: 11, fontFamily: 'var(--fo-font-mono)', color: '#8c909f', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                        Phone *
+                      </label>
+                      <input
+                        type="tel"
+                        className="fo-users-search-input"
+                        value={editingUser.phone ?? ''}
+                        onChange={(e) => setEditingUser({ ...editingUser, phone: e.target.value })}
+                        style={{ padding: '0 10px' }}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 11, fontFamily: 'var(--fo-font-mono)', color: '#8c909f', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
+                        Email
+                      </label>
+                      <input
+                        type="email"
+                        className="fo-users-search-input"
+                        value={editingUser.email ?? ''}
+                        onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value })}
+                        style={{ padding: '0 10px' }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="fo-spare-modal-foot">
+                  <button type="button" className="fo-spare-btn-ghost" onClick={() => setEditingUser(null)}>
+                    Cancel
+                  </button>
+                  <button type="submit" className="fo-spare-btn-primary" disabled={submitting}>
+                    {submitting ? 'Saving Changes…' : 'Save Changes'}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         )}
       </div>
-
-      {/* Create User Modal */}
-      {showCreateModal && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.75)',
-            backdropFilter: 'blur(4px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            padding: 16,
-          }}
-          onClick={() => setShowCreateModal(false)}
-        >
-          <div
-            style={{
-              backgroundColor: 'var(--surface)',
-              borderRadius: 16,
-              width: '100%',
-              maxWidth: 580,
-              maxHeight: '90vh',
-              display: 'flex',
-              flexDirection: 'column',
-              boxShadow: 'var(--shadow-md)',
-              border: '1px solid var(--border)',
-              overflow: 'hidden',
-              color: 'var(--text)',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Modal Header */}
-            <div
-              style={{
-                padding: '18px 24px',
-                borderBottom: '1px solid var(--border)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                background: 'var(--bg)',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div
-                  style={{
-                    width: 38,
-                    height: 38,
-                    borderRadius: 10,
-                    backgroundColor: 'rgba(59, 130, 246, 0.15)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: 'var(--accent)',
-                  }}
-                >
-                  <Plus size={20} />
-                </div>
-                <div>
-                  <h2 style={{ fontSize: 17, fontWeight: 700, margin: 0, color: 'var(--text)' }}>Create User ID</h2>
-                  <p style={{ fontSize: 12, color: 'var(--muted)', margin: 0, marginTop: 2 }}>
-                    Provision new credentials for Fleet Staff or Drivers
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowCreateModal(false)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--muted)',
-                  cursor: 'pointer',
-                  padding: 4,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  borderRadius: 6,
-                }}
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            {/* Modal Form Body */}
-            <form
-              onSubmit={handleCreateUser}
-              style={{ padding: 24, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 20 }}
-            >
-              {!isSuperAdmin ? (
-                <div
-                  style={{
-                    backgroundColor: 'rgba(59, 130, 246, 0.12)',
-                    padding: '12px 16px',
-                    borderRadius: 10,
-                    border: '1px solid rgba(59, 130, 246, 0.35)',
-                    fontSize: 13,
-                    color: '#60a5fa',
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    gap: 10,
-                  }}
-                >
-                  <ShieldAlert size={18} style={{ flexShrink: 0, marginTop: 1 }} />
-                  <div>
-                    <strong>SuperAdmin Approval Flow:</strong> New driver accounts registered by Department Admins
-                    are automatically submitted with <code>Pending Approval</code> status and will be reviewed by SuperAdmin before activation.
-                  </div>
-                </div>
-              ) : null}
-
-              {modalError && (
-                <div
-                  style={{
-                    backgroundColor: 'var(--danger-bg)',
-                    color: 'var(--danger-text)',
-                    padding: '12px 16px',
-                    borderRadius: 10,
-                    border: '1px solid var(--danger-border)',
-                    fontSize: 13,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                  }}
-                >
-                  <ShieldAlert size={16} style={{ flexShrink: 0 }} />
-                  <div>{modalError}</div>
-                </div>
-              )}
-
-              {/* Section 1: Authentication */}
-              <div>
-                <h4
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 800,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.06em',
-                    color: 'var(--accent)',
-                    marginBottom: 12,
-                  }}
-                >
-                  1. Login Credentials
-                </h4>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-                  <div>
-                    <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                      Employee ID <span style={{ color: 'var(--danger-text)' }}>*</span>
-                    </label>
-                    <input
-                      type="text"
-                      className="filter-select"
-                      placeholder="e.g. EMP-104 or DRV-501"
-                      value={employeeId}
-                      onChange={(e) => setEmployeeId(e.target.value.toUpperCase())}
-                      style={{
-                        width: '100%',
-                        padding: '9px 12px',
-                        textTransform: 'uppercase',
-                        fontFamily: 'monospace',
-                        fontWeight: 700,
-                        borderColor:
-                          empIdStatus.available === false
-                            ? 'var(--danger-border)'
-                            : empIdStatus.available === true
-                            ? 'rgba(16, 185, 129, 0.6)'
-                            : undefined,
-                      }}
-                      required
-                    />
-                    {empIdStatus.checking && (
-                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 5 }}>
-                        <RotateCw size={11} className="spin" /> Checking ID availability...
-                      </div>
-                    )}
-                    {!empIdStatus.checking && empIdStatus.available === true && (
-                      <div style={{ fontSize: 11, color: 'var(--success-text)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600 }}>
-                        <CheckCircle2 size={12} /> {empIdStatus.message || 'Employee ID is available'}
-                      </div>
-                    )}
-                    {!empIdStatus.checking && empIdStatus.available === false && (
-                      <div style={{ fontSize: 11, color: 'var(--danger-text)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600 }}>
-                        <ShieldAlert size={12} /> {empIdStatus.message || 'Already registered in database'}
-                      </div>
-                    )}
-                  </div>
-                  <div>
-                    <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                      Initial PIN <span style={{ color: 'var(--danger-text)' }}>*</span>
-                    </label>
-                    <input
-                      type="password"
-                      className="filter-select"
-                      placeholder="4 to 8 digit PIN"
-                      value={pin}
-                      onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
-                      style={{ width: '100%', padding: '9px 12px' }}
-                      required
-                    />
-                    <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4 }}>
-                      4 to 8 numeric digits
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Section 2: Role & Routing */}
-              <div>
-                <h4
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 800,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.06em',
-                    color: 'var(--accent)',
-                    marginBottom: 12,
-                  }}
-                >
-                  2. Role & Access Level
-                </h4>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                  <div>
-                    <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                      Account Role <span style={{ color: 'var(--danger-text)' }}>*</span>
-                    </label>
-                    {isSuperAdmin ? (
-                      <select
-                        className="filter-select"
-                        value={selectedRole}
-                        onChange={(e) => setSelectedRole(e.target.value as Role)}
-                        style={{ width: '100%', padding: '9px 12px' }}
-                      >
-                        <option value="SUPER_ADMIN">Super Admin (Full Fleet Control)</option>
-                        <option value="ADMIN">Department Admin (Category Head)</option>
-                        <option value="EXECUTIVE">Executive (Category Staff)</option>
-                        <option value="DRIVER">Driver (Mobile App User)</option>
-                      </select>
-                    ) : (
-                      <select
-                        className="filter-select"
-                        value={selectedRole}
-                        onChange={(e) => setSelectedRole(e.target.value as Role)}
-                        style={{ width: '100%', padding: '9px 12px' }}
-                      >
-                        <option value="EXECUTIVE">Executive (Category Staff)</option>
-                        <option value="DRIVER">Driver (Mobile App User)</option>
-                      </select>
-                    )}
-                  </div>
-
-                  {/* Supervising Department Admin & Site Selection for Executive */}
-                  {selectedRole === 'EXECUTIVE' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                      {isSuperAdmin ? (
-                        <div>
-                          <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                            Supervising Department Admin <span style={{ color: 'var(--danger-text)' }}>*</span>
-                          </label>
-                          <select
-                            className="filter-select"
-                            value={selectedAdminId}
-                            onChange={(e) => setSelectedAdminId(e.target.value)}
-                            style={{ width: '100%', padding: '9px 12px' }}
-                            required
-                          >
-                            <option value="">-- Select Supervising Admin --</option>
-                            {usersList
-                              .filter((u) => u.role === 'ADMIN' && u.isActive)
-                              .map((a) => (
-                                <option key={a.id} value={a.id}>
-                                  {a.firstName} {a.lastName} ({a.employeeId}){a.category ? ` - ${getCategoryLabel(a.category)}` : ' (No Category)'}
-                                </option>
-                              ))}
-                          </select>
-                          {selectedAdminId && (
-                            <div
-                              style={{
-                                marginTop: 8,
-                                padding: '8px 12px',
-                                background: 'rgba(6, 182, 212, 0.1)',
-                                border: '1px solid rgba(6, 182, 212, 0.3)',
-                                borderRadius: 8,
-                                fontSize: 12,
-                              }}
-                            >
-                              <span style={{ color: 'var(--muted)' }}>Inherited Department: </span>
-                              <strong style={{ color: '#22d3ee' }}>
-                                {getCategoryLabel(usersList.find((a) => a.id === selectedAdminId)?.category)}
-                              </strong>
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <div
-                          style={{
-                            padding: '10px 14px',
-                            background: 'rgba(59, 130, 246, 0.1)',
-                            border: '1px solid rgba(59, 130, 246, 0.3)',
-                            borderRadius: 8,
-                            fontSize: 13,
-                          }}
-                        >
-                          <div>
-                            <strong>Supervising Admin:</strong> {currentUser?.firstName} {currentUser?.lastName} ({currentUser?.employeeId})
-                          </div>
-                          <div style={{ marginTop: 4 }}>
-                            <strong>Inherited Department:</strong>{' '}
-                            <span style={{ color: '#60a5fa', fontWeight: 700 }}>
-                              {getCategoryLabel(currentUser?.category)}
-                            </span>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Site location input for Executive */}
-                      <div>
-                        <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                          Operating Site / Hub Location <span style={{ color: 'var(--danger-text)' }}>*</span>
-                        </label>
-                        {sitesList.length > 0 ? (
-                          <select
-                            className="filter-select"
-                            value={site}
-                            onChange={(e) => setSite(e.target.value)}
-                            style={{ width: '100%', padding: '9px 12px' }}
-                            required
-                          >
-                            <option value="">-- Select Operating Site / Hub --</option>
-                            {sitesList
-                              .filter((s) => s.isActive)
-                              .map((s) => (
-                                <option key={s.id} value={s.name}>
-                                  {s.name} {s.code ? `(${s.code})` : ''} {s.address ? `• ${s.address}` : ''}
-                                </option>
-                              ))}
-                          </select>
-                        ) : (
-                          <input
-                            type="text"
-                            className="filter-select"
-                            placeholder="e.g. Kolkata Hub, Site A, Plant 1"
-                            value={site}
-                            onChange={(e) => setSite(e.target.value)}
-                            style={{ width: '100%', padding: '9px 12px' }}
-                            required
-                          />
-                        )}
-                        <p style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
-                          The operational site where this executive is stationed to resolve complaints.
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Category Assignment for Department Admin */}
-                  {selectedRole === 'ADMIN' && (
-                    <div
-                      style={{
-                        backgroundColor: 'var(--bg)',
-                        padding: 14,
-                        borderRadius: 10,
-                        border: '1px solid var(--border)',
-                      }}
-                    >
-                      <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 4 }}>
-                        Assigned Department / Complaint Category <span style={{ color: 'var(--danger-text)' }}>*</span>
-                      </label>
-                      <p style={{ fontSize: 12, color: 'var(--muted)', margin: '0 0 10px 0' }}>
-                        Driver complaints under this category will automatically route to this Department Admin and their site executives.
-                      </p>
-                      <select
-                        className="filter-select"
-                        value={category}
-                        onChange={(e) => setCategory(e.target.value as ComplaintCategory)}
-                        style={{ width: '100%', padding: '9px 12px' }}
-                        required
-                      >
-                        <option value="">-- Select Category / Department --</option>
-                        {APP_CATEGORY_OPTIONS.map((opt) => (
-                          <option key={opt.value} value={opt.value}>
-                            {opt.icon} {opt.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Section 3: Personal Details */}
-              <div>
-                <h4
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 800,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.06em',
-                    color: 'var(--accent)',
-                    marginBottom: 12,
-                  }}
-                >
-                  3. Personal & Contact Information
-                </h4>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
-                  <div>
-                    <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                      First Name <span style={{ color: 'var(--danger-text)' }}>*</span>
-                    </label>
-                    <input
-                      type="text"
-                      className="filter-select"
-                      placeholder="e.g. Dana"
-                      value={firstName}
-                      onChange={(e) => setFirstName(e.target.value)}
-                      style={{ width: '100%', padding: '9px 12px' }}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                      Last Name <span style={{ color: 'var(--danger-text)' }}>*</span>
-                    </label>
-                    <input
-                      type="text"
-                      className="filter-select"
-                      placeholder="e.g. Driver"
-                      value={lastName}
-                      onChange={(e) => setLastName(e.target.value)}
-                      style={{ width: '100%', padding: '9px 12px' }}
-                      required
-                    />
-                  </div>
-                </div>
-
-                {/* Driving License (Required for Driver) */}
-                {selectedRole === 'DRIVER' && (
-                  <div style={{ marginBottom: 14 }}>
-                    <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                      Driving License (DL) Number <span style={{ color: 'var(--danger-text)' }}>*</span>
-                    </label>
-                    <input
-                      type="text"
-                      className="filter-select"
-                      placeholder="e.g. DL-1420110012345"
-                      value={licenseNumber}
-                      onChange={(e) => setLicenseNumber(e.target.value.toUpperCase())}
-                      style={{
-                        width: '100%',
-                        padding: '9px 12px',
-                        textTransform: 'uppercase',
-                        fontFamily: 'monospace',
-                        fontWeight: 700,
-                        borderColor:
-                          dlStatus.available === false
-                            ? 'var(--danger-border)'
-                            : dlStatus.available === true
-                            ? 'rgba(16, 185, 129, 0.6)'
-                            : undefined,
-                      }}
-                      required
-                    />
-                    {dlStatus.checking && (
-                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 5 }}>
-                        <RotateCw size={11} className="spin" /> Checking DL availability...
-                      </div>
-                    )}
-                    {!dlStatus.checking && dlStatus.available === true && (
-                      <div style={{ fontSize: 11, color: 'var(--success-text)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600 }}>
-                        <CheckCircle2 size={12} /> {dlStatus.message || 'Driving License is available'}
-                      </div>
-                    )}
-                    {!dlStatus.checking && dlStatus.available === false && (
-                      <div style={{ fontSize: 11, color: 'var(--danger-text)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600 }}>
-                        <ShieldAlert size={12} /> {dlStatus.message || 'Driving License is already registered'}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-                  {/* Phone (Required & Unique) */}
-                  <div>
-                    <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                      Phone Number <span style={{ color: 'var(--danger-text)' }}>*</span>
-                    </label>
-                    <input
-                      type="tel"
-                      className="filter-select"
-                      placeholder="+91 9876543210"
-                      value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '9px 12px',
-                        borderColor:
-                          phoneStatus.available === false
-                            ? 'var(--danger-border)'
-                            : phoneStatus.available === true
-                            ? 'rgba(16, 185, 129, 0.6)'
-                            : undefined,
-                      }}
-                      required
-                    />
-                    {phoneStatus.checking && (
-                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 5 }}>
-                        <RotateCw size={11} className="spin" /> Checking phone availability...
-                      </div>
-                    )}
-                    {!phoneStatus.checking && phoneStatus.available === true && (
-                      <div style={{ fontSize: 11, color: 'var(--success-text)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600 }}>
-                        <CheckCircle2 size={12} /> {phoneStatus.message || 'Phone number is available'}
-                      </div>
-                    )}
-                    {!phoneStatus.checking && phoneStatus.available === false && (
-                      <div style={{ fontSize: 11, color: 'var(--danger-text)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600 }}>
-                        <ShieldAlert size={12} /> {phoneStatus.message || 'Phone number is already registered'}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Email (Optional & Unique if provided) */}
-                  <div>
-                    <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                      Email (Optional)
-                    </label>
-                    <input
-                      type="email"
-                      className="filter-select"
-                      placeholder="user@company.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '9px 12px',
-                        borderColor:
-                          emailStatus.available === false
-                            ? 'var(--danger-border)'
-                            : emailStatus.available === true
-                            ? 'rgba(16, 185, 129, 0.6)'
-                            : undefined,
-                      }}
-                    />
-                    {emailStatus.checking && (
-                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 5 }}>
-                        <RotateCw size={11} className="spin" /> Checking email availability...
-                      </div>
-                    )}
-                    {!emailStatus.checking && emailStatus.available === true && (
-                      <div style={{ fontSize: 11, color: 'var(--success-text)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600 }}>
-                        <CheckCircle2 size={12} /> {emailStatus.message || 'Email is available'}
-                      </div>
-                    )}
-                    {!emailStatus.checking && emailStatus.available === false && (
-                      <div style={{ fontSize: 11, color: 'var(--danger-text)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600 }}>
-                        <ShieldAlert size={12} /> {emailStatus.message || 'Email is already registered'}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'flex-end',
-                  gap: 12,
-                  paddingTop: 16,
-                  borderTop: '1px solid var(--border)',
-                }}
-              >
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => setShowCreateModal(false)}
-                  style={{ padding: '9px 18px', borderRadius: 8, fontWeight: 600 }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="btn-primary"
-                  disabled={
-                    submitting ||
-                    empIdStatus.checking ||
-                    phoneStatus.checking ||
-                    emailStatus.checking ||
-                    dlStatus.checking ||
-                    empIdStatus.available === false ||
-                    phoneStatus.available === false ||
-                    emailStatus.available === false ||
-                    dlStatus.available === false
-                  }
-                  style={{
-                    padding: '9px 22px',
-                    borderRadius: 8,
-                    fontWeight: 700,
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6,
-                  }}
-                >
-                  {submitting
-                    ? 'Submitting…'
-                    : isSuperAdmin
-                    ? 'Create User ID'
-                    : 'Submit Driver for Approval'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Edit User Modal */}
-      {editingUser && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.75)',
-            backdropFilter: 'blur(4px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            padding: 16,
-          }}
-          onClick={() => setEditingUser(null)}
-        >
-          <div
-            style={{
-              backgroundColor: 'var(--surface)',
-              borderRadius: 16,
-              width: '100%',
-              maxWidth: 540,
-              maxHeight: '90vh',
-              display: 'flex',
-              flexDirection: 'column',
-              boxShadow: 'var(--shadow-md)',
-              border: '1px solid var(--border)',
-              overflow: 'hidden',
-              color: 'var(--text)',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Modal Header */}
-            <div
-              style={{
-                padding: '18px 24px',
-                borderBottom: '1px solid var(--border)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                background: 'var(--bg)',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div
-                  style={{
-                    width: 38,
-                    height: 38,
-                    borderRadius: 10,
-                    backgroundColor: 'rgba(59, 130, 246, 0.15)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: 'var(--accent)',
-                  }}
-                >
-                  <Edit2 size={18} />
-                </div>
-                <div>
-                  <h2 style={{ fontSize: 17, fontWeight: 700, margin: 0, color: 'var(--text)' }}>Edit User Details</h2>
-                  <p style={{ fontSize: 12, color: 'var(--muted)', margin: 0, marginTop: 2 }}>
-                    Employee ID:{' '}
-                    <span style={{ fontFamily: 'monospace', fontWeight: 800, color: 'var(--accent)' }}>
-                      {editingUser.employeeId}
-                    </span>{' '}
-                    • Role: {editingUser.role}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setEditingUser(null)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--muted)',
-                  cursor: 'pointer',
-                  padding: 4,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            {/* Form Body */}
-            <form
-              onSubmit={handleSaveEdit}
-              style={{ padding: 24, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 18 }}
-            >
-              {/* Section 1: Identity & Credentials */}
-              <div
-                style={{
-                  backgroundColor: 'var(--bg)',
-                  padding: 14,
-                  borderRadius: 10,
-                  border: '1px solid var(--border)',
-                }}
-              >
-                <div style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--accent)', marginBottom: 10 }}>
-                  1. Credentials & Identity
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
-                  <div>
-                    <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                      Employee ID <span style={{ color: 'var(--danger-text)' }}>*</span>
-                    </label>
-                    <input
-                      type="text"
-                      className="filter-select"
-                      value={editingUser.employeeId}
-                      onChange={(e) => setEditingUser({ ...editingUser, employeeId: e.target.value.toUpperCase() })}
-                      style={{ width: '100%', padding: '9px 12px', fontFamily: 'monospace', fontWeight: 700 }}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                      Reset PIN / Password
-                    </label>
-                    <input
-                      type="password"
-                      className="filter-select"
-                      placeholder="Leave blank to keep current"
-                      value={editPin}
-                      onChange={(e) => setEditPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
-                      style={{ width: '100%', padding: '9px 12px' }}
-                    />
-                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
-                      4-8 digits (leave blank to keep unchanged)
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <div>
-                    <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                      First Name <span style={{ color: 'var(--danger-text)' }}>*</span>
-                    </label>
-                    <input
-                      type="text"
-                      className="filter-select"
-                      value={editingUser.firstName}
-                      onChange={(e) => setEditingUser({ ...editingUser, firstName: e.target.value })}
-                      style={{ width: '100%', padding: '9px 12px' }}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                      Last Name <span style={{ color: 'var(--danger-text)' }}>*</span>
-                    </label>
-                    <input
-                      type="text"
-                      className="filter-select"
-                      value={editingUser.lastName}
-                      onChange={(e) => setEditingUser({ ...editingUser, lastName: e.target.value })}
-                      style={{ width: '100%', padding: '9px 12px' }}
-                      required
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Section 2: Role, Status & Access */}
-              <div
-                style={{
-                  backgroundColor: 'var(--bg)',
-                  padding: 14,
-                  borderRadius: 10,
-                  border: '1px solid var(--border)',
-                }}
-              >
-                <div style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--accent)', marginBottom: 10 }}>
-                  2. Role & Status Settings
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
-                  <div>
-                    <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                      Account Role <span style={{ color: 'var(--danger-text)' }}>*</span>
-                    </label>
-                    {isSuperAdmin ? (
-                      <select
-                        className="filter-select"
-                        value={editingUser.role}
-                        onChange={(e) => {
-                          const newRole = e.target.value as Role;
-                          setEditingUser({
-                            ...editingUser,
-                            role: newRole,
-                          });
-                        }}
-                        style={{ width: '100%', padding: '9px 12px', fontWeight: 600 }}
-                      >
-                        <option value="SUPER_ADMIN">Super Admin (Full Fleet Control)</option>
-                        <option value="ADMIN">Department Admin (Category Head)</option>
-                        <option value="EXECUTIVE">Executive (Category Staff)</option>
-                        <option value="DRIVER">Driver (Mobile App User)</option>
-                      </select>
-                    ) : (
-                      <input
-                        type="text"
-                        className="filter-select"
-                        value={editingUser.role}
-                        disabled
-                        style={{ width: '100%', padding: '9px 12px', opacity: 0.8 }}
-                      />
-                    )}
-                  </div>
-
-                  <div>
-                    <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                      Approval Status <span style={{ color: 'var(--danger-text)' }}>*</span>
-                    </label>
-                    {isSuperAdmin ? (
-                      <select
-                        className="filter-select"
-                        value={editingUser.approvalStatus ?? 'APPROVED'}
-                        onChange={(e) =>
-                          setEditingUser({
-                            ...editingUser,
-                            approvalStatus: e.target.value as ApprovalStatus,
-                          })
-                        }
-                        style={{ width: '100%', padding: '9px 12px', fontWeight: 600 }}
-                      >
-                        <option value="APPROVED">Approved (Active Access)</option>
-                        <option value="PENDING_APPROVAL">Pending Approval</option>
-                        <option value="REJECTED">Rejected (Disabled)</option>
-                      </select>
-                    ) : (
-                      <input
-                        type="text"
-                        className="filter-select"
-                        value={editingUser.approvalStatus ?? 'APPROVED'}
-                        disabled
-                        style={{ width: '100%', padding: '9px 12px', opacity: 0.8 }}
-                      />
-                    )}
-                  </div>
-                </div>
-
-                {/* Account Active Toggle */}
-                {isSuperAdmin && (
-                  <label
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 10,
-                      padding: '8px 12px',
-                      background: editingUser.isActive ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
-                      border: `1px solid ${editingUser.isActive ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.4)'}`,
-                      borderRadius: 8,
-                      cursor: 'pointer',
-                      fontSize: 13,
-                      fontWeight: 600,
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={editingUser.isActive}
-                      onChange={(e) => setEditingUser({ ...editingUser, isActive: e.target.checked })}
-                    />
-                    <span style={{ color: editingUser.isActive ? 'var(--success-text)' : 'var(--danger-text)' }}>
-                      Account is {editingUser.isActive ? 'Active & Enabled' : 'Deactivated & Locked'}
-                    </span>
-                  </label>
-                )}
-              </div>
-
-              {/* Section 3: Driver Details (DL) */}
-              {(editingUser.role === 'DRIVER' || editingUser.licenseNumber) && (
-                <div
-                  style={{
-                    backgroundColor: 'var(--bg)',
-                    padding: 14,
-                    borderRadius: 10,
-                    border: '1px solid var(--border)',
-                  }}
-                >
-                  <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                    Driving License (DL) Number {editingUser.role === 'DRIVER' && <span style={{ color: 'var(--danger-text)' }}>*</span>}
-                  </label>
-                  <input
-                    type="text"
-                    className="filter-select"
-                    placeholder="e.g. DL-0420110012345"
-                    value={editingUser.licenseNumber ?? ''}
-                    onChange={(e) => setEditingUser({ ...editingUser, licenseNumber: e.target.value.toUpperCase() })}
-                    style={{ width: '100%', padding: '9px 12px', textTransform: 'uppercase', fontFamily: 'monospace', fontWeight: 600 }}
-                    required={editingUser.role === 'DRIVER'}
-                  />
-                </div>
-              )}
-
-              {/* Section 4: Contact Details */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-                <div>
-                  <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                    Phone Number <span style={{ color: 'var(--danger-text)' }}>*</span>
-                  </label>
-                  <input
-                    type="tel"
-                    className="filter-select"
-                    value={editingUser.phone ?? ''}
-                    onChange={(e) => setEditingUser({ ...editingUser, phone: e.target.value })}
-                    style={{ width: '100%', padding: '9px 12px' }}
-                    required
-                  />
-                </div>
-                <div>
-                  <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                    Email Address
-                  </label>
-                  <input
-                    type="email"
-                    className="filter-select"
-                    value={editingUser.email ?? ''}
-                    onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value })}
-                    style={{ width: '100%', padding: '9px 12px' }}
-                  />
-                </div>
-              </div>
-
-              {/* Section 5: Department Head Category Settings */}
-              {editingUser.role === 'ADMIN' && (
-                <div
-                  style={{
-                    backgroundColor: 'var(--bg)',
-                    padding: 14,
-                    borderRadius: 10,
-                    border: '1px solid var(--border)',
-                  }}
-                >
-                  <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 4 }}>
-                    Assigned Complaint Categories / Scope <span style={{ color: 'var(--danger-text)' }}>*</span>
-                  </label>
-                  <p style={{ fontSize: 12, color: 'var(--muted)', margin: '0 0 10px 0' }}>
-                    Select categories this Admin handles. Complaints & spare part requests matching these categories will be routed to this Admin.
-                  </p>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
-                    {APP_CATEGORY_OPTIONS.map((opt) => {
-                      const checked = adminAssignedCategories.includes(opt.value);
-                      return (
-                        <label
-                          key={opt.value}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 8,
-                            padding: '8px 10px',
-                            borderRadius: 8,
-                            background: checked ? 'rgba(59, 130, 246, 0.15)' : 'var(--surface)',
-                            border: `1px solid ${checked ? 'var(--accent)' : 'var(--border)'}`,
-                            cursor: 'pointer',
-                            fontSize: 12,
-                            fontWeight: checked ? 700 : 500,
-                          }}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setAdminAssignedCategories([...adminAssignedCategories, opt.value]);
-                              } else {
-                                setAdminAssignedCategories(adminAssignedCategories.filter((c) => c !== opt.value));
-                              }
-                            }}
-                          />
-                          <span>{opt.icon} {opt.label}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Section 6: Executive Supervision and Site Settings */}
-              {editingUser.role === 'EXECUTIVE' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                  {isSuperAdmin && (
-                    <div>
-                      <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                        Supervising Department Admin
-                      </label>
-                      <select
-                        className="filter-select"
-                        value={editingUser.createdByAdminId ?? ''}
-                        onChange={(e) => {
-                          const newAdminId = e.target.value || null;
-                          const targetAdmin = usersList.find((a) => a.id === newAdminId);
-                          setEditingUser({
-                            ...editingUser,
-                            createdByAdminId: newAdminId,
-                            category: targetAdmin?.category ?? null,
-                          });
-                        }}
-                        style={{ width: '100%', padding: '9px 12px' }}
-                      >
-                        <option value="">-- Direct SuperAdmin Oversight --</option>
-                        {usersList
-                          .filter((u) => u.role === 'ADMIN' && u.isActive)
-                          .map((a) => (
-                            <option key={a.id} value={a.id}>
-                              {a.firstName} {a.lastName} ({a.employeeId}){a.category ? ` - ${getCategoryLabel(a.category)}` : ''}
-                            </option>
-                          ))}
-                      </select>
-                    </div>
-                  )}
-
-                  <div
-                    style={{
-                      padding: '10px 14px',
-                      background: 'rgba(6, 182, 212, 0.08)',
-                      border: '1px solid rgba(6, 182, 212, 0.25)',
-                      borderRadius: 8,
-                      fontSize: 12,
-                    }}
-                  >
-                    <span style={{ color: 'var(--muted)' }}>Inherited Department: </span>
-                    <strong style={{ color: '#22d3ee' }}>
-                      {getCategoryLabel(editingUser.category)}
-                    </strong>
-                  </div>
-                </div>
-              )}
-
-              {/* Section 7: Operating Site / Hub */}
-              <div>
-                <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', display: 'block', marginBottom: 6 }}>
-                  Operating Site / Hub Location
-                </label>
-                {sitesList.length > 0 ? (
-                  <select
-                    className="filter-select"
-                    value={editingUser.site ?? ''}
-                    onChange={(e) => setEditingUser({ ...editingUser, site: e.target.value || null })}
-                    style={{ width: '100%', padding: '9px 12px' }}
-                  >
-                    <option value="">-- Select Operating Site / Hub --</option>
-                    {editingUser.site && !sitesList.some((s) => s.name === editingUser.site) && (
-                      <option value={editingUser.site}>{editingUser.site} (Current)</option>
-                    )}
-                    {sitesList
-                      .filter((s) => s.isActive || s.name === editingUser.site)
-                      .map((s) => (
-                        <option key={s.id} value={s.name}>
-                          {s.name} {s.code ? `(${s.code})` : ''} {!s.isActive ? '(Inactive)' : ''}
-                        </option>
-                      ))}
-                  </select>
-                ) : (
-                  <input
-                    type="text"
-                    className="filter-select"
-                    placeholder="e.g. Kolkata Hub, Site A, Plant 1"
-                    value={editingUser.site ?? ''}
-                    onChange={(e) => setEditingUser({ ...editingUser, site: e.target.value || null })}
-                    style={{ width: '100%', padding: '9px 12px' }}
-                  />
-                )}
-              </div>
-
-              {/* Action Buttons */}
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'flex-end',
-                  gap: 12,
-                  paddingTop: 16,
-                  borderTop: '1px solid var(--border)',
-                }}
-              >
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => setEditingUser(null)}
-                  style={{ padding: '9px 18px', borderRadius: 8, fontWeight: 600 }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="btn-primary"
-                  disabled={submitting}
-                  style={{ padding: '9px 22px', borderRadius: 8, fontWeight: 700 }}
-                >
-                  {submitting ? 'Saving Changes…' : 'Save Changes'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
-
