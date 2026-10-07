@@ -773,7 +773,13 @@ async function buildWhere(
   }
 
   if (query.needsAction) {
-    andConditions.push({ status: 'NEW', assignedToId: null });
+    andConditions.push({
+      status: 'NEW',
+      OR: [
+        { assignedToId: null },
+        { updates: { none: { author: { role: { in: ['ADMIN', 'SUPER_ADMIN', 'EXECUTIVE'] } } } } },
+      ],
+    });
   }
 
   if (query.tripPhase) {
@@ -1402,7 +1408,16 @@ export async function rejectAssignment(
   return toComplaintPublic(updated);
 }
 
-export async function transcribeComplaint(id: string): Promise<ComplaintPublic> {
+export async function transcribeComplaint(
+  actor: Actor | string,
+  id: string,
+): Promise<ComplaintPublic> {
+  const actorObj: Actor =
+    typeof actor === 'string' ? { id: actor, role: 'SUPER_ADMIN' } : actor;
+
+  // Complaint-level authorization: reuse getOne access check before starting transcription
+  await getOne(actorObj, id);
+
   const existing = await prisma.complaint.findUnique({
     where: { id },
     include: { attachments: true },
@@ -1457,6 +1472,11 @@ export async function translateComplaintText(
   return { text, translatedText, targetLang };
 }
 
+/**
+ * Counts unread / action-requiring complaints for the specified actor.
+ * Note (M-1): The system model uses `status: 'NEW'` within the actor's permitted scope
+ * (`buildWhere`) as the definition of newly reported complaints requiring triage.
+ */
 export async function getUnreadCount(actor: Actor): Promise<{ unreadCount: number }> {
   let actorDriverId: string | undefined;
   if (actor.role === 'DRIVER') {

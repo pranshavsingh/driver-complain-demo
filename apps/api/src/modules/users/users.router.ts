@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authenticate } from '../../middleware/authenticate';
 import { requireRole } from '../../middleware/authorize';
 import { validateUuidParam } from '../../middleware/validate';
+import { checkAvailabilityRateLimiter } from '../../middleware/rate-limit';
 import * as usersController from './users.controller';
 
 export const usersRouter = Router();
@@ -26,6 +27,7 @@ usersRouter.get(
   '/check-availability',
   authenticate,
   requireRole('SUPER_ADMIN', 'ADMIN'),
+  checkAvailabilityRateLimiter,
   usersController.checkAvailability,
 );
 

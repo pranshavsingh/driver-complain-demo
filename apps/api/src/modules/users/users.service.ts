@@ -229,13 +229,16 @@ export async function listUsers(
   },
 ): Promise<UserPublic[]> {
   const where: Prisma.UserWhereInput = {};
+  const andConditions: Prisma.UserWhereInput[] = [];
 
   // Admin can see Drivers and Executives created by them
   if (actor.role === 'ADMIN') {
-    where.OR = [
-      { role: 'DRIVER' },
-      { createdByAdminId: actor.id },
-    ];
+    andConditions.push({
+      OR: [
+        { role: 'DRIVER' },
+        { createdByAdminId: actor.id },
+      ],
+    });
   } else if (filters?.role) {
     where.role = filters.role;
   }
@@ -243,13 +246,19 @@ export async function listUsers(
   if (filters?.approvalStatus) where.approvalStatus = filters.approvalStatus;
   if (filters?.isActive !== undefined) where.isActive = filters.isActive;
   if (filters?.search) {
-    where.OR = [
-      { employeeId: { contains: filters.search, mode: 'insensitive' } },
-      { firstName: { contains: filters.search, mode: 'insensitive' } },
-      { lastName: { contains: filters.search, mode: 'insensitive' } },
-      { email: { contains: filters.search, mode: 'insensitive' } },
-      { phone: { contains: filters.search, mode: 'insensitive' } },
-    ];
+    andConditions.push({
+      OR: [
+        { employeeId: { contains: filters.search, mode: 'insensitive' } },
+        { firstName: { contains: filters.search, mode: 'insensitive' } },
+        { lastName: { contains: filters.search, mode: 'insensitive' } },
+        { email: { contains: filters.search, mode: 'insensitive' } },
+        { phone: { contains: filters.search, mode: 'insensitive' } },
+      ],
+    });
+  }
+
+  if (andConditions.length > 0) {
+    where.AND = andConditions;
   }
 
   const users = await prisma.user.findMany({
@@ -652,7 +661,33 @@ export async function deleteUser(actor: Actor, targetUserId: string): Promise<vo
         data: { issuedById: null },
       });
 
-      // 6. Delete complaint attachments uploaded by this user
+      // 6. Preserve complaint attachments on other users' complaints by reassigning uploader to complaint driver
+      const attachmentsOnOtherComplaints = await tx.complaintAttachment.findMany({
+        where: {
+          uploadedById: targetUserId,
+          complaint: {
+            driver: {
+              userId: { not: targetUserId },
+            },
+          },
+        },
+        include: {
+          complaint: {
+            include: { driver: true },
+          },
+        },
+      });
+
+      for (const att of attachmentsOnOtherComplaints) {
+        if (att.complaint.driver?.userId) {
+          await tx.complaintAttachment.update({
+            where: { id: att.id },
+            data: { uploadedById: att.complaint.driver.userId },
+          });
+        }
+      }
+
+      // Delete any remaining attachments uploaded by this user on their own complaints
       await tx.complaintAttachment.deleteMany({
         where: { uploadedById: targetUserId },
       });

@@ -153,7 +153,10 @@ export async function transcribe(
 ): Promise<void> {
   if (!req.user) throw ApiError.unauthorized();
   const { id } = req.params;
-  const complaint = await complaintsService.transcribeComplaint(id);
+  const complaint = await complaintsService.transcribeComplaint(
+    { id: req.user.id, role: req.user.role },
+    id,
+  );
   sendSuccess(res, complaint);
 }
 

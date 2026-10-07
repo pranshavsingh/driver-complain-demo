@@ -58,8 +58,13 @@ export async function login(
   // Uniform message on the not-found and bad-PIN paths to avoid user enumeration.
   if (!user) throw ApiError.unauthorized('Invalid credentials');
   if (!user.isActive) throw ApiError.forbidden('Account is disabled');
-  if (user.lockedUntil && user.lockedUntil.getTime() > Date.now()) {
-    throw ApiError.tooManyRequests('Account temporarily locked due to failed attempts');
+  if (user.lockedUntil) {
+    if (user.lockedUntil.getTime() > Date.now()) {
+      throw ApiError.tooManyRequests('Account temporarily locked due to failed attempts');
+    }
+    // Lock has expired; reset stale lockout counter for this attempt sequence
+    user.failedLoginAttempts = 0;
+    user.lockedUntil = null;
   }
 
   const ok = await verifyPin(pin, user.pinHash);

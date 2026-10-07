@@ -247,6 +247,7 @@ export function toComplaintPublic(complaint: Complaint & {
     tripPhase,
     loadingStatus,
     loadingRecordId,
+    // Note (M-8): locationName is canonical; tripLocationName is preserved for backward API compatibility with legacy consumers.
     tripLocationName: effectiveLocationName,
     latitude: (c as any).latitude ?? null,
     longitude: (c as any).longitude ?? null,

@@ -76,8 +76,12 @@ export async function checkAndEscalateSlaBreaches(): Promise<SlaEscalationResult
     .filter((u) => u.role === 'SUPER_ADMIN')
     .map((u) => u.id);
 
-  let escalatedCount = 0;
+    let escalatedCount = 0;
   let totalNotifiedUsers = 0;
+
+  const notificationsToCreate: any[] = [];
+  const escalatedComplaintIds: string[] = [];
+  const realtimeDispatches: { userId: string; payload: any }[] = [];
 
   for (const complaint of openComplaints) {
     const targetSlaHours = slaMap.get(complaint.category) ?? 12;
@@ -125,42 +129,36 @@ export async function checkAndEscalateSlaBreaches(): Promise<SlaEscalationResult
     const title = `🚨 SLA Breached: Action Required (${complaint.complaintNo})`;
     const body = `Complaint #${complaint.complaintNo} (${formattedCategory}) passed SLA target of ${targetSlaHours}h (${roundedElapsed}h elapsed) with no action from Site Incharge. Immediate attention required.`;
 
-    // Dispatch notifications in DB & Realtime
-    await prisma.$transaction(async (tx) => {
-      await tx.notification.createMany({
-        data: recipientUserIds.map((userId) => ({
-          userId,
-          type: 'SLA_BREACH_ESCALATION' as any,
-          title,
-          body,
-          complaintId: complaint.id,
-          data: {
-            complaintId: complaint.id,
-            complaintNo: complaint.complaintNo,
-            category: complaint.category,
-            slaHours: targetSlaHours,
-            elapsedHours: roundedElapsed,
-          },
-        })),
-      });
+    escalatedComplaintIds.push(complaint.id);
 
-      await tx.complaint.update({
-        where: { id: complaint.id },
-        data: { lastSlaEscalatedAt: now },
-      });
-    });
-
-    // Realtime notification broadcast
     for (const userId of recipientUserIds) {
-      emitEventToUsers([userId], 'notification:new', {
-        id: `notif-sla-${complaint.id}-${now.getTime()}`,
+      notificationsToCreate.push({
         userId,
-        type: 'SLA_BREACH_ESCALATION',
+        type: 'SLA_BREACH_ESCALATION' as any,
         title,
         body,
         complaintId: complaint.id,
-        createdAt: now.toISOString(),
-        isRead: false,
+        data: {
+          complaintId: complaint.id,
+          complaintNo: complaint.complaintNo,
+          category: complaint.category,
+          slaHours: targetSlaHours,
+          elapsedHours: roundedElapsed,
+        },
+      });
+
+      realtimeDispatches.push({
+        userId,
+        payload: {
+          id: `notif-sla-${complaint.id}-${now.getTime()}`,
+          userId,
+          type: 'SLA_BREACH_ESCALATION',
+          title,
+          body,
+          complaintId: complaint.id,
+          createdAt: now.toISOString(),
+          isRead: false,
+        },
       });
     }
 
@@ -177,6 +175,25 @@ export async function checkAndEscalateSlaBreaches(): Promise<SlaEscalationResult
       },
       `SLA Breach Escalation triggered for ${complaint.complaintNo}`,
     );
+  }
+
+  // Batch DB writes into a single transaction for all breaching complaints
+  if (notificationsToCreate.length > 0) {
+    await prisma.$transaction(async (tx) => {
+      await tx.notification.createMany({
+        data: notificationsToCreate,
+      });
+
+      await tx.complaint.updateMany({
+        where: { id: { in: escalatedComplaintIds } },
+        data: { lastSlaEscalatedAt: now },
+      });
+    });
+
+    // Realtime notification broadcasts
+    for (const dispatch of realtimeDispatches) {
+      emitEventToUsers([dispatch.userId], 'notification:new', dispatch.payload);
+    }
   }
 
   return {

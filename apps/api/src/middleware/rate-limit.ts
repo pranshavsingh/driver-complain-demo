@@ -37,3 +37,25 @@ export const apiRateLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+/** Endpoint-specific limiter for check-availability to prevent user enumeration attacks. */
+export const checkAvailabilityRateLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 30,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    const userId = (req as any).user?.id;
+    return userId ? `avail:${userId}` : `avail:${req.ip ?? 'noip'}`;
+  },
+  handler: (req, res) => {
+    res.status(429).json({
+      success: false,
+      error: {
+        code: 'TOO_MANY_REQUESTS',
+        message: 'Too many availability check requests. Please try again later.',
+        requestId: req.id == null ? undefined : String(req.id),
+      },
+    });
+  },
+});
+
