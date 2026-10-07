@@ -139,7 +139,7 @@ export type ListComplaintsResponse = z.infer<typeof ListComplaintsResponseSchema
 export const ComplaintAttachmentPublicSchema = z.object({
   id: z.string(),
   complaintId: z.string(),
-  uploadedById: z.string(),
+  uploadedById: z.string().nullable().optional(),
   kind: AttachmentKindSchema,
   url: z.string(),
   publicId: z.string(),

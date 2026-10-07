@@ -661,35 +661,10 @@ export async function deleteUser(actor: Actor, targetUserId: string): Promise<vo
         data: { issuedById: null },
       });
 
-      // 6. Preserve complaint attachments on other users' complaints by reassigning uploader to complaint driver
-      const attachmentsOnOtherComplaints = await tx.complaintAttachment.findMany({
-        where: {
-          uploadedById: targetUserId,
-          complaint: {
-            driver: {
-              userId: { not: targetUserId },
-            },
-          },
-        },
-        include: {
-          complaint: {
-            include: { driver: true },
-          },
-        },
-      });
-
-      for (const att of attachmentsOnOtherComplaints) {
-        if (att.complaint.driver?.userId) {
-          await tx.complaintAttachment.update({
-            where: { id: att.id },
-            data: { uploadedById: att.complaint.driver.userId },
-          });
-        }
-      }
-
-      // Delete any remaining attachments uploaded by this user on their own complaints
-      await tx.complaintAttachment.deleteMany({
+      // 6. Anonymize uploader identity on complaint attachments (preserve evidence without false attribution)
+      await tx.complaintAttachment.updateMany({
         where: { uploadedById: targetUserId },
+        data: { uploadedById: null },
       });
 
       // 7. Delete complaint updates authored by this user

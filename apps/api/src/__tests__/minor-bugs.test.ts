@@ -3,7 +3,7 @@ import { getActiveAdminUserIds, invalidateAdminCache } from '../lib/admin-cache'
 import { prisma } from '../lib/prisma';
 import { toComplaintPublic } from '../lib/serializers';
 import { checkAvailabilityRateLimiter } from '../middleware/rate-limit';
-import { listUsers } from '../modules/users/users.service';
+import { listUsers, deleteUser } from '../modules/users/users.service';
 import { transcribeComplaint } from '../modules/complaints/complaints.service';
 import * as complaintsService from '../modules/complaints/complaints.service';
 import { checkAndEscalateSlaBreaches } from '../modules/complaints/sla-escalation.service';
@@ -14,7 +14,7 @@ import * as passwordLib from '../lib/password';
 const VALID_UUID_1 = '018f3a5b-7c8d-7012-8456-789abcdef012';
 const VALID_UUID_2 = '018f3a5b-7c8d-7012-8456-789abcdef013';
 
-describe('Minor Bug Fixes (M-1 to M-10)', () => {
+describe('Minor Bug Fixes (M-1 to M-10) — Verification Suite', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     invalidateAdminCache();
@@ -133,11 +133,10 @@ describe('Minor Bug Fixes (M-1 to M-10)', () => {
   describe('M-5: admin-cache thundering herd in-flight deduplication', () => {
     it('deduplicates concurrent database queries to a single call when cache is empty', async () => {
       let queryCount = 0;
-      vi.spyOn(prisma.user, 'findMany').mockImplementation(async () => {
+      vi.spyOn(prisma.user, 'findMany').mockImplementation((() => {
         queryCount++;
-        await new Promise((res) => setTimeout(res, 50));
-        return [{ id: VALID_UUID_1 }, { id: VALID_UUID_2 }] as any;
-      });
+        return new Promise((res) => setTimeout(() => res([{ id: VALID_UUID_1 }, { id: VALID_UUID_2 }]), 50));
+      }) as any);
 
       const results = await Promise.all(
         Array.from({ length: 10 }).map(() => getActiveAdminUserIds()),
@@ -151,10 +150,10 @@ describe('Minor Bug Fixes (M-1 to M-10)', () => {
 
     it('returns cached results on subsequent calls without querying DB', async () => {
       let queryCount = 0;
-      vi.spyOn(prisma.user, 'findMany').mockImplementation(async () => {
+      vi.spyOn(prisma.user, 'findMany').mockImplementation((() => {
         queryCount++;
-        return [{ id: VALID_UUID_1 }] as any;
-      });
+        return Promise.resolve([{ id: VALID_UUID_1 }]);
+      }) as any);
 
       const first = await getActiveAdminUserIds();
       const second = await getActiveAdminUserIds();
@@ -167,7 +166,6 @@ describe('Minor Bug Fixes (M-1 to M-10)', () => {
 
   describe('M-6: transcribeComplaint authorization guard', () => {
     it('rejects forbidden complaint access during transcribeComplaint before starting transcription', async () => {
-      // Mock complaint belonging to a category different from executive
       vi.spyOn(prisma.complaint, 'findUnique').mockResolvedValue({
         id: VALID_UUID_1,
         category: 'FUEL_DEF',
@@ -179,12 +177,48 @@ describe('Minor Bug Fixes (M-1 to M-10)', () => {
       vi.spyOn(prisma.user, 'findUnique').mockResolvedValue({
         id: VALID_UUID_1,
         role: 'EXECUTIVE',
-        category: 'BREAKDOWN', // Mismatch!
+        category: 'BREAKDOWN',
       } as any);
 
       await expect(
         transcribeComplaint({ id: VALID_UUID_1, role: 'EXECUTIVE' }, VALID_UUID_1),
       ).rejects.toThrow('You can only view complaints assigned to you, your department, or your vehicles');
+    });
+  });
+
+  describe('M-7: deleteUser anonymizes attachment uploader without false attribution', () => {
+    it('sets uploadedById to null for target user attachments to preserve evidence cleanly', async () => {
+      vi.spyOn(prisma.user, 'findUnique').mockResolvedValue({
+        id: VALID_UUID_1,
+        role: 'ADMIN',
+        firstName: 'Executive',
+        lastName: 'User',
+        driver: null,
+      } as any);
+
+      const mockTx = {
+        user: { updateMany: vi.fn(), delete: vi.fn() },
+        adminCategoryAssignment: { deleteMany: vi.fn() },
+        vehicle: { updateMany: vi.fn() },
+        complaint: { updateMany: vi.fn() },
+        sparePartRequest: { updateMany: vi.fn() },
+        complaintAttachment: { updateMany: vi.fn() },
+        complaintUpdate: { deleteMany: vi.fn() },
+        driver: { findUnique: vi.fn().mockResolvedValue(null) },
+        notification: { deleteMany: vi.fn() },
+        deviceToken: { deleteMany: vi.fn() },
+        refreshToken: { deleteMany: vi.fn() },
+        supportMessage: { deleteMany: vi.fn() },
+      };
+
+      vi.spyOn(prisma, '$transaction').mockImplementation(async (cb: any) => cb(mockTx));
+
+      await deleteUser({ id: VALID_UUID_2, role: 'SUPER_ADMIN' }, VALID_UUID_1);
+
+      expect(mockTx.complaintAttachment.updateMany).toHaveBeenCalledWith({
+        where: { uploadedById: VALID_UUID_1 },
+        data: { uploadedById: null },
+      });
     });
   });
 
@@ -238,7 +272,6 @@ describe('Minor Bug Fixes (M-1 to M-10)', () => {
         login('EMP001', '123456', { ipAddress: '127.0.0.1' }),
       ).rejects.toThrow('Invalid credentials');
 
-      // The attempt counter after lock expiry should be 1 (0 + 1), not 6 (5 + 1)!
       expect(updateSpy).toHaveBeenCalledWith({
         where: { id: VALID_UUID_1 },
         data: {

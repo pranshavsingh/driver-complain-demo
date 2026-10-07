@@ -229,8 +229,8 @@ model ComplaintAttachment {
   id           String    @id @default(uuid(7)) @db.Uuid
   complaintId  String    @db.Uuid
   complaint    Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
-  uploadedById String    @db.Uuid
-  uploadedBy   User      @relation(fields: [uploadedById], references: [id])
+  uploadedById String?   @db.Uuid
+  uploadedBy   User?     @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
   // Defaulted to PHOTO so the column could be added to existing rows (all of which were
   // photos) without a data migration. Every write path sets it explicitly — treat the default
   // as a backfill artefact, not a fallback to rely on.
