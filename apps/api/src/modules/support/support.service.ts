@@ -11,7 +11,11 @@ import {
   type SupportConversationSummary,
   type SupportMessageListQuery,
   type SupportUserSummary,
+  type CreateComplaintFromChatInput,
+  type BulkAttachChatMessagesInput,
+  type ComplaintPublic,
 } from '@driver-complaint/shared-types';
+import * as complaintsService from '../complaints/complaints.service';
 
 function toUserSummary(user: any): SupportUserSummary {
   return {
@@ -664,5 +668,213 @@ export async function detachChatMessageFromComplaint(
 
   return { ok: true };
 }
+
+export async function createComplaintFromChat(
+  actorUserId: string,
+  input: CreateComplaintFromChatInput,
+): Promise<ComplaintPublic> {
+  const actor = await prisma.user.findUnique({ where: { id: actorUserId } });
+  if (!actor || !['SUPER_ADMIN', 'ADMIN'].includes(actor.role)) {
+    throw ApiError.forbidden('Only SuperAdmin or Admin can create complaints from support chat');
+  }
+
+  // 1. Resolve Driver
+  const driver = await prisma.driver.findUnique({
+    where: { userId: input.driverUserId },
+    include: { user: true },
+  });
+  if (!driver) {
+    throw ApiError.badRequest('Selected user has no registered driver profile');
+  }
+
+  // 2. Resolve Vehicle
+  let vehicleNumber = input.vehicleNumber;
+  let vehicleId = input.vehicleId;
+  if (!vehicleNumber && vehicleId) {
+    const v = await prisma.vehicle.findUnique({ where: { id: vehicleId } });
+    if (v) vehicleNumber = v.plateNumber;
+  }
+
+  // 3. Create the complaint using the existing complaint service
+  const createdComplaint = await complaintsService.create(
+    input.driverUserId,
+    {
+      title: input.title,
+      description: input.description,
+      category: input.category,
+      priority: input.priority ?? 'MEDIUM',
+      vehicleNumber,
+      vehicleId,
+    },
+    {},
+  );
+
+  // 4. Link selected chat messages to the created complaint
+  if (input.messageIds && input.messageIds.length > 0) {
+    const messages = await prisma.supportMessage.findMany({
+      where: { id: { in: input.messageIds } },
+    });
+
+    await prisma.$transaction(async (tx) => {
+      for (const msg of messages) {
+        // Link message
+        await tx.supportMessage.update({
+          where: { id: msg.id },
+          data: {
+            linkedComplaintId: createdComplaint.id,
+            linkedComplaintNo: createdComplaint.complaintNo,
+          },
+        });
+
+        // Copy attachment if any
+        if (msg.attachmentUrl) {
+          const isAudio = msg.type === 'AUDIO';
+          const kind = isAudio ? 'VOICE' : 'PHOTO';
+          const resourceType = isAudio ? 'video' : 'image';
+          const format = isAudio ? 'm4a' : 'jpg';
+          const pubId = `chat-${msg.id}-c${createdComplaint.id.slice(0, 8)}`;
+          const dateStr = new Date(msg.createdAt).toLocaleString('en-IN', {
+            dateStyle: 'medium',
+            timeStyle: 'short',
+            timeZone: 'Asia/Kolkata',
+          });
+
+          await tx.complaintAttachment.create({
+            data: {
+              complaintId: createdComplaint.id,
+              uploadedById: msg.senderId,
+              kind,
+              url: msg.attachmentUrl,
+              publicId: pubId,
+              resourceType,
+              format,
+              durationSec: msg.attachmentDurationSec ?? null,
+              originalName: isAudio ? `Voice Note (${dateStr})` : `Photo (${dateStr})`,
+            },
+          });
+        }
+      }
+
+      // Add timeline entry for chat linking
+      await tx.complaintUpdate.create({
+        data: {
+          complaintId: createdComplaint.id,
+          authorId: actorUserId,
+          toStatus: 'NEW',
+          note: `Registered via Support Chat by Super Admin (${messages.length} chat messages linked).`,
+        },
+      });
+    });
+
+    // Realtime notification for chat updates
+    try {
+      emitEventToUsers([input.driverUserId, actorUserId], 'support:message', {
+        messageIds: input.messageIds,
+        linkedComplaintId: createdComplaint.id,
+        linkedComplaintNo: createdComplaint.complaintNo,
+      } as any);
+    } catch {}
+  }
+
+  return createdComplaint;
+}
+
+export async function bulkAttachChatMessages(
+  actorUserId: string,
+  input: BulkAttachChatMessagesInput,
+): Promise<{ ok: boolean; count: number; complaintNo: string }> {
+  const actor = await prisma.user.findUnique({ where: { id: actorUserId } });
+  if (!actor || !['SUPER_ADMIN', 'ADMIN'].includes(actor.role)) {
+    throw ApiError.forbidden('Only SuperAdmin or Admin can link chat messages to complaints');
+  }
+
+  const complaint = await prisma.complaint.findUnique({
+    where: { id: input.complaintId },
+    include: { driver: true },
+  });
+  if (!complaint) throw ApiError.notFound('Complaint not found');
+  if (complaint.status === 'RESOLVED' || complaint.status === 'CLOSED') {
+    throw ApiError.badRequest(`Cannot link chat messages to a ${complaint.status.toLowerCase()} complaint`);
+  }
+
+  const messages = await prisma.supportMessage.findMany({
+    where: { id: { in: input.messageIds } },
+  });
+
+  if (messages.length === 0) {
+    throw ApiError.badRequest('No valid messages selected');
+  }
+
+  await prisma.$transaction(async (tx) => {
+    let extraDescription = '';
+
+    for (const msg of messages) {
+      if (msg.linkedComplaintId) continue; // skip already linked
+
+      const dateStr = new Date(msg.createdAt).toLocaleString('en-IN', {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+        timeZone: 'Asia/Kolkata',
+      });
+
+      if (msg.content?.trim()) {
+        extraDescription += `\n\n[Linked Support Chat • ${dateStr}]:\n${msg.content.trim()}`;
+      }
+
+      if (msg.attachmentUrl) {
+        const isAudio = msg.type === 'AUDIO';
+        const kind = isAudio ? 'VOICE' : 'PHOTO';
+        const resourceType = isAudio ? 'video' : 'image';
+        const format = isAudio ? 'm4a' : 'jpg';
+        const pubId = `chat-${msg.id}-c${complaint.id.slice(0, 8)}`;
+
+        await tx.complaintAttachment.create({
+          data: {
+            complaintId: complaint.id,
+            uploadedById: msg.senderId,
+            kind,
+            url: msg.attachmentUrl,
+            publicId: pubId,
+            resourceType,
+            format,
+            durationSec: msg.attachmentDurationSec ?? null,
+            originalName: isAudio ? `Voice Note (${dateStr})` : `Photo (${dateStr})`,
+          },
+        });
+      }
+
+      await tx.supportMessage.update({
+        where: { id: msg.id },
+        data: {
+          linkedComplaintId: complaint.id,
+          linkedComplaintNo: complaint.complaintNo,
+        },
+      });
+    }
+
+    if (extraDescription) {
+      await tx.complaint.update({
+        where: { id: complaint.id },
+        data: {
+          description: `${complaint.description}${extraDescription}`,
+          updatedAt: new Date(),
+        },
+      });
+    }
+
+    await tx.complaintUpdate.create({
+      data: {
+        complaintId: complaint.id,
+        authorId: actorUserId,
+        fromStatus: complaint.status,
+        toStatus: complaint.status,
+        note: `Linked ${messages.length} support chat messages to complaint history.`,
+      },
+    });
+  });
+
+  return { ok: true, count: messages.length, complaintNo: complaint.complaintNo };
+}
+
 
 

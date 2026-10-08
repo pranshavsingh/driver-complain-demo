@@ -188,7 +188,7 @@ model Complaint {
   id                String            @id @default(uuid(7)) @db.Uuid
   complaintNo       String            @unique
   driverId          String            @db.Uuid
-  driver            Driver            @relation(fields: [driverId], references: [id])
+  driver            Driver            @relation(fields: [driverId], references: [id], onDelete: Cascade)
   vehicleId         String?           @db.Uuid
   vehicle           Vehicle?          @relation(fields: [vehicleId], references: [id])
   title             String
@@ -253,8 +253,8 @@ model ComplaintUpdate {
   id          String           @id @default(uuid(7)) @db.Uuid
   complaintId String           @db.Uuid
   complaint   Complaint        @relation(fields: [complaintId], references: [id], onDelete: Cascade)
-  authorId    String           @db.Uuid
-  author      User             @relation(fields: [authorId], references: [id])
+  authorId    String?          @db.Uuid
+  author      User?            @relation(fields: [authorId], references: [id], onDelete: SetNull)
   fromStatus  ComplaintStatus?
   toStatus    ComplaintStatus?
   note        String?

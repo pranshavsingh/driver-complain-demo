@@ -15,6 +15,7 @@ import {
   Phone,
   Volume2,
   Link2,
+  Plus,
 } from '../components/Icons';
 import * as api from '../api/endpoints';
 import { isSuperAdmin, useAuth } from '../auth/AuthContext';
@@ -23,6 +24,8 @@ import type {
   SupportConversationSummary,
   SupportMessagePublic,
   ComplaintPublic,
+  ComplaintCategory,
+  Priority,
 } from '@driver-complaint/shared-types';
 
 type RoleFilter = 'ALL' | 'DRIVER' | 'ADMIN' | 'EXECUTIVE';
@@ -65,13 +68,36 @@ export function SupportChatPage(): ReactElement {
   // Photo Lightbox modal
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
 
+  // Multi-select state
+  const [selectedMessageIds, setSelectedMessageIds] = useState<string[]>([]);
+  const isSelectionMode = selectedMessageIds.length > 0;
+
+  const toggleSelectMessage = (id: string) => {
+    setSelectedMessageIds((prev) =>
+      prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id],
+    );
+  };
+
+  const clearSelection = () => {
+    setSelectedMessageIds([]);
+  };
+
   // Link to complaint state
   const [linkModalOpen, setLinkModalOpen] = useState(false);
-  const [linkingMessage, setLinkingMessage] = useState<SupportMessagePublic | null>(null);
+  const [linkingMessages, setLinkingMessages] = useState<SupportMessagePublic[]>([]);
   const [driverOpenComplaints, setDriverOpenComplaints] = useState<ComplaintPublic[]>([]);
   const [selectedComplaintId, setSelectedComplaintId] = useState('');
   const [loadingComplaints, setLoadingComplaints] = useState(false);
   const [isLinking, setIsLinking] = useState(false);
+
+  // Create Complaint from Chat state
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [createCategory, setCreateCategory] = useState<ComplaintCategory>('BREAKDOWN');
+  const [createPriority, setCreatePriority] = useState<Priority>('MEDIUM');
+  const [createTitle, setCreateTitle] = useState('');
+  const [createDescription, setCreateDescription] = useState('');
+  const [isCreatingComplaint, setIsCreatingComplaint] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
@@ -80,8 +106,9 @@ export function SupportChatPage(): ReactElement {
   const recordingTimerRef = useRef<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const openLinkModal = async (msg: SupportMessagePublic) => {
-    setLinkingMessage(msg);
+  const openLinkModal = async (msgs: SupportMessagePublic[]) => {
+    if (msgs.length === 0) return;
+    setLinkingMessages(msgs);
     setSelectedComplaintId('');
     setLinkModalOpen(true);
     setLoadingComplaints(true);
@@ -115,23 +142,41 @@ export function SupportChatPage(): ReactElement {
   };
 
   const handleAttachToComplaint = async () => {
-    if (!linkingMessage || !selectedComplaintId) return;
+    if (linkingMessages.length === 0 || !selectedComplaintId) return;
     setIsLinking(true);
     try {
-      const res = await api.support.attachToComplaint(linkingMessage.id, selectedComplaintId);
-      alert(`✅ Chat message successfully linked to Complaint #${res.complaintNo}`);
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === linkingMessage.id
-            ? { ...m, linkedComplaintId: selectedComplaintId, linkedComplaintNo: res.complaintNo }
-            : m,
-        ),
-      );
+      const firstMsg = linkingMessages[0];
+      if (linkingMessages.length === 1 && firstMsg) {
+        const res = await api.support.attachToComplaint(firstMsg.id, selectedComplaintId);
+        alert(`✅ Chat message successfully linked to Complaint #${res.complaintNo}`);
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === firstMsg.id
+              ? { ...m, linkedComplaintId: selectedComplaintId, linkedComplaintNo: res.complaintNo }
+              : m,
+          ),
+        );
+      } else {
+        const res = await api.support.bulkAttachToComplaint(
+          linkingMessages.map((m) => m.id),
+          selectedComplaintId,
+        );
+        alert(`✅ ${res.count} chat messages successfully linked to Complaint #${res.complaintNo}`);
+        const linkedIdSet = new Set(linkingMessages.map((m) => m.id));
+        setMessages((prev) =>
+          prev.map((m) =>
+            linkedIdSet.has(m.id)
+              ? { ...m, linkedComplaintId: selectedComplaintId, linkedComplaintNo: res.complaintNo }
+              : m,
+          ),
+        );
+      }
       setLinkModalOpen(false);
-      setLinkingMessage(null);
+      setLinkingMessages([]);
       setSelectedComplaintId('');
+      setSelectedMessageIds([]);
     } catch (err: any) {
-      alert(err.message || 'Failed to attach message to complaint');
+      alert(err.message || 'Failed to attach message(s) to complaint');
     } finally {
       setIsLinking(false);
     }
@@ -153,6 +198,93 @@ export function SupportChatPage(): ReactElement {
       alert(err.message || 'Failed to unlink message from complaint');
     }
   };
+
+  // Open Create Complaint Modal with pre-filled fields
+  const openCreateModal = () => {
+    const selectedMsgs = messages.filter((m) => selectedMessageIds.includes(m.id));
+    if (selectedMsgs.length === 0) return;
+    const driverUser = selectedConversation?.contactUser;
+    const driverName = driverUser ? `${driverUser.firstName} ${driverUser.lastName}` : 'Driver';
+
+    const firstTextMsg = selectedMsgs.find(
+      (m) => m.content && m.content !== 'Photo' && m.content !== 'Voice Message',
+    );
+    const autoTitle = firstTextMsg
+      ? `[Support] ${firstTextMsg.content.slice(0, 60)}`
+      : `[Support Ticket] Issue reported by ${driverName}`;
+
+    const compiledDesc = selectedMsgs
+      .map((m) => {
+        const timeStr = formatMessageTime(m.createdAt);
+        const senderLabel = m.senderId === user?.id ? 'Support Desk' : driverName;
+        const mediaNote =
+          m.type === 'AUDIO'
+            ? ' [Voice Note Attached]'
+            : m.type === 'IMAGE'
+            ? ' [Photo Evidence Attached]'
+            : '';
+        return `[${timeStr}] ${senderLabel}: ${m.content || mediaNote}`;
+      })
+      .join('\n');
+
+    setCreateCategory('BREAKDOWN');
+    setCreatePriority('MEDIUM');
+    setCreateTitle(autoTitle);
+    setCreateDescription(compiledDesc);
+    setCreateError(null);
+    setCreateModalOpen(true);
+  };
+
+  const handleCreateComplaintSubmit = async () => {
+    if (!selectedConversation) return;
+    if (!createTitle.trim()) {
+      setCreateError('Please enter a complaint title');
+      return;
+    }
+    if (!createDescription.trim()) {
+      setCreateError('Please enter a description');
+      return;
+    }
+    setIsCreatingComplaint(true);
+    setCreateError(null);
+
+    try {
+      const res = await api.support.createComplaintFromChat({
+        driverUserId: selectedConversation.contactUser.id,
+        vehicleNumber: selectedConversation.vehicle?.plateNumber,
+        vehicleId: selectedConversation.vehicle?.id,
+        category: createCategory,
+        priority: createPriority,
+        title: createTitle.trim(),
+        description: createDescription.trim(),
+        messageIds: selectedMessageIds,
+      });
+
+      alert(
+        `✅ Complaint #${res.complaintNo} created successfully with ${selectedMessageIds.length} linked messages!`,
+      );
+
+      const linkedIdSet = new Set(selectedMessageIds);
+      setMessages((prev) =>
+        prev.map((m) =>
+          linkedIdSet.has(m.id)
+            ? { ...m, linkedComplaintId: res.id, linkedComplaintNo: res.complaintNo }
+            : m,
+        ),
+      );
+
+      setCreateModalOpen(false);
+      setSelectedMessageIds([]);
+    } catch (err: any) {
+      setCreateError(err.message || 'Failed to create complaint from chat');
+    } finally {
+      setIsCreatingComplaint(false);
+    }
+  };
+
+  const selectedMediaEvidence = useMemo(() => {
+    return messages.filter((m) => selectedMessageIds.includes(m.id) && m.attachmentUrl);
+  }, [messages, selectedMessageIds]);
 
   // Load conversations
   const loadConversations = async (keepSelection = true): Promise<void> => {
@@ -675,7 +807,7 @@ export function SupportChatPage(): ReactElement {
               </div>
 
               {/* Chat Message Stream */}
-              <div className="chat-messages-container">
+              <div className={`chat-messages-container ${isSelectionMode ? 'selection-mode' : ''}`}>
                 {loadingMessages ? (
                   <div className="chat-loading-state">
                     <Loader size={28} className="icon-spin" />
@@ -700,6 +832,7 @@ export function SupportChatPage(): ReactElement {
                       !prevMsg ||
                       new Date(prevMsg.createdAt).toDateString() !==
                         new Date(msg.createdAt).toDateString();
+                    const isSelected = selectedMessageIds.includes(msg.id);
 
                     return (
                       <div key={msg.id} className="chat-message-row-wrapper">
@@ -709,107 +842,175 @@ export function SupportChatPage(): ReactElement {
                           </div>
                         ) : null}
 
-                        <div className={`chat-message-bubble ${isMe ? 'outgoing' : 'incoming'}`}>
-                          {/* Sender name + Link button for received messages */}
-                          {!isMe && (
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
-                              <span className="chat-sender-label">
-                                {msg.sender?.firstName || 'User'}
-                              </span>
-                              {(user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN') && (
-                                msg.linkedComplaintNo ? (
-                                  <button
-                                    type="button"
-                                    className="btn-chat-link-complaint btn-chat-un-link-complaint"
-                                    title={`Linked to #${msg.linkedComplaintNo}. Click to unlink.`}
-                                    onClick={() => handleDetachFromComplaint(msg)}
-                                    style={{
-                                      background: 'rgba(239, 68, 68, 0.12)',
-                                      color: '#ef4444',
-                                      borderColor: 'rgba(239, 68, 68, 0.25)',
-                                    }}
-                                  >
-                                    <Link2 size={11} />
-                                    <span>#{msg.linkedComplaintNo} · Unlink</span>
-                                  </button>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    className="btn-chat-link-complaint"
-                                    title="Link message to an open complaint"
-                                    onClick={() => openLinkModal(msg)}
-                                  >
-                                    <Link2 size={11} />
-                                    <span>Link</span>
-                                  </button>
-                                )
-                              )}
-                            </div>
-                          )}
-
-                          {/* 1. PHOTO MESSAGE */}
-                          {msg.type === 'IMAGE' && msg.attachmentUrl && (
+                        <div className={`chat-message-row ${isMe ? 'outgoing' : 'incoming'}`}>
+                          {(user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN') && (
                             <div
-                              className="chat-bubble-image-wrap"
-                              onClick={() => setLightboxImage(msg.attachmentUrl)}
+                              className={`chat-row-select-checkbox ${isSelected ? 'checked' : ''}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleSelectMessage(msg.id);
+                              }}
+                              title={isSelected ? 'Deselect message' : 'Select message'}
                             >
-                              <img
-                                src={msg.attachmentUrl}
-                                alt="Support Attachment"
-                                className="chat-bubble-img"
-                              />
+                              {isSelected && <Check size={12} />}
                             </div>
                           )}
 
-                          {/* 2. AUDIO VOICE NOTE MESSAGE */}
-                          {msg.type === 'AUDIO' && msg.attachmentUrl && (
-                            <div className="chat-bubble-audio-wrap">
-                              <div className="chat-audio-header">
-                                <Volume2 size={16} color="#0284c7" />
-                                <span>Voice Note</span>
-                                {msg.attachmentDurationSec ? (
-                                  <span className="chat-audio-duration">
-                                    {msg.attachmentDurationSec}s
-                                  </span>
-                                ) : null}
+                          <div
+                            className={`chat-message-bubble ${isMe ? 'outgoing' : 'incoming'} ${isSelected ? 'is-selected' : ''}`}
+                            onClick={() => {
+                              if (isSelectionMode) {
+                                toggleSelectMessage(msg.id);
+                              }
+                            }}
+                          >
+                            {/* Sender name + Link button for received messages */}
+                            {!isMe && (
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  marginBottom: 2,
+                                }}
+                              >
+                                <span className="chat-sender-label">
+                                  {msg.sender?.firstName || 'User'}
+                                </span>
+                                {(user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN') &&
+                                  (msg.linkedComplaintNo ? (
+                                    <button
+                                      type="button"
+                                      className="btn-chat-link-complaint btn-chat-un-link-complaint"
+                                      title={`Linked to #${msg.linkedComplaintNo}. Click to unlink.`}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        void handleDetachFromComplaint(msg);
+                                      }}
+                                      style={{
+                                        background: 'rgba(239, 68, 68, 0.12)',
+                                        color: '#ef4444',
+                                        borderColor: 'rgba(239, 68, 68, 0.25)',
+                                      }}
+                                    >
+                                      <Link2 size={11} />
+                                      <span>#{msg.linkedComplaintNo} · Unlink</span>
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      className="btn-chat-link-complaint"
+                                      title="Link message to an open complaint"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        void openLinkModal([msg]);
+                                      }}
+                                    >
+                                      <Link2 size={11} />
+                                      <span>Link</span>
+                                    </button>
+                                  ))}
                               </div>
-                              <audio
-                                controls
-                                src={msg.attachmentUrl}
-                                className="chat-native-audio-player"
-                              />
-                            </div>
-                          )}
+                            )}
 
-                          {/* 3. TEXT CONTENT */}
-                          {msg.content && msg.content !== 'Photo' && msg.content !== 'Voice Message' ? (
-                            <p className="chat-bubble-text">{msg.content}</p>
-                          ) : null}
+                            {/* If sender is me and already linked to a complaint */}
+                            {isMe && msg.linkedComplaintNo && (
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'flex-end',
+                                  marginBottom: 2,
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    fontSize: 10,
+                                    background: 'rgba(255, 255, 255, 0.2)',
+                                    padding: '1px 5px',
+                                    borderRadius: 4,
+                                    color: '#ffffff',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 3,
+                                  }}
+                                >
+                                  <Link2 size={9} /> #{msg.linkedComplaintNo}
+                                </span>
+                              </div>
+                            )}
 
-                          {/* Footer Meta (Timestamp + Double blue tick read receipt) */}
-                          <div className="chat-bubble-meta">
-                            <span className="chat-bubble-timestamp">
-                              {formatMessageTime(msg.createdAt)}
-                            </span>
-                            {isMe ? (
-                              <span className="chat-bubble-status">
-                                {msg.isRead ? (
-                                  <CheckCheck
-                                    size={15}
-                                    color="#38bdf8"
-                                    className="read-tick"
-                                    style={{ display: 'inline-block' }}
-                                  />
-                                ) : (
-                                  <Check
-                                    size={15}
-                                    color="#94a3b8"
-                                    className="sent-tick"
-                                    style={{ display: 'inline-block' }}
-                                  />
-                                )}
-                              </span>
+                            {/* 1. PHOTO MESSAGE */}
+                            {msg.type === 'IMAGE' && msg.attachmentUrl && (
+                              <div
+                                className="chat-bubble-image-wrap"
+                                onClick={(e) => {
+                                  if (!isSelectionMode) {
+                                    e.stopPropagation();
+                                    setLightboxImage(msg.attachmentUrl);
+                                  }
+                                }}
+                              >
+                                <img
+                                  src={msg.attachmentUrl}
+                                  alt="Support Attachment"
+                                  className="chat-bubble-img"
+                                />
+                              </div>
+                            )}
+
+                            {/* 2. AUDIO VOICE NOTE MESSAGE */}
+                            {msg.type === 'AUDIO' && msg.attachmentUrl && (
+                              <div className="chat-bubble-audio-wrap">
+                                <div className="chat-audio-header">
+                                  <Volume2 size={16} color="#0284c7" />
+                                  <span>Voice Note</span>
+                                  {msg.attachmentDurationSec ? (
+                                    <span className="chat-audio-duration">
+                                      {msg.attachmentDurationSec}s
+                                    </span>
+                                  ) : null}
+                                </div>
+                                <audio
+                                  controls
+                                  src={msg.attachmentUrl}
+                                  className="chat-native-audio-player"
+                                />
+                              </div>
+                            )}
+
+                            {/* 3. TEXT CONTENT */}
+                            {msg.content &&
+                            msg.content !== 'Photo' &&
+                            msg.content !== 'Voice Message' ? (
+                              <p className="chat-bubble-text">{msg.content}</p>
                             ) : null}
+
+                            {/* Footer Meta (Timestamp + Double blue tick read receipt) */}
+                            <div className="chat-bubble-meta">
+                              <span className="chat-bubble-timestamp">
+                                {formatMessageTime(msg.createdAt)}
+                              </span>
+                              {isMe ? (
+                                <span className="chat-bubble-status">
+                                  {msg.isRead ? (
+                                    <CheckCheck
+                                      size={15}
+                                      color="#38bdf8"
+                                      className="read-tick"
+                                      style={{ display: 'inline-block' }}
+                                    />
+                                  ) : (
+                                    <Check
+                                      size={15}
+                                      color="#94a3b8"
+                                      className="sent-tick"
+                                      style={{ display: 'inline-block' }}
+                                    />
+                                  )}
+                                </span>
+                              ) : null}
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -938,6 +1139,45 @@ export function SupportChatPage(): ReactElement {
                   )}
                 </button>
               </form>
+
+              {/* Floating Multi-Action Dock for selected messages */}
+              {isSelectionMode && (
+                <div className="chat-multi-action-dock">
+                  <div className="dock-selection-badge">
+                    <span className="dock-count-pill">{selectedMessageIds.length}</span>
+                    <span>Selected</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="dock-btn dock-btn-link"
+                    onClick={() => {
+                      const selectedMsgs = messages.filter((m) =>
+                        selectedMessageIds.includes(m.id),
+                      );
+                      void openLinkModal(selectedMsgs);
+                    }}
+                  >
+                    <Link2 size={14} />
+                    <span>Link to Complaint</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="dock-btn dock-btn-create"
+                    onClick={openCreateModal}
+                  >
+                    <Plus size={14} />
+                    <span>Create New Complaint</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="dock-btn dock-btn-clear"
+                    onClick={clearSelection}
+                    title="Clear selection"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              )}
             </>
           ) : (
             <div className="chat-no-selection-screen">
@@ -973,12 +1213,19 @@ export function SupportChatPage(): ReactElement {
         </div>
       )}
 
-      {/* Link Message to Complaint Modal */}
-      {linkModalOpen && linkingMessage && (
+      {/* Link Message(s) to Complaint Modal */}
+      {linkModalOpen && linkingMessages.length > 0 && (
         <div className="link-complaint-modal-overlay" onClick={() => setLinkModalOpen(false)}>
           <div className="link-complaint-modal-card" onClick={(e) => e.stopPropagation()}>
             <div className="link-complaint-modal-header">
-              <h3>📎 Link Chat Message to Complaint</h3>
+              <h3>
+                <Link2 size={18} />
+                <span>
+                  {linkingMessages.length === 1
+                    ? 'Link Chat Message to Complaint'
+                    : `Link ${linkingMessages.length} Messages to Complaint`}
+                </span>
+              </h3>
               <button
                 type="button"
                 className="btn-cancel-preview"
@@ -989,38 +1236,128 @@ export function SupportChatPage(): ReactElement {
             </div>
             <div className="link-complaint-modal-body">
               {/* Message preview snippet */}
-              <div className="message-preview-card">
-                <div className="message-preview-header">
-                  <span>{linkingMessage.sender?.firstName || 'Driver'}</span>
-                  <span>{formatMessageTime(linkingMessage.createdAt)}</span>
-                </div>
-                {linkingMessage.type === 'IMAGE' && linkingMessage.attachmentUrl ? (
-                  <img
-                    src={linkingMessage.attachmentUrl}
-                    alt="Chat photo"
-                    className="message-preview-media"
-                  />
-                ) : null}
-                {linkingMessage.type === 'AUDIO' ? (
-                  <div style={{ fontSize: 12, color: '#0284c7', display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <Volume2 size={14} /> Voice Message ({linkingMessage.attachmentDurationSec || 0}s)
+              {linkingMessages.length === 1 && linkingMessages[0] ? (
+                (() => {
+                  const singleMsg = linkingMessages[0];
+                  return (
+                    <div className="message-preview-card">
+                      <div className="message-preview-header">
+                        <span>{singleMsg.sender?.firstName || 'Driver'}</span>
+                        <span>{formatMessageTime(singleMsg.createdAt)}</span>
+                      </div>
+                      {singleMsg.type === 'IMAGE' && singleMsg.attachmentUrl ? (
+                        <img
+                          src={singleMsg.attachmentUrl}
+                          alt="Chat photo"
+                          className="message-preview-media"
+                        />
+                      ) : null}
+                      {singleMsg.type === 'AUDIO' ? (
+                        <div
+                          style={{
+                            fontSize: 12,
+                            color: '#0284c7',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 4,
+                          }}
+                        >
+                          <Volume2 size={14} /> Voice Message (
+                          {singleMsg.attachmentDurationSec || 0}s)
+                        </div>
+                      ) : null}
+                      {singleMsg.content ? (
+                        <p className="message-preview-text">{singleMsg.content}</p>
+                      ) : null}
+                    </div>
+                  );
+                })()
+              ) : (
+                <div className="message-preview-card">
+                  <div className="message-preview-header">
+                    <span style={{ fontWeight: 700, color: '#0284c7' }}>
+                      Selected Messages ({linkingMessages.length})
+                    </span>
+                    <span>Batch Link</span>
                   </div>
-                ) : null}
-                {linkingMessage.content ? (
-                  <p className="message-preview-text">{linkingMessage.content}</p>
-                ) : null}
-              </div>
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 6,
+                      maxHeight: 160,
+                      overflowY: 'auto',
+                      marginTop: 4,
+                    }}
+                  >
+                    {linkingMessages.map((m) => (
+                      <div
+                        key={m.id}
+                        style={{
+                          fontSize: 12,
+                          padding: '6px 8px',
+                          background: 'rgba(255, 255, 255, 0.04)',
+                          borderRadius: 6,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          border: '1px solid rgba(255, 255, 255, 0.06)',
+                        }}
+                      >
+                        {m.type === 'IMAGE' ? (
+                          <ImageIcon size={13} color="#059669" />
+                        ) : m.type === 'AUDIO' ? (
+                          <Volume2 size={13} color="#0284c7" />
+                        ) : null}
+                        <span style={{ fontWeight: 600 }}>{m.sender?.firstName || 'User'}:</span>
+                        <span
+                          style={{
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            flex: 1,
+                          }}
+                        >
+                          {m.content || (m.type === 'AUDIO' ? 'Voice recording' : 'Photo')}
+                        </span>
+                        <span style={{ fontSize: 10, opacity: 0.6 }}>
+                          {formatMessageTime(m.createdAt)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Complaint selector */}
               <div className="link-complaint-form-group">
                 <label>Select Open Complaint of Driver:</label>
                 {loadingComplaints ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', fontSize: 13, color: '#64748b' }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      padding: '8px 0',
+                      fontSize: 13,
+                      color: '#64748b',
+                    }}
+                  >
                     <Loader size={16} className="icon-spin" /> Loading open complaints…
                   </div>
                 ) : driverOpenComplaints.length === 0 ? (
-                  <div style={{ padding: '10px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, fontSize: 13, color: '#991b1b' }}>
-                    No open complaints found for this driver/vehicle.
+                  <div
+                    style={{
+                      padding: '10px 12px',
+                      background: '#fef2f2',
+                      border: '1px solid #fecaca',
+                      borderRadius: 6,
+                      fontSize: 13,
+                      color: '#991b1b',
+                    }}
+                  >
+                    No open complaints found for this driver/vehicle. You can create a new complaint
+                    instead.
                   </div>
                 ) : (
                   <select
@@ -1041,7 +1378,12 @@ export function SupportChatPage(): ReactElement {
               <button
                 type="button"
                 className="btn-cancel-preview"
-                style={{ padding: '6px 14px', fontSize: 13, borderRadius: 6, border: '1px solid #cbd5e1' }}
+                style={{
+                  padding: '6px 14px',
+                  fontSize: 13,
+                  borderRadius: 6,
+                  border: '1px solid #cbd5e1',
+                }}
                 onClick={() => setLinkModalOpen(false)}
                 disabled={isLinking}
               >
@@ -1050,12 +1392,249 @@ export function SupportChatPage(): ReactElement {
               <button
                 type="button"
                 className="btn-submit-resolution"
-                style={{ background: '#0284c7', borderColor: '#0284c7', padding: '6px 16px', fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                style={{
+                  background: '#0284c7',
+                  borderColor: '#0284c7',
+                  padding: '6px 16px',
+                  fontSize: 13,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
                 onClick={handleAttachToComplaint}
                 disabled={!selectedComplaintId || isLinking || loadingComplaints}
               >
                 {isLinking ? <Loader size={14} className="icon-spin" /> : <Link2 size={14} />}
-                <span>Attach to Complaint</span>
+                <span>
+                  {linkingMessages.length > 1
+                    ? `Attach ${linkingMessages.length} Messages`
+                    : 'Attach to Complaint'}
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create New Complaint from Selected Messages Modal */}
+      {createModalOpen && selectedConversation && (
+        <div className="link-complaint-modal-overlay" onClick={() => setCreateModalOpen(false)}>
+          <div className="create-complaint-modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="create-complaint-modal-header">
+              <h3>
+                <Plus size={18} color="#2563eb" />
+                <span>Create New Complaint from Chat</span>
+              </h3>
+              <button
+                type="button"
+                className="btn-cancel-preview"
+                onClick={() => setCreateModalOpen(false)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="create-complaint-modal-body">
+              {createError && (
+                <div
+                  style={{
+                    padding: '10px 14px',
+                    background: '#fef2f2',
+                    border: '1px solid #fecaca',
+                    borderRadius: 8,
+                    fontSize: 13,
+                    color: '#b91c1c',
+                  }}
+                >
+                  {createError}
+                </div>
+              )}
+
+              {/* Auto-populated Context Grid */}
+              <div className="fo-modal-context-grid">
+                <div className="fo-context-card">
+                  <span className="fo-context-label">Driver (Auto-Selected)</span>
+                  <span className="fo-context-value">
+                    {selectedConversation.contactUser.firstName}{' '}
+                    {selectedConversation.contactUser.lastName}
+                  </span>
+                  <span className="fo-context-sub">
+                    Emp ID: {selectedConversation.contactUser.employeeId}
+                    {selectedConversation.contactUser.phone
+                      ? ` • ${selectedConversation.contactUser.phone}`
+                      : ''}
+                  </span>
+                </div>
+
+                <div className="fo-context-card">
+                  <span className="fo-context-label">Assigned Vehicle</span>
+                  <span className="fo-context-value">
+                    {selectedConversation.vehicle
+                      ? selectedConversation.vehicle.plateNumber
+                      : 'No Assigned Vehicle'}
+                  </span>
+                  <span className="fo-context-sub">
+                    {selectedConversation.vehicle?.model
+                      ? selectedConversation.vehicle.model
+                      : 'Will be recorded as unassigned'}
+                  </span>
+                </div>
+
+                <div className="fo-context-card">
+                  <span className="fo-context-label">Complaint ID</span>
+                  <span className="fo-context-value" style={{ color: '#059669' }}>
+                    Auto-Generated
+                  </span>
+                  <span className="fo-context-sub">Sequenced on backend creation</span>
+                </div>
+
+                <div className="fo-context-card">
+                  <span className="fo-context-label">Chat Evidence</span>
+                  <span className="fo-context-value">
+                    {selectedMessageIds.length} Messages Selected
+                  </span>
+                  <span className="fo-context-sub">
+                    {selectedMediaEvidence.length > 0
+                      ? `${selectedMediaEvidence.length} media file(s) attached`
+                      : 'Text transcript only'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Category Dropdown */}
+              <div className="fo-form-group">
+                <label htmlFor="complaint-cat-select">
+                  Category of Problem <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <select
+                  id="complaint-cat-select"
+                  value={createCategory}
+                  onChange={(e) => setCreateCategory(e.target.value as ComplaintCategory)}
+                >
+                  <option value="BREAKDOWN">Breakdown / Mechanical Failure</option>
+                  <option value="TYRE_ISSUE">Tyre Issue / Puncture / Replacement</option>
+                  <option value="FUEL_DEF">Fuel / DEF Diesel Exhaust Fluid Issue</option>
+                  <option value="LOADING">Loading Plant / Loading Delay</option>
+                  <option value="UNLOADING">Unloading Point / Delivery Problem</option>
+                  <option value="ACCOUNTS">Accounts / Cash Advance / Toll Payment</option>
+                  <option value="VEHICLE_MAINTENANCE">Vehicle Routine Maintenance</option>
+                </select>
+              </div>
+
+              {/* Priority Selector */}
+              <div className="fo-form-group">
+                <label>Priority Level</label>
+                <div className="fo-priority-selector">
+                  {(['LOW', 'MEDIUM', 'HIGH', 'URGENT'] as Priority[]).map((pri) => (
+                    <button
+                      key={pri}
+                      type="button"
+                      className={`fo-priority-btn ${createPriority === pri ? `active ${pri.toLowerCase()}` : ''}`}
+                      onClick={() => setCreatePriority(pri)}
+                    >
+                      {pri}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Title Input */}
+              <div className="fo-form-group">
+                <label htmlFor="complaint-title-input">
+                  Complaint Title <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <input
+                  id="complaint-title-input"
+                  type="text"
+                  value={createTitle}
+                  onChange={(e) => setCreateTitle(e.target.value)}
+                  placeholder="Brief summary of the issue..."
+                />
+              </div>
+
+              {/* Description / Logs Transcript */}
+              <div className="fo-form-group">
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                  }}
+                >
+                  <label htmlFor="complaint-desc-input">
+                    Description / Chat Transcript <span style={{ color: '#ef4444' }}>*</span>
+                  </label>
+                  <span style={{ fontSize: 11, color: '#94a3b8' }}>
+                    Auto-compiled from selected messages (editable)
+                  </span>
+                </div>
+                <textarea
+                  id="complaint-desc-input"
+                  rows={5}
+                  value={createDescription}
+                  onChange={(e) => setCreateDescription(e.target.value)}
+                  placeholder="Detailed description of the issue..."
+                />
+              </div>
+
+              {/* Evidence Media Chips */}
+              {selectedMediaEvidence.length > 0 && (
+                <div className="fo-form-group">
+                  <label>Collected Evidence Attachments ({selectedMediaEvidence.length})</label>
+                  <div className="fo-media-chips-row">
+                    {selectedMediaEvidence.map((m, idx) => (
+                      <div key={m.id} className="fo-media-chip">
+                        {m.type === 'IMAGE' ? (
+                          <ImageIcon size={13} />
+                        ) : (
+                          <Volume2 size={13} />
+                        )}
+                        <span>
+                          {m.type === 'IMAGE' ? `Photo #${idx + 1}` : `Voice Note #${idx + 1}`}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="link-complaint-modal-footer">
+              <button
+                type="button"
+                className="btn-cancel-preview"
+                style={{
+                  padding: '8px 16px',
+                  fontSize: 13,
+                  borderRadius: 8,
+                  border: '1px solid #cbd5e1',
+                }}
+                onClick={() => setCreateModalOpen(false)}
+                disabled={isCreatingComplaint}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-submit-resolution"
+                style={{
+                  background: '#2563eb',
+                  borderColor: '#2563eb',
+                  padding: '8px 20px',
+                  fontSize: 13,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                }}
+                onClick={handleCreateComplaintSubmit}
+                disabled={isCreatingComplaint || !createTitle.trim() || !createDescription.trim()}
+              >
+                {isCreatingComplaint ? (
+                  <Loader size={14} className="icon-spin" />
+                ) : (
+                  <Plus size={14} />
+                )}
+                <span>Register Complaint Ticket</span>
               </button>
             </div>
           </div>

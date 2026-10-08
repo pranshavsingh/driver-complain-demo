@@ -171,8 +171,8 @@ export type PartySummary = z.infer<typeof PartySummarySchema>;
 export const ComplaintUpdatePublicSchema = z.object({
   id: z.string(),
   complaintId: z.string(),
-  authorId: z.string(),
-  author: PartySummarySchema,
+  authorId: z.string().nullable().optional(),
+  author: PartySummarySchema.nullable().optional(),
   fromStatus: ComplaintStatusSchema.nullable().optional(),
   toStatus: ComplaintStatusSchema.nullable().optional(),
   note: z.string().nullable().optional(),

@@ -311,13 +311,13 @@ export function toComplaintAttachmentPublic(a: ComplaintAttachment): ComplaintAt
 }
 
 export function toComplaintUpdatePublic(
-  u: ComplaintUpdate & { author: User },
+  u: ComplaintUpdate & { author?: User | null },
 ): ComplaintUpdatePublic {
   return {
     id: u.id,
     complaintId: u.complaintId,
-    authorId: u.authorId,
-    author: toPartySummary(u.author),
+    authorId: u.authorId ?? null,
+    author: u.author ? toPartySummary(u.author) : null,
     fromStatus: u.fromStatus ?? null,
     toStatus: u.toStatus ?? null,
     note: u.note ?? null,
@@ -328,7 +328,7 @@ export function toComplaintUpdatePublic(
 /** Shape returned by the complaint-detail query (base row + eager relations). */
 type ComplaintDetailRow = Complaint & {
   attachments: ComplaintAttachment[];
-  updates: (ComplaintUpdate & { author: User })[];
+  updates: (ComplaintUpdate & { author: User | null })[];
   driver: Driver & { user: User };
   vehicle: Vehicle | null;
   assignedTo: User | null;

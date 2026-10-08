@@ -24,6 +24,18 @@ function isConnectionError(error: any): boolean {
   const errorMessage = String(error?.message || '');
   const causeMessage = String(error?.cause || '');
   const name = String(error?.name || '');
+
+  // Never retry transaction-scoped or constraint errors
+  if (
+    errorMessage.includes('Transaction') ||
+    errorMessage.includes('transaction') ||
+    errorCode === 'P2028' ||
+    errorCode === 'P2002' ||
+    errorCode === 'P2025'
+  ) {
+    return false;
+  }
+
   return (
     errorCode === 'P1017' ||
     errorCode === 'P1001' ||
@@ -40,7 +52,7 @@ function isConnectionError(error: any): boolean {
   );
 }
 
-export async function withDbRetry<T>(fn: () => Promise<T>, maxRetries = 5): Promise<T> {
+export async function withDbRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
   let attempt = 0;
   while (true) {
     try {
@@ -53,7 +65,7 @@ export async function withDbRetry<T>(fn: () => Promise<T>, maxRetries = 5): Prom
           'PostgreSQL connection dropped or database warming up (P1001/E57P01). Reconnecting & retrying query...',
         );
         await basePrisma.$connect().catch(() => {});
-        await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+        await new Promise((resolve) => setTimeout(resolve, 200 * attempt));
         continue;
       }
       throw error;
@@ -71,17 +83,27 @@ const extendedPrisma = basePrisma.$extends({
   },
 });
 
-// Proxy extendedPrisma to wrap $transaction automatically with retry logic as well
-export const prisma: PrismaClient = new Proxy(extendedPrisma, {
+export type ExtendedPrismaClient = typeof extendedPrisma;
+
+// Proxy extendedPrisma to wrap batch $transaction automatically with retry logic,
+// while executing interactive transaction callbacks exactly once without callback retry replay.
+export const prisma: ExtendedPrismaClient = new Proxy(extendedPrisma, {
   get(target, prop, receiver) {
     if (prop === '$transaction') {
-      return async (...args: any[]) => {
+      return async (...args: Parameters<typeof target.$transaction>) => {
+        const firstArg = args[0];
+        // Case A — Interactive transaction callback: execute directly without callback retry
+        // to prevent duplicate side-effects (complaints, updates, notifications).
+        if (typeof firstArg === 'function') {
+          return (target.$transaction as any)(...args);
+        }
+        // Case B — Batch array or options transaction: safe to retry connection errors.
         return withDbRetry(() => (target.$transaction as any)(...args));
       };
     }
     return Reflect.get(target, prop, receiver);
   },
-}) as unknown as PrismaClient;
+}) as ExtendedPrismaClient;
 
 
 

@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect, type ReactElement } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import type {
   ComplaintPublic,
   VehiclePublic,
@@ -20,9 +20,8 @@ type DashboardTab = 'complaints' | 'loading' | 'spare-parts';
 
 export function DashboardPage(): ReactElement {
   const { user } = useAuth();
-  const { connected, subscribeCustom } = useRealtime();
+  const { subscribeCustom } = useRealtime();
   const { slaMap } = useCategorySlaMap();
-  const navigate = useNavigate();
 
   const userCategories = useMemo(() => getUserCategories(user), [user]);
   const isDeptAdmin = user?.role === 'ADMIN' && userCategories.length > 0;
@@ -33,8 +32,6 @@ export function DashboardPage(): ReactElement {
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
   const pageSize = 8;
-  const [lastSyncTime, setLastSyncTime] = useState<string>('Just now');
-  const [syncCount, setSyncCount] = useState<number>(0);
 
   // Resources
   const complaintsResource = useApiResource('dashboard:complaints', () =>
@@ -64,7 +61,6 @@ export function DashboardPage(): ReactElement {
     const handleUpdate = () => {
       void complaintsResource.reload();
       void loadingResource.reload();
-      setLastSyncTime('Just now');
     };
 
     const unsubC1 = subscribeCustom('complaint:created', handleUpdate);
@@ -87,22 +83,19 @@ export function DashboardPage(): ReactElement {
   }, [subscribeCustom, complaintsResource, loadingResource, usersResource, sparePartsResource]);
 
   const handleSyncNow = () => {
-    setSyncCount((prev) => prev + 1);
     void complaintsResource.reload();
     void vehiclesResource.reload();
     void loadingResource.reload();
     void sparePartsResource.reload();
     void usersResource.reload();
-    setLastSyncTime('Just now');
   };
 
-  // Timer to update sync pill display
+  // Sync listener from global header
   useEffect(() => {
-    const interval = setInterval(() => {
-      setLastSyncTime((prev) => (prev === 'Just now' ? '30s ago' : '1m ago'));
-    }, 30000);
-    return () => clearInterval(interval);
-  }, [syncCount]);
+    const onSync = () => handleSyncNow();
+    window.addEventListener('fleetops:sync', onSync);
+    return () => window.removeEventListener('fleetops:sync', onSync);
+  }, [complaintsResource, vehiclesResource, loadingResource, sparePartsResource, usersResource]);
 
   // Active Complaints Metrics
   const activeComplaints = complaintsList.filter(
@@ -224,74 +217,11 @@ export function DashboardPage(): ReactElement {
 
   const totalPages = Math.max(1, Math.ceil(filteredComplaints.length / pageSize));
 
-  // Dynamic Greeting based on current local hour
-  const greeting = useMemo(() => {
-    const hour = new Date().getHours();
-    if (hour < 12) return 'Good morning';
-    if (hour < 17) return 'Good afternoon';
-    return 'Good evening';
-  }, []);
-
   return (
     <div className="fleetops-view">
       <div className="fleetops-container">
         {/* ==========================================================================
-            1. TOP MISSION CONTROL HEADER
-            ========================================================================== */}
-        <section className="fo-mission-header">
-          <div className="fo-header-glow" />
-          <div className="fo-header-content">
-            <div className="fo-header-titles">
-              <h1>
-                <span>{greeting}, {user?.firstName || 'Fleetops'}!</span>
-                <span>👋</span>
-                <span className="fo-role-badge">
-                  {user?.role === 'SUPER_ADMIN'
-                    ? 'SUPER ADMIN VIEW'
-                    : isDeptAdmin
-                      ? `DEPT ADMIN: ${userCategories.map((c) => getCategoryLabel(c)).join(', ')}`
-                      : `${user?.role || 'OPERATOR'} VIEW`}
-                </span>
-                <span className="fo-live-pill">
-                  <span className="fo-ping-dot" />
-                  {connected ? 'LIVE HUB CONNECTED' : 'OFFLINE MODE'}
-                </span>
-              </h1>
-              <p className="fo-header-sub">
-                Global Fleet Operations Center • Realtime System Telemetry & Rapid Incident Dispatch
-              </p>
-            </div>
-
-            <div className="fo-header-actions">
-              <button
-                type="button"
-                className="fo-btn-sync"
-                onClick={handleSyncNow}
-                title="Refresh telemetry streams"
-              >
-                <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
-                  sync
-                </span>
-                <span>Sync Now</span>
-                <span className="fo-sync-time">{lastSyncTime}</span>
-              </button>
-
-              <button
-                type="button"
-                className="fo-btn-primary"
-                onClick={() => navigate('/complaints')}
-              >
-                <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
-                  add_circle
-                </span>
-                <span>+ New Dispatch / Ticket</span>
-              </button>
-            </div>
-          </div>
-        </section>
-
-        {/* ==========================================================================
-            2. CRITICAL OPERATIONAL ALERTS STACK
+            CRITICAL OPERATIONAL ALERTS STACK
             ========================================================================== */}
         <section className="fo-alerts-grid">
           {/* Detention SLA Escalation Alert */}

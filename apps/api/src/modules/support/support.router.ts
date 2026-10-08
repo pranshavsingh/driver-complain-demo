@@ -8,6 +8,8 @@ import {
   getDefaultAdmin,
   attachToComplaint,
   detachFromComplaint,
+  createComplaintFromChat,
+  bulkAttachToComplaint,
 } from './support.controller';
 import { authenticate } from '../../middleware/authenticate';
 import { createSingleFileUpload } from '../../middleware/upload';
@@ -37,6 +39,8 @@ supportRouter.get('/unread-count', getUnreadCount);
 supportRouter.get('/default-admin', getDefaultAdmin);
 
 // Specialized message actions
+supportRouter.post('/create-complaint', createComplaintFromChat);
+supportRouter.post('/messages/bulk-attach', bulkAttachToComplaint);
 supportRouter.post('/messages/attach-to-complaint', attachToComplaint);
 supportRouter.post('/messages/:messageId/attach-to-complaint', validateUuidParam('messageId'), attachToComplaint);
 supportRouter.delete('/messages/:messageId/detach-from-complaint', validateUuidParam('messageId'), detachFromComplaint);

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { SupportMessageTypeSchema, RoleSchema } from './enums';
+import { SupportMessageTypeSchema, RoleSchema, ComplaintCategorySchema, PrioritySchema } from './enums';
 import type { UserPublic } from './user';
 import type { VehiclePublic } from './vehicle';
 
@@ -60,4 +60,24 @@ export interface SupportConversationSummary {
   lastMessage?: SupportMessagePublic | null;
   unreadCount: number;
 }
+
+export const CreateComplaintFromChatSchema = z.object({
+  driverUserId: z.string().uuid(),
+  vehicleNumber: z.string().optional(),
+  vehicleId: z.string().uuid().optional(),
+  category: ComplaintCategorySchema,
+  priority: PrioritySchema.default('MEDIUM'),
+  title: z.string().min(1, 'Title is required').max(200),
+  description: z.string().min(1, 'Description is required').max(5000),
+  messageIds: z.array(z.string().uuid()).min(1, 'At least one message must be selected'),
+});
+
+export type CreateComplaintFromChatInput = z.infer<typeof CreateComplaintFromChatSchema>;
+
+export const BulkAttachChatMessagesSchema = z.object({
+  messageIds: z.array(z.string().uuid()).min(1, 'At least one message must be selected'),
+  complaintId: z.string().uuid(),
+});
+
+export type BulkAttachChatMessagesInput = z.infer<typeof BulkAttachChatMessagesSchema>;
 

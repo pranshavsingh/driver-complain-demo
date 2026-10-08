@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, type ReactElement } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Truck, ClipboardList, Bell, Menu, X, Trash2, CheckCircle2 } from './Icons';
 
 import { isAdmin, isSuperAdmin, isExecutive, useAuth } from '../auth/AuthContext';
@@ -48,6 +48,32 @@ function getPageTitle(pathname: string): string {
   return 'Fleet Administration';
 }
 
+function getPageSubtitle(pathname: string): string {
+  if (pathname.startsWith('/dashboard'))
+    return 'Global Fleet Operations Center • Realtime Telemetry & Incident Dispatch';
+  if (pathname.startsWith('/vehicles'))
+    return 'Fleet Asset Directory • Realtime Vehicle Health & Driver Allocation';
+  if (pathname.startsWith('/users'))
+    return 'Identity & Access Management • Driver Onboarding Approvals';
+  if (pathname.startsWith('/complaints'))
+    return 'Incident Response • Driver Complaints & Priority Triage';
+  if (pathname.startsWith('/loading'))
+    return 'Demurrage Analytics • Loading Bay Dwell & Plant Detention Logs';
+  if (pathname.startsWith('/trips'))
+    return 'Logistics Telematics • Trip Route Tracking & Transit Metrics';
+  if (pathname.startsWith('/maintenance') || pathname.startsWith('/fuel-logs'))
+    return 'Fleet Servicing • Preventive Maintenance & Fuel Consumption Audits';
+  if (pathname.startsWith('/spare-parts'))
+    return 'Inventory Control • Requisition Pipeline & Warehouse Allocation';
+  if (pathname.startsWith('/support'))
+    return 'Emergency Helpline • 24/7 Driver Support & Dispatch Desk';
+  if (pathname.startsWith('/reports'))
+    return 'Executive Reporting • Fleet Audits & Operations Intelligence';
+  if (pathname.startsWith('/settings'))
+    return 'System Administration • SLA Engine & Hub Configuration';
+  return 'FleetOps Enterprise Console';
+}
+
 interface ToastItem {
   id: string;
   title: string;
@@ -59,6 +85,14 @@ export function Layout(): ReactElement {
   const { user, logout } = useAuth();
   const { connected, subscribeCustom } = useRealtime();
   const location = useLocation();
+  const navigate = useNavigate();
+
+  const greeting = useMemo(() => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
+  }, []);
 
   const [signingOut, setSigningOut] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -423,17 +457,30 @@ export function Layout(): ReactElement {
             <span className="fo-brand-version">v2.4</span>
           </div>
 
-          {/* 2. Role Switcher Badge Card */}
+          {/* 2. Compact Workspace / Role Selector */}
           <div className="fo-role-box" title={`Current logged-in identity: ${user?.role || 'Staff'}`}>
-            <div className="fo-role-inner">
-              <span className="fo-role-label">Role Switcher</span>
-              <span className="fo-role-val">
-                {user?.role === 'SUPER_ADMIN'
-                  ? 'SUPER ADMIN'
-                  : user?.category
-                    ? `DEPT: ${user.category}`
-                    : user?.role || 'OPERATOR'}
-              </span>
+            <div className="fo-role-left">
+              <div className="fo-role-icon-wrap">
+                <span className="material-symbols-outlined fo-role-icon">
+                  admin_panel_settings
+                </span>
+              </div>
+              <div className="fo-role-inner">
+                <span className="fo-role-val">
+                  {user?.role === 'SUPER_ADMIN'
+                    ? 'SUPER ADMIN'
+                    : user?.category
+                      ? `DEPT: ${user.category}`
+                      : user?.role || 'OPERATOR'}
+                </span>
+                <span className="fo-role-label">
+                  {user?.role === 'SUPER_ADMIN'
+                    ? 'Super Admin'
+                    : user?.category
+                      ? 'Department Admin'
+                      : 'Console Operator'}
+                </span>
+              </div>
             </div>
             <span className="material-symbols-outlined fo-role-chevron">unfold_more</span>
           </div>
@@ -451,15 +498,11 @@ export function Layout(): ReactElement {
                     isActive || location.pathname === '/' ? 'fo-nav-item active' : 'fo-nav-item'
                   }
                 >
-                  {({ isActive }) => (
-                    <>
-                      <div className="fo-nav-left">
-                        <span className="material-symbols-outlined fo-nav-icon">dashboard</span>
-                        <span className="fo-nav-label">Dashboard</span>
-                      </div>
-                      {(isActive || location.pathname === '/') && <span className="fo-nav-active-dot" />}
-                    </>
-                  )}
+                  <span className="fo-nav-active-indicator" />
+                  <div className="fo-nav-left">
+                    <span className="material-symbols-outlined fo-nav-icon">dashboard</span>
+                    <span className="fo-nav-label">Dashboard</span>
+                  </div>
                 </NavLink>
               )}
 
@@ -468,21 +511,16 @@ export function Layout(): ReactElement {
                   to="/complaints"
                   className={({ isActive }) => (isActive ? 'fo-nav-item active' : 'fo-nav-item')}
                 >
-                  {({ isActive }) => (
-                    <>
-                      <div className="fo-nav-left">
-                        <span className="material-symbols-outlined fo-nav-icon">report_problem</span>
-                        <span className="fo-nav-label">Complaints & Triage</span>
-                      </div>
-                      {isActive ? (
-                        <span className="fo-nav-active-dot" />
-                      ) : complaintBadgeCount > 0 ? (
-                        <span className="fo-badge-red" title={`${complaintBadgeCount} unread or escalated`}>
-                          {complaintBadgeCount}
-                        </span>
-                      ) : null}
-                    </>
-                  )}
+                  <span className="fo-nav-active-indicator" />
+                  <div className="fo-nav-left">
+                    <span className="material-symbols-outlined fo-nav-icon">report_problem</span>
+                    <span className="fo-nav-label">Complaints & Triage</span>
+                  </div>
+                  {complaintBadgeCount > 0 ? (
+                    <span className="fo-badge-red" title={`${complaintBadgeCount} unread or escalated complaints`}>
+                      {complaintBadgeCount}
+                    </span>
+                  ) : null}
                 </NavLink>
               )}
 
@@ -491,21 +529,16 @@ export function Layout(): ReactElement {
                   to="/loading"
                   className={({ isActive }) => (isActive ? 'fo-nav-item active' : 'fo-nav-item')}
                 >
-                  {({ isActive }) => (
-                    <>
-                      <div className="fo-nav-left">
-                        <span className="material-symbols-outlined fo-nav-icon">timer</span>
-                        <span className="fo-nav-label">Loading & Detention</span>
-                      </div>
-                      {isActive ? (
-                        <span className="fo-nav-active-dot" />
-                      ) : loadingDelayedCount > 0 ? (
-                        <span className="fo-badge-cyan" title={`${loadingDelayedCount} trucks delayed / detained`}>
-                          {loadingDelayedCount} Delayed
-                        </span>
-                      ) : null}
-                    </>
-                  )}
+                  <span className="fo-nav-active-indicator" />
+                  <div className="fo-nav-left">
+                    <span className="material-symbols-outlined fo-nav-icon">timer</span>
+                    <span className="fo-nav-label">Loading & Detention</span>
+                  </div>
+                  {loadingDelayedCount > 0 ? (
+                    <span className="fo-badge-cyan" title={`${loadingDelayedCount} trucks delayed / detained`}>
+                      {loadingDelayedCount} Delayed
+                    </span>
+                  ) : null}
                 </NavLink>
               )}
             </div>
@@ -519,15 +552,11 @@ export function Layout(): ReactElement {
                   to="/vehicles"
                   className={({ isActive }) => (isActive ? 'fo-nav-item active' : 'fo-nav-item')}
                 >
-                  {({ isActive }) => (
-                    <>
-                      <div className="fo-nav-left">
-                        <span className="material-symbols-outlined fo-nav-icon">local_shipping</span>
-                        <span className="fo-nav-label">Vehicles Directory</span>
-                      </div>
-                      {isActive && <span className="fo-nav-active-dot" />}
-                    </>
-                  )}
+                  <span className="fo-nav-active-indicator" />
+                  <div className="fo-nav-left">
+                    <span className="material-symbols-outlined fo-nav-icon">local_shipping</span>
+                    <span className="fo-nav-label">Vehicles Directory</span>
+                  </div>
                 </NavLink>
               )}
 
@@ -540,17 +569,11 @@ export function Layout(): ReactElement {
                       : 'fo-nav-item'
                   }
                 >
-                  {({ isActive }) => (
-                    <>
-                      <div className="fo-nav-left">
-                        <span className="material-symbols-outlined fo-nav-icon">build</span>
-                        <span className="fo-nav-label">Maintenance</span>
-                      </div>
-                      {(isActive || location.pathname.startsWith('/fuel-logs')) && (
-                        <span className="fo-nav-active-dot" />
-                      )}
-                    </>
-                  )}
+                  <span className="fo-nav-active-indicator" />
+                  <div className="fo-nav-left">
+                    <span className="material-symbols-outlined fo-nav-icon">build</span>
+                    <span className="fo-nav-label">Maintenance</span>
+                  </div>
                 </NavLink>
               )}
 
@@ -559,21 +582,16 @@ export function Layout(): ReactElement {
                   to="/spare-parts"
                   className={({ isActive }) => (isActive ? 'fo-nav-item active' : 'fo-nav-item')}
                 >
-                  {({ isActive }) => (
-                    <>
-                      <div className="fo-nav-left">
-                        <span className="material-symbols-outlined fo-nav-icon">inventory_2</span>
-                        <span className="fo-nav-label">Spare Parts</span>
-                      </div>
-                      {isActive ? (
-                        <span className="fo-nav-active-dot" />
-                      ) : sparePartsNewCount > 0 ? (
-                        <span className="fo-badge-blue" title={`${sparePartsNewCount} pending requisitions`}>
-                          {sparePartsNewCount} New
-                        </span>
-                      ) : null}
-                    </>
-                  )}
+                  <span className="fo-nav-active-indicator" />
+                  <div className="fo-nav-left">
+                    <span className="material-symbols-outlined fo-nav-icon">inventory_2</span>
+                    <span className="fo-nav-label">Spare Parts</span>
+                  </div>
+                  {sparePartsNewCount > 0 ? (
+                    <span className="fo-badge-blue" title={`${sparePartsNewCount} pending requisitions`}>
+                      {sparePartsNewCount} New
+                    </span>
+                  ) : null}
                 </NavLink>
               )}
 
@@ -582,15 +600,11 @@ export function Layout(): ReactElement {
                   to="/trips"
                   className={({ isActive }) => (isActive ? 'fo-nav-item active' : 'fo-nav-item')}
                 >
-                  {({ isActive }) => (
-                    <>
-                      <div className="fo-nav-left">
-                        <span className="material-symbols-outlined fo-nav-icon">route</span>
-                        <span className="fo-nav-label">Trip Analytics & Logs</span>
-                      </div>
-                      {isActive && <span className="fo-nav-active-dot" />}
-                    </>
-                  )}
+                  <span className="fo-nav-active-indicator" />
+                  <div className="fo-nav-left">
+                    <span className="material-symbols-outlined fo-nav-icon">route</span>
+                    <span className="fo-nav-label">Trip Analytics & Logs</span>
+                  </div>
                 </NavLink>
               )}
             </div>
@@ -604,21 +618,16 @@ export function Layout(): ReactElement {
                   to="/users"
                   className={({ isActive }) => (isActive ? 'fo-nav-item active' : 'fo-nav-item')}
                 >
-                  {({ isActive }) => (
-                    <>
-                      <div className="fo-nav-left">
-                        <span className="material-symbols-outlined fo-nav-icon">how_to_reg</span>
-                        <span className="fo-nav-label">Driver Approvals</span>
-                      </div>
-                      {isActive ? (
-                        <span className="fo-nav-active-dot" />
-                      ) : pendingCount > 0 ? (
-                        <span className="fo-badge-blue" title={`${pendingCount} pending approvals`}>
-                          {pendingCount} Pending
-                        </span>
-                      ) : null}
-                    </>
-                  )}
+                  <span className="fo-nav-active-indicator" />
+                  <div className="fo-nav-left">
+                    <span className="material-symbols-outlined fo-nav-icon">how_to_reg</span>
+                    <span className="fo-nav-label">Driver Approvals</span>
+                  </div>
+                  {pendingCount > 0 ? (
+                    <span className="fo-badge-blue" title={`${pendingCount} pending approvals`}>
+                      {pendingCount} Pending
+                    </span>
+                  ) : null}
                 </NavLink>
               )}
 
@@ -627,21 +636,16 @@ export function Layout(): ReactElement {
                   to="/support"
                   className={({ isActive }) => (isActive ? 'fo-nav-item active' : 'fo-nav-item')}
                 >
-                  {({ isActive }) => (
-                    <>
-                      <div className="fo-nav-left">
-                        <span className="material-symbols-outlined fo-nav-icon">support_agent</span>
-                        <span className="fo-nav-label">Helpline Chat</span>
-                      </div>
-                      {isActive ? (
-                        <span className="fo-nav-active-dot" />
-                      ) : supportUnreadCount > 0 ? (
-                        <span className="fo-badge-cyan" title={`${supportUnreadCount} unread support messages`}>
-                          {supportUnreadCount}
-                        </span>
-                      ) : null}
-                    </>
-                  )}
+                  <span className="fo-nav-active-indicator" />
+                  <div className="fo-nav-left">
+                    <span className="material-symbols-outlined fo-nav-icon">support_agent</span>
+                    <span className="fo-nav-label">Helpline Chat</span>
+                  </div>
+                  {supportUnreadCount > 0 ? (
+                    <span className="fo-badge-cyan" title={`${supportUnreadCount} unread support messages`}>
+                      {supportUnreadCount}
+                    </span>
+                  ) : null}
                 </NavLink>
               )}
 
@@ -650,15 +654,11 @@ export function Layout(): ReactElement {
                   to="/reports"
                   className={({ isActive }) => (isActive ? 'fo-nav-item active' : 'fo-nav-item')}
                 >
-                  {({ isActive }) => (
-                    <>
-                      <div className="fo-nav-left">
-                        <span className="material-symbols-outlined fo-nav-icon">analytics</span>
-                        <span className="fo-nav-label">Reports & Exports</span>
-                      </div>
-                      {isActive && <span className="fo-nav-active-dot" />}
-                    </>
-                  )}
+                  <span className="fo-nav-active-indicator" />
+                  <div className="fo-nav-left">
+                    <span className="material-symbols-outlined fo-nav-icon">analytics</span>
+                    <span className="fo-nav-label">Reports & Exports</span>
+                  </div>
                 </NavLink>
               )}
 
@@ -667,15 +667,11 @@ export function Layout(): ReactElement {
                   to="/settings"
                   className={({ isActive }) => (isActive ? 'fo-nav-item active' : 'fo-nav-item')}
                 >
-                  {({ isActive }) => (
-                    <>
-                      <div className="fo-nav-left">
-                        <span className="material-symbols-outlined fo-nav-icon">settings</span>
-                        <span className="fo-nav-label">SLA & Settings</span>
-                      </div>
-                      {isActive && <span className="fo-nav-active-dot" />}
-                    </>
-                  )}
+                  <span className="fo-nav-active-indicator" />
+                  <div className="fo-nav-left">
+                    <span className="material-symbols-outlined fo-nav-icon">settings</span>
+                    <span className="fo-nav-label">SLA & Settings</span>
+                  </div>
                 </NavLink>
               )}
             </div>
@@ -739,28 +735,61 @@ export function Layout(): ReactElement {
             >
               {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
             </button>
-            <div className="workspace-breadcrumb">
-              <span className="breadcrumb-title">{getPageTitle(location.pathname)}</span>
+            <div className="fo-header-titles">
+              <h1 className="fo-page-main-heading">{getPageTitle(location.pathname)}</h1>
+              <div className="fo-page-sub-row">
+                <span className="fo-page-greeting">{greeting}, {user?.firstName || 'Fleetops'}!</span>
+                <span className="fo-role-badge">
+                  {user?.role === 'SUPER_ADMIN' ? 'SUPER ADMIN' : user?.role || 'OPERATOR'}
+                </span>
+                <span className="fo-bullet-sep">•</span>
+                <span className="fo-header-sub">{getPageSubtitle(location.pathname)}</span>
+              </div>
             </div>
           </div>
 
           <div className="workspace-header-right">
-            {/* Live Sync Status Badge */}
-            <div className="connection-badge" title={connected ? 'Connected to Realtime Server' : 'Offline'}>
-              <span className={connected ? 'live-dot live-on' : 'live-dot live-off'} />
-              <span className="connection-text">{connected ? 'Live Sync' : 'Offline'}</span>
+            {/* 1. Sync Status Group (Live Sync Status & Low-Emphasis Sync Action) */}
+            <div className="header-status-group">
+              <div className="connection-badge" title={connected ? 'Connected to Realtime Server' : 'Offline'}>
+                <span className={connected ? 'live-dot live-on' : 'live-dot live-off'} />
+                <span className="connection-text">Live Sync</span>
+                <span className="connection-status-dot-sep">·</span>
+                <span className="connection-subtext">{connected ? 'Connected' : 'Offline'}</span>
+              </div>
+
+              <button
+                type="button"
+                className="btn-header-sync"
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent('fleetops:sync'));
+                  void complaintsRef.current.reload();
+                  void loadingRef.current.reload();
+                  void pendingRef.current.reload();
+                  void sparePartsRef.current.reload();
+                  void supportRef.current.reload();
+                }}
+                title="Refresh telemetry streams"
+                aria-label="Sync telemetry streams now"
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: 15 }}>
+                  sync
+                </span>
+                <span className="btn-sync-label">Sync Now</span>
+              </button>
             </div>
 
-            {/* Segmented Theme Switcher Control */}
+            {/* 2. Compact Segmented Theme Switcher Control */}
             <ThemeSwitcher />
 
-            {/* Notification Dropdown */}
+            {/* 3. Notification Dropdown Control */}
             <div className="notif-dropdown-wrapper" ref={notifRef}>
               <button
                 type="button"
                 className={`notif-bell-btn ${showNotifications ? 'active' : ''}`}
                 onClick={() => setShowNotifications((prev) => !prev)}
                 aria-label="Notifications"
+                title="Notifications"
               >
                 <Bell size={18} />
                 {unreadCount > 0 ? <span className="notif-badge">{unreadCount}</span> : null}
@@ -820,6 +849,19 @@ export function Layout(): ReactElement {
                 </div>
               ) : null}
             </div>
+
+            {/* 4. Prominent Primary CTA */}
+            <button
+              type="button"
+              className="btn-header-primary-cta"
+              onClick={() => navigate('/complaints')}
+              title="Create new driver dispatch or complaint ticket"
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
+                add_circle
+              </span>
+              <span>+ New Dispatch / Ticket</span>
+            </button>
           </div>
         </header>
 

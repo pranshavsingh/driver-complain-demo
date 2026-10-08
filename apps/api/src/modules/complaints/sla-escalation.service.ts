@@ -134,7 +134,7 @@ export async function checkAndEscalateSlaBreaches(): Promise<SlaEscalationResult
     for (const userId of recipientUserIds) {
       notificationsToCreate.push({
         userId,
-        type: 'SLA_BREACH_ESCALATION' as any,
+        type: 'SLA_BREACH_ESCALATION',
         title,
         body,
         complaintId: complaint.id,

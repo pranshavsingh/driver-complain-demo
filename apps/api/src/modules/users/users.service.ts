@@ -86,7 +86,7 @@ export async function createUser(actor: Actor, input: CreateUser): Promise<UserP
   }
 
   // 4. Driving License (DL) for Driver Role (Required & Unique)
-  let normLicense = input.licenseNumber?.trim() || null;
+  const normLicense = input.licenseNumber?.trim() || null;
   if (input.role === 'DRIVER') {
     if (!normLicense) {
       throw ApiError.badRequest('Driving License (DL) number is required for driver accounts.');
@@ -101,7 +101,7 @@ export async function createUser(actor: Actor, input: CreateUser): Promise<UserP
 
   const isSuperAdmin = actor.role === 'SUPER_ADMIN';
   let targetCategory: ComplaintCategory | null = input.category ?? null;
-  let targetCreatedByAdminId = isSuperAdmin ? (input.createdByAdminId ?? null) : actor.id;
+  const targetCreatedByAdminId = isSuperAdmin ? (input.createdByAdminId ?? null) : actor.id;
 
   // 5. Hierarchy Role Validations
   if (input.role === 'ADMIN') {
@@ -480,7 +480,11 @@ export async function rejectUser(userId: string): Promise<UserPublic> {
   return toUserPublic(updated);
 }
 
-export async function updateUser(userId: string, input: UpdateUser): Promise<UserPublic> {
+export async function updateUser(actor: Actor, userId: string, input: UpdateUser): Promise<UserPublic> {
+  if (actor.role !== 'SUPER_ADMIN') {
+    throw ApiError.forbidden('Only SuperAdmin can update user accounts.');
+  }
+
   const user = await prisma.user.findUnique({ where: { id: userId }, include: { driver: true } });
   if (!user) throw ApiError.notFound('User not found');
 
@@ -625,18 +629,13 @@ export async function deleteUser(actor: Actor, targetUserId: string): Promise<vo
         data: { createdByAdminId: null },
       });
 
-      // 2. Clear admin category assignments
-      await tx.adminCategoryAssignment.deleteMany({
-        where: { adminId: targetUserId },
-      });
-
-      // 3. Unassign from Vehicles (site incharge)
+      // 2. Unassign from Vehicles (site incharge)
       await tx.vehicle.updateMany({
         where: { siteInchargeId: targetUserId },
         data: { siteInchargeId: null },
       });
 
-      // 4. Unassign assignedToId / pendingAssigneeId on Complaints
+      // 3. Unassign assignedToId / pendingAssigneeId on Complaints
       await tx.complaint.updateMany({
         where: { assignedToId: targetUserId },
         data: { assignedToId: null, assignmentStatus: 'NONE' },
@@ -647,7 +646,7 @@ export async function deleteUser(actor: Actor, targetUserId: string): Promise<vo
         data: { pendingAssigneeId: null },
       });
 
-      // 5. Unassign spare parts request admin/executive relations
+      // 4. Unassign spare parts request admin/executive relations
       await tx.sparePartRequest.updateMany({
         where: { issueProposedById: targetUserId },
         data: { issueProposedById: null },
@@ -661,67 +660,28 @@ export async function deleteUser(actor: Actor, targetUserId: string): Promise<vo
         data: { issuedById: null },
       });
 
-      // 6. Anonymize uploader identity on complaint attachments (preserve evidence without false attribution)
+      // 5. Anonymize uploader identity on complaint attachments (preserve evidence without false attribution)
       await tx.complaintAttachment.updateMany({
         where: { uploadedById: targetUserId },
         data: { uploadedById: null },
       });
 
-      // 7. Delete complaint updates authored by this user
-      await tx.complaintUpdate.deleteMany({
+      // 6. Anonymize author identity on complaint updates (preserve audit timeline history - MOD-5)
+      await tx.complaintUpdate.updateMany({
         where: { authorId: targetUserId },
+        data: { authorId: null },
       });
 
-      // 8. Handle Driver relations if the user is a driver (or has driver profile)
+      // 7. Unassign driver from any vehicles if user is a driver
       const driver = target.driver ?? (await tx.driver.findUnique({ where: { userId: targetUserId } }));
       if (driver) {
-        const driverId = driver.id;
-
-        // Unassign driver from any vehicles
         await tx.vehicle.updateMany({
-          where: { driverId },
+          where: { driverId: driver.id },
           data: { driverId: null },
         });
-
-        // Find complaints created for this driver
-        const driverComplaints = await tx.complaint.findMany({
-          where: { driverId },
-          select: { id: true },
-        });
-
-        const complaintIds = driverComplaints.map((c) => c.id);
-
-        if (complaintIds.length > 0) {
-          await tx.supportMessage.updateMany({
-            where: { linkedComplaintId: { in: complaintIds } },
-            data: { linkedComplaintId: null },
-          });
-          await tx.notification.deleteMany({ where: { complaintId: { in: complaintIds } } });
-          await tx.complaintAttachment.deleteMany({ where: { complaintId: { in: complaintIds } } });
-          await tx.complaintUpdate.deleteMany({ where: { complaintId: { in: complaintIds } } });
-          await tx.loadingRecord.deleteMany({ where: { complaintId: { in: complaintIds } } });
-          await tx.complaint.deleteMany({ where: { id: { in: complaintIds } } });
-        }
-
-        // Delete driver-specific records
-        await tx.loadingRecord.deleteMany({ where: { driverId } });
-        await tx.fuelRecord.deleteMany({ where: { driverId } });
-        await tx.maintenanceRecord.deleteMany({ where: { driverId } });
-        await tx.sparePartRequest.deleteMany({ where: { driverId } });
-        await tx.driver.deleteMany({ where: { id: driverId } });
       }
 
-      // 9. Delete user-level relations
-      await tx.notification.deleteMany({ where: { userId: targetUserId } });
-      await tx.deviceToken.deleteMany({ where: { userId: targetUserId } });
-      await tx.refreshToken.deleteMany({ where: { userId: targetUserId } });
-      await tx.supportMessage.deleteMany({
-        where: {
-          OR: [{ senderId: targetUserId }, { receiverId: targetUserId }],
-        },
-      });
-
-      // 10. Delete the User record
+      // 8. Delete User record (PostgreSQL ON DELETE CASCADE natively deletes Driver, Complaints, Attachments, Updates, Notifications, Tokens, SupportMessages, Records)
       await tx.user.delete({ where: { id: targetUserId } });
     }, { timeout: 20000 });
   } catch (err: unknown) {

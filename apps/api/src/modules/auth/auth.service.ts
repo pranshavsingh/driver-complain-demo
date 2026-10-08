@@ -134,6 +134,21 @@ export async function refresh(
   const newRefreshToken = generateRefreshToken();
 
   await prisma.$transaction(async (tx) => {
+    // Atomically mark old token as ROTATED only if it is still active (revokedAt: null)
+    const updatedOld = await tx.refreshToken.updateMany({
+      where: { id: existing.id, revokedAt: null },
+      data: { revokedAt: new Date(), revokedReason: 'ROTATED' },
+    });
+
+    if (updatedOld.count === 0) {
+      // Race condition / reuse detected: token was rotated by a concurrent request
+      await tx.refreshToken.updateMany({
+        where: { familyId: existing.familyId, revokedAt: null },
+        data: { revokedAt: new Date(), revokedReason: 'REUSE_DETECTED' },
+      });
+      throw ApiError.unauthorized('Refresh token reuse detected');
+    }
+
     const created = await tx.refreshToken.create({
       data: {
         userId: existing.userId,
@@ -144,9 +159,10 @@ export async function refresh(
         ipAddress: ctx.ipAddress ?? null,
       },
     });
+
     await tx.refreshToken.update({
       where: { id: existing.id },
-      data: { revokedAt: new Date(), revokedReason: 'ROTATED', replacedById: created.id },
+      data: { replacedById: created.id },
     });
   });
 

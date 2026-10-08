@@ -70,13 +70,14 @@ export async function rejectUser(req: Request, res: Response): Promise<void> {
 }
 
 export async function updateUser(req: Request, res: Response): Promise<void> {
+  if (!req.user) throw ApiError.unauthorized();
   const id = req.params.id as string;
   const parsed = UpdateUserSchema.safeParse(req.body);
   if (!parsed.success) {
     throw ApiError.badRequest('Invalid update details', parsed.error.flatten());
   }
 
-  const updated = await usersService.updateUser(id, parsed.data);
+  const updated = await usersService.updateUser(req.user, id, parsed.data);
   sendSuccess(res, updated);
 }
 

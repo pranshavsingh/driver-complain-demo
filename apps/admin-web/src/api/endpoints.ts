@@ -51,6 +51,7 @@ import {
   CategorySlaItemSchema,
   type CategorySlaItem,
   type UpdateCategorySla,
+  type CreateComplaintFromChatInput,
 } from '@driver-complaint/shared-types';
 import { download, request, requestNoContent, type QueryValue } from './client';
 import { clearTokens, getRefreshToken } from './tokens';
@@ -463,6 +464,18 @@ export const support = {
   detachFromComplaint: (messageId: string): Promise<{ ok: boolean }> =>
     request(z.object({ ok: z.boolean() }), `/support/messages/${messageId}/detach-from-complaint`, {
       method: 'POST',
+    }),
+
+  createComplaintFromChat: (input: CreateComplaintFromChatInput): Promise<ComplaintPublic> =>
+    request(ComplaintPublicSchema, '/support/create-complaint', {
+      method: 'POST',
+      body: input,
+    }),
+
+  bulkAttachToComplaint: (messageIds: string[], complaintId: string): Promise<{ ok: boolean; count: number; complaintNo: string }> =>
+    request(z.object({ ok: z.boolean(), count: z.number(), complaintNo: z.string() }), '/support/messages/bulk-attach', {
+      method: 'POST',
+      body: { messageIds, complaintId },
     }),
 };
 

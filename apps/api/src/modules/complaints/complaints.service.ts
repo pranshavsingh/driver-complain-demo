@@ -267,7 +267,14 @@ export async function create(
           plateNumber: rawNumber,
         },
       });
+    } else if (vehicle.driverId && vehicle.driverId !== driver.id) {
+      throw ApiError.badRequest('Vehicle does not belong to you');
     }
+
+    if (input.vehicleId && input.vehicleId !== vehicle.id) {
+      throw ApiError.badRequest('vehicleNumber and vehicleId mismatch');
+    }
+
     vehicleIdToUse = vehicle.id;
   } else if (input.vehicleId) {
     const vehicle = await prisma.vehicle.findUnique({ where: { id: input.vehicleId } });
@@ -318,12 +325,17 @@ export async function create(
 
   const categoryToUse = input.category ?? 'BREAKDOWN';
 
+  const rawTitle = typeof input.title === 'string' ? input.title.trim() : '';
+  const finalTitle = rawTitle || `${categoryToUse} Issue`;
+
   // Duplicate Check: Only merge if driver submitted an identical unresolved complaint within the last 5 minutes (prevents accidental double-taps)
   const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
   const existingOpenComplaint = await prisma.complaint.findFirst({
     where: {
       driverId: driver.id,
       category: categoryToUse,
+      title: { equals: finalTitle, mode: 'insensitive' },
+      ...(vehicleIdToUse ? { vehicleId: vehicleIdToUse } : {}),
       status: { notIn: ['RESOLVED', 'CLOSED'] },
       createdAt: { gte: fiveMinutesAgo },
     },
@@ -372,9 +384,6 @@ export async function create(
     voiceTranscription && isPlaceholderDescription
       ? voiceTranscription
       : rawDesc || voiceTranscription || 'Issue reported by driver';
-
-  const rawTitle = typeof input.title === 'string' ? input.title.trim() : '';
-  const finalTitle = rawTitle || `${categoryToUse} Issue`;
 
   if (existingOpenComplaint) {
     const updatedComplaint = await prisma.$transaction(
@@ -617,7 +626,7 @@ export async function create(
       where: { id: complaint.id },
       include: listInclude,
     });
-  }, { timeout: 15000, maxWait: 10000 });
+  }, { timeout: 30000, maxWait: 10000 });
 
   // Post-commit delivery to all target users
   const categoryExecsAfter = await prisma.user.findMany({
@@ -768,7 +777,7 @@ async function buildWhere(
   if (query.priority) andConditions.push({ priority: query.priority });
   if (query.category) andConditions.push({ category: query.category });
   if (query.vehicleId) andConditions.push({ vehicleId: query.vehicleId });
-  if (actor.role === 'SUPER_ADMIN' && query.assignedToId) {
+  if (query.assignedToId) {
     andConditions.push({ assignedToId: query.assignedToId });
   }
 
@@ -956,15 +965,15 @@ export async function getOne(actor: Actor, id: string): Promise<ComplaintDetail>
   }
 
   if (actor.role === 'EXECUTIVE') {
+    const scope = await resolveUserScope(actor.id, actor.role);
     const isAssigned = complaint.assignedToId === actor.id;
     const isVehicleIncharge = complaint.vehicle?.siteInchargeId === actor.id;
     const isDriverVehicleIncharge = complaint.driver?.vehicles?.some(
       (v: any) => v.siteInchargeId === actor.id,
     );
     let isCategoryMatch = false;
-    if (!isAssigned && !isVehicleIncharge && !isDriverVehicleIncharge) {
-      const execUser = await prisma.user.findUnique({ where: { id: actor.id }, select: { category: true } });
-      if (execUser?.category && execUser.category === complaint.category) {
+    if (scope.categories && scope.categories.length > 0) {
+      if (scope.categories.includes(complaint.category)) {
         isCategoryMatch = true;
       }
     }
@@ -972,13 +981,13 @@ export async function getOne(actor: Actor, id: string): Promise<ComplaintDetail>
       throw ApiError.forbidden('You can only view complaints assigned to you, your department, or your vehicles');
     }
   } else if (actor.role === 'ADMIN') {
+    const scope = await resolveUserScope(actor.id, actor.role);
     const isAssigned = complaint.assignedToId === actor.id;
     const isVehicleIncharge = complaint.vehicle?.siteInchargeId === actor.id;
     const isSubordinate = complaint.assignedTo?.createdByAdminId === actor.id;
     let isCategoryMatch = false;
-    if (!isAssigned && !isVehicleIncharge && !isSubordinate) {
-      const adminUser = await prisma.user.findUnique({ where: { id: actor.id }, select: { category: true } });
-      if (adminUser?.category && adminUser.category === complaint.category) {
+    if (scope.categories && scope.categories.length > 0) {
+      if (scope.categories.includes(complaint.category)) {
         isCategoryMatch = true;
       }
     }
@@ -1000,20 +1009,20 @@ export async function updateStatus(
 
   const existing = await prisma.complaint.findUnique({
     where: { id },
-    include: { driver: { include: { vehicles: true } }, vehicle: true },
+    include: { driver: { include: { vehicles: true } }, vehicle: true, assignedTo: true },
   });
   if (!existing) throw ApiError.notFound('Complaint not found');
 
   if (actorObj.role === 'EXECUTIVE') {
+    const scope = await resolveUserScope(actorObj.id, actorObj.role);
     const isAssigned = existing.assignedToId === actorObj.id;
     const isVehicleIncharge = existing.vehicle?.siteInchargeId === actorObj.id;
     const isDriverVehicleIncharge = existing.driver?.vehicles?.some(
       (v) => v.siteInchargeId === actorObj.id,
     );
     let isCategoryMatch = false;
-    if (!isAssigned && !isVehicleIncharge && !isDriverVehicleIncharge) {
-      const execUser = await prisma.user.findUnique({ where: { id: actorObj.id }, select: { category: true } });
-      if (execUser?.category && execUser.category === existing.category) {
+    if (scope.categories && scope.categories.length > 0) {
+      if (scope.categories.includes(existing.category)) {
         isCategoryMatch = true;
       }
     }
@@ -1021,23 +1030,17 @@ export async function updateStatus(
       throw ApiError.forbidden('You can only update complaints assigned to you, your department, or your vehicles');
     }
   } else if (actorObj.role === 'ADMIN') {
+    const scope = await resolveUserScope(actorObj.id, actorObj.role);
     const isAssigned = existing.assignedToId === actorObj.id;
     const isVehicleIncharge = existing.vehicle?.siteInchargeId === actorObj.id;
-    let isCategoryOrSubordinateMatch = false;
-    if (!isAssigned && !isVehicleIncharge) {
-      const adminUser = await prisma.user.findUnique({ where: { id: actorObj.id }, select: { category: true } });
-      if (adminUser?.category && adminUser.category === existing.category) {
-        isCategoryOrSubordinateMatch = true;
-      } else {
-        const assignedToUser = existing.assignedToId
-          ? await prisma.user.findUnique({ where: { id: existing.assignedToId }, select: { createdByAdminId: true } })
-          : null;
-        if (assignedToUser?.createdByAdminId === actorObj.id) {
-          isCategoryOrSubordinateMatch = true;
-        }
+    const isSubordinate = existing.assignedTo?.createdByAdminId === actorObj.id;
+    let isCategoryMatch = false;
+    if (scope.categories && scope.categories.length > 0) {
+      if (scope.categories.includes(existing.category)) {
+        isCategoryMatch = true;
       }
     }
-    if (!isAssigned && !isVehicleIncharge && !isCategoryOrSubordinateMatch) {
+    if (!isAssigned && !isVehicleIncharge && !isSubordinate && !isCategoryMatch) {
       throw ApiError.forbidden('You can only update complaints assigned to you, your department, or your site');
     }
   }

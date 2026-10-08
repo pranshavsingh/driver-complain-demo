@@ -3,6 +3,8 @@ import {
   SendSupportMessageSchema,
   SupportMessageListQuerySchema,
   AttachChatMessageToComplaintSchema,
+  CreateComplaintFromChatSchema,
+  BulkAttachChatMessagesSchema,
 } from '@driver-complaint/shared-types';
 import * as supportService from './support.service';
 import { ApiError } from '../../errors/api-error';
@@ -100,6 +102,26 @@ export async function detachFromComplaint(
     req.user.id,
     targetMessageId,
   );
+  sendSuccess(res, result);
+}
+
+export async function createComplaintFromChat(req: Request, res: Response): Promise<void> {
+  if (!req.user) throw ApiError.unauthorized();
+  if (!['SUPER_ADMIN', 'ADMIN'].includes(req.user.role)) {
+    throw ApiError.forbidden('Only SuperAdmin or Admin can create complaints from support chat');
+  }
+  const body = CreateComplaintFromChatSchema.parse(req.body);
+  const result = await supportService.createComplaintFromChat(req.user.id, body);
+  sendSuccess(res, result, 201);
+}
+
+export async function bulkAttachToComplaint(req: Request, res: Response): Promise<void> {
+  if (!req.user) throw ApiError.unauthorized();
+  if (!['SUPER_ADMIN', 'ADMIN'].includes(req.user.role)) {
+    throw ApiError.forbidden('Only SuperAdmin or Admin can link chat messages to complaints');
+  }
+  const body = BulkAttachChatMessagesSchema.parse(req.body);
+  const result = await supportService.bulkAttachChatMessages(req.user.id, body);
   sendSuccess(res, result);
 }
 

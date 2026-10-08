@@ -282,9 +282,9 @@ describe('complaints.service — getOne', () => {
 
     const detail = await getOne(adminActor(), created.id);
     // Opened by the driver, moved on by the admin — the audit trail must show both by name.
-    const authors = detail.updates.map((u) => u.author.employeeId);
+    const authors = detail.updates.map((u) => u.author?.employeeId);
     expect(authors).toEqual([D1, A1]);
-    expect(detail.updates[1]?.author.firstName).toBe('Admin');
+    expect(detail.updates[1]?.author?.firstName).toBe('Admin');
   });
 
   it('forbids a driver from reading another driver’s complaint', async () => {
