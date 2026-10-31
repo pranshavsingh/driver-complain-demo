@@ -35,20 +35,6 @@ export function SupportChatPage(): ReactElement {
   const { user } = useAuth();
   const { subscribeCustom } = useRealtime();
 
-  if (user && !isSuperAdmin(user)) {
-    return (
-      <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
-        <Headphones size={48} style={{ opacity: 0.5, marginBottom: 16 }} />
-        <h2 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 8px 0', color: 'var(--text)' }}>
-          Access Restricted
-        </h2>
-        <p style={{ fontSize: 14, margin: 0 }}>
-          The Support Helpline is managed exclusively by SuperAdmin users.
-        </p>
-      </div>
-    );
-  }
-
   const [conversations, setConversations] = useState<SupportConversationSummary[]>([]);
   const [loadingConversations, setLoadingConversations] = useState(true);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
@@ -575,6 +561,20 @@ export function SupportChatPage(): ReactElement {
     if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
     return d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
   };
+
+  if (user && !isSuperAdmin(user)) {
+    return (
+      <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
+        <Headphones size={48} style={{ opacity: 0.5, marginBottom: 16 }} />
+        <h2 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 8px 0', color: 'var(--text)' }}>
+          Access Restricted
+        </h2>
+        <p style={{ fontSize: 14, margin: 0 }}>
+          The Support Helpline is managed exclusively by SuperAdmin users.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="support-chat-page-container">

@@ -25,6 +25,7 @@ export default tseslint.config(
       // TypeScript already checks for undefined identifiers; the core rule only
       // produces false positives on Node/DOM globals under flat config.
       'no-undef': 'off',
+      '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-unused-vars': [
         'error',
         {

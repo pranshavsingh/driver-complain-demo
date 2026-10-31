@@ -689,7 +689,7 @@ export async function createComplaintFromChat(
 
   // 2. Resolve Vehicle
   let vehicleNumber = input.vehicleNumber;
-  let vehicleId = input.vehicleId;
+  const vehicleId = input.vehicleId;
   if (!vehicleNumber && vehicleId) {
     const v = await prisma.vehicle.findUnique({ where: { id: vehicleId } });
     if (v) vehicleNumber = v.plateNumber;
@@ -773,7 +773,9 @@ export async function createComplaintFromChat(
         linkedComplaintId: createdComplaint.id,
         linkedComplaintNo: createdComplaint.complaintNo,
       } as any);
-    } catch {}
+    } catch {
+      // realtime emission failure is non-blocking
+    }
   }
 
   return createdComplaint;

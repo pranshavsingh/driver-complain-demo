@@ -139,7 +139,9 @@ export function ComplaintDetailPage(): ReactElement {
       if (recognitionRef.current) {
         try {
           recognitionRef.current.stop();
-        } catch {}
+        } catch {
+          // ignore cleanup error
+        }
       }
     };
   }, []);
@@ -263,7 +265,9 @@ export function ComplaintDetailPage(): ReactElement {
       if (recognitionRef.current) {
         try {
           recognitionRef.current.stop();
-        } catch {}
+        } catch {
+          // ignore cleanup error
+        }
       }
       setIsListeningVoice(false);
       return;

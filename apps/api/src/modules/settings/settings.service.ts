@@ -2,7 +2,6 @@ import type { CategorySlaItem, UpdateCategorySla } from '@driver-complaint/share
 import { COMPLAINT_CATEGORIES, type ComplaintCategory } from '@driver-complaint/shared-types';
 import { prisma } from '../../lib/prisma';
 import { emitToRoles } from '../../realtime/socket';
-import { REALTIME_EVENTS } from '@driver-complaint/shared-types';
 
 /** Default SLA durations in hours for categories requiring SLA */
 const DEFAULT_SLA_HOURS: Record<string, number> = {

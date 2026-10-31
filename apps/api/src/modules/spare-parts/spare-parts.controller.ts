@@ -2,7 +2,6 @@ import type { Request, Response } from 'express';
 import {
   CreateSparePartRequestSchema,
   ProposeIssueSparePartSchema,
-  IssueSparePartSchema,
   ApproveSparePartSchema,
   RejectSparePartRequestSchema,
   SparePartListQuerySchema,

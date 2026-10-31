@@ -2,7 +2,6 @@ import { prisma } from '../../lib/prisma';
 import { ApiError } from '../../errors/api-error';
 import { uploadBuffer, cloudinaryFolder } from '../../lib/cloudinary';
 import { transcribeAudio } from '../../lib/transcribe';
-import { env } from '../../config/env';
 import { pushToUsers } from '../../lib/fcm';
 import { logger } from '../../lib/logger';
 import { resolveUserScope } from '../../lib/user-scope';
