@@ -28,6 +28,7 @@ import { useApiResource } from '../hooks/useApiResource';
 import { useCategorySlaMap } from '../hooks/useCategorySlaMap';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { CategoryBadge } from '../components/Badges';
+import { Skeleton } from '../components/LoadingSystem';
 import { formatEnum, EXCLUDED_SLA_CATEGORIES, DEFAULT_CATEGORY_SLA_HOURS } from '../lib/format';
 
 export function SettingsPage(): ReactElement {
@@ -71,7 +72,7 @@ export function SettingsPage(): ReactElement {
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
   // Fetch sites
-  const sitesResource = useApiResource('sites:list', () => api.sites.list());
+  const sitesResource = useApiResource('api:sites:list', () => api.sites.list());
   const sites = sitesResource.data ?? [];
   const loading = sitesResource.loading;
   const error = sitesResource.error;
@@ -448,369 +449,373 @@ export function SettingsPage(): ReactElement {
       {activeTab === 'sites' && (
         <>
           {/* KPI Stats Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 24 }}>
-        <div style={{
-          padding: 16,
-          backgroundColor: 'var(--surface)',
-          border: '1px solid var(--border)',
-          borderRadius: 12,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 16,
-        }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 24 }}>
+            <div style={{
+              padding: 16,
+              backgroundColor: 'var(--surface)',
+              border: '1px solid var(--border)',
+              borderRadius: 12,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 16,
+            }}>
+              <div style={{
+                width: 44,
+                height: 44,
+                borderRadius: 10,
+                backgroundColor: 'rgba(59, 130, 246, 0.15)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'var(--accent)',
+              }}>
+                <MapPin size={22} />
+              </div>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Total Sites
+                </div>
+                <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--text)', marginTop: 2 }}>
+                  {stats.total}
+                </div>
+              </div>
+            </div>
+
+            <div style={{
+              padding: 16,
+              backgroundColor: 'var(--surface)',
+              border: '1px solid var(--border)',
+              borderRadius: 12,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 16,
+            }}>
+              <div style={{
+                width: 44,
+                height: 44,
+                borderRadius: 10,
+                backgroundColor: 'var(--success-bg)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'var(--success-text)',
+              }}>
+                <Warehouse size={22} />
+              </div>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Active Sites
+                </div>
+                <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--success-text)', marginTop: 2 }}>
+                  {stats.active}
+                </div>
+              </div>
+            </div>
+
+            <div style={{
+              padding: 16,
+              backgroundColor: 'var(--surface)',
+              border: '1px solid var(--border)',
+              borderRadius: 12,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 16,
+            }}>
+              <div style={{
+                width: 44,
+                height: 44,
+                borderRadius: 10,
+                backgroundColor: 'var(--danger-bg)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'var(--danger-text)',
+              }}>
+                <AlertCircle size={22} />
+              </div>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Inactive Sites
+                </div>
+                <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--danger-text)', marginTop: 2 }}>
+                  {stats.inactive}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Main Table Card */}
           <div style={{
-            width: 44,
-            height: 44,
-            borderRadius: 10,
-            backgroundColor: 'rgba(59, 130, 246, 0.15)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'var(--accent)',
+            backgroundColor: 'var(--surface)',
+            border: '1px solid var(--border)',
+            borderRadius: 12,
+            overflow: 'hidden',
           }}>
-            <MapPin size={22} />
-          </div>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-              Total Sites
-            </div>
-            <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--text)', marginTop: 2 }}>
-              {stats.total}
-            </div>
-          </div>
-        </div>
-
-        <div style={{
-          padding: 16,
-          backgroundColor: 'var(--surface)',
-          border: '1px solid var(--border)',
-          borderRadius: 12,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 16,
-        }}>
-          <div style={{
-            width: 44,
-            height: 44,
-            borderRadius: 10,
-            backgroundColor: 'var(--success-bg)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'var(--success-text)',
-          }}>
-            <Warehouse size={22} />
-          </div>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-              Active Sites
-            </div>
-            <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--success-text)', marginTop: 2 }}>
-              {stats.active}
-            </div>
-          </div>
-        </div>
-
-        <div style={{
-          padding: 16,
-          backgroundColor: 'var(--surface)',
-          border: '1px solid var(--border)',
-          borderRadius: 12,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 16,
-        }}>
-          <div style={{
-            width: 44,
-            height: 44,
-            borderRadius: 10,
-            backgroundColor: 'var(--danger-bg)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'var(--danger-text)',
-          }}>
-            <AlertCircle size={22} />
-          </div>
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-              Inactive Sites
-            </div>
-            <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--danger-text)', marginTop: 2 }}>
-              {stats.inactive}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Table Card */}
-      <div style={{
-        backgroundColor: 'var(--surface)',
-        border: '1px solid var(--border)',
-        borderRadius: 12,
-        overflow: 'hidden',
-      }}>
-        {/* Controls Toolbar */}
-        <div style={{
-          padding: '16px 20px',
-          borderBottom: '1px solid var(--border)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          gap: 16,
-          flexWrap: 'wrap',
-          backgroundColor: 'var(--bg)',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 260, maxWidth: 440 }}>
-            <div style={{ position: 'relative', width: '100%' }}>
-              <Search
-                size={16}
-                style={{
-                  position: 'absolute',
-                  left: 12,
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  color: 'var(--muted)',
-                }}
-              />
-              <input
-                type="text"
-                placeholder="Search by site name, code, or address..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '8px 12px 8px 36px',
-                  borderRadius: 8,
-                  border: '1px solid var(--border)',
-                  backgroundColor: 'var(--surface)',
-                  color: 'var(--text)',
-                  fontSize: 13,
-                  outline: 'none',
-                }}
-              />
-              {search ? (
-                <button
-                  type="button"
-                  onClick={() => setSearch('')}
-                  style={{
-                    position: 'absolute',
-                    right: 10,
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                    color: 'var(--muted)',
-                  }}
-                >
-                  <X size={14} />
-                </button>
-              ) : null}
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--muted)', marginRight: 4 }}>
-              Status:
-            </div>
-            {(['ALL', 'ACTIVE', 'INACTIVE'] as const).map((filter) => (
-              <button
-                key={filter}
-                type="button"
-                onClick={() => setStatusFilter(filter)}
-                style={{
-                  padding: '6px 12px',
-                  borderRadius: 6,
-                  fontSize: 12,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  border: statusFilter === filter ? '1px solid var(--accent)' : '1px solid var(--border)',
-                  backgroundColor: statusFilter === filter ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
-                  color: statusFilter === filter ? 'var(--accent)' : 'var(--text)',
-                  transition: 'all 0.15s ease',
-                }}
-              >
-                {filter === 'ALL' ? 'All' : filter === 'ACTIVE' ? 'Active' : 'Inactive'}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Sites Table */}
-        <div style={{ overflowX: 'auto' }}>
-          <table className="table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-            <thead>
-              <tr style={{ backgroundColor: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
-                <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase' }}>
-                  Site Name
-                </th>
-                <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase' }}>
-                  Code / Short ID
-                </th>
-                <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase' }}>
-                  Address / Hub Location
-                </th>
-                <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase' }}>
-                  Status
-                </th>
-                <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase' }}>
-                  Created At
-                </th>
-                <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', textAlign: 'right' }}>
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading && sites.length === 0 ? (
-                <tr>
-                  <td colSpan={6} style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--muted)' }}>
-                    <RotateCw size={24} className="spin" style={{ margin: '0 auto 8px' }} />
-                    <div>Loading operating sites...</div>
-                  </td>
-                </tr>
-              ) : filteredSites.length === 0 ? (
-                <tr>
-                  <td colSpan={6} style={{ padding: '48px 20px', textAlign: 'center', color: 'var(--muted)' }}>
-                    <MapPin size={36} style={{ margin: '0 auto 12px', opacity: 0.4 }} />
-                    <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)' }}>
-                      No operating sites found
-                    </div>
-                    <div style={{ fontSize: 13, marginTop: 4, color: 'var(--muted)' }}>
-                      {search ? 'Try adjusting your search criteria.' : 'Click "Add Operating Site" to create your first site.'}
-                    </div>
-                    {!search && canManage ? (
-                      <button
-                        type="button"
-                        className="btn-primary"
-                        onClick={openCreateModal}
-                        style={{ marginTop: 16, display: 'inline-flex', alignItems: 'center', gap: 6 }}
-                      >
-                        <Plus size={16} />
-                        Add Operating Site
-                      </button>
-                    ) : null}
-                  </td>
-                </tr>
-              ) : (
-                filteredSites.map((site) => (
-                  <tr
-                    key={site.id}
+            {/* Controls Toolbar */}
+            <div style={{
+              padding: '16px 20px',
+              borderBottom: '1px solid var(--border)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: 16,
+              flexWrap: 'wrap',
+              backgroundColor: 'var(--bg)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 260, maxWidth: 440 }}>
+                <div style={{ position: 'relative', width: '100%' }}>
+                  <Search
+                    size={16}
                     style={{
-                      borderBottom: '1px solid var(--border)',
-                      transition: 'background-color 0.15s ease',
+                      position: 'absolute',
+                      left: 12,
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      color: 'var(--muted)',
+                    }}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Search by site name, code, or address..."
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px 8px 36px',
+                      borderRadius: 8,
+                      border: '1px solid var(--border)',
+                      backgroundColor: 'var(--surface)',
+                      color: 'var(--text)',
+                      fontSize: 13,
+                      outline: 'none',
+                    }}
+                  />
+                  {search ? (
+                    <button
+                      type="button"
+                      onClick={() => setSearch('')}
+                      style={{
+                        position: 'absolute',
+                        right: 10,
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        color: 'var(--muted)',
+                      }}
+                    >
+                      <X size={14} />
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--muted)', marginRight: 4 }}>
+                  Status:
+                </div>
+                {(['ALL', 'ACTIVE', 'INACTIVE'] as const).map((filter) => (
+                  <button
+                    key={filter}
+                    type="button"
+                    onClick={() => setStatusFilter(filter)}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: 6,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      border: statusFilter === filter ? '1px solid var(--accent)' : '1px solid var(--border)',
+                      backgroundColor: statusFilter === filter ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
+                      color: statusFilter === filter ? 'var(--accent)' : 'var(--text)',
+                      transition: 'all 0.15s ease',
                     }}
                   >
-                    <td style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--text)' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <MapPin size={16} style={{ color: site.isActive ? 'var(--accent)' : 'var(--muted)' }} />
-                        <span>{site.name}</span>
-                      </div>
-                    </td>
-                    <td style={{ padding: '14px 20px' }}>
-                      {site.code ? (
-                        <span style={{
-                          padding: '3px 8px',
-                          borderRadius: 4,
-                          fontSize: 12,
-                          fontWeight: 700,
-                          backgroundColor: 'rgba(99, 102, 241, 0.15)',
-                          color: 'var(--accent)',
-                          border: '1px solid var(--border)',
-                          letterSpacing: '0.05em',
-                        }}>
-                          {site.code}
-                        </span>
-                      ) : (
-                        <span style={{ color: 'var(--muted)', fontSize: 13 }}>—</span>
-                      )}
-                    </td>
-                    <td style={{ padding: '14px 20px', color: 'var(--text)', fontSize: 13, maxWidth: 300 }}>
-                      {site.address || <span style={{ color: 'var(--muted)' }}>No address specified</span>}
-                    </td>
-                    <td style={{ padding: '14px 20px' }}>
-                      <button
-                        type="button"
-                        onClick={() => canManage && handleToggleActive(site)}
-                        disabled={!canManage}
-                        title={canManage ? 'Click to toggle status' : undefined}
+                    {filter === 'ALL' ? 'All' : filter === 'ACTIVE' ? 'Active' : 'Inactive'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Sites Table */}
+            <div style={{ overflowX: 'auto' }}>
+              <table className="table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                <thead>
+                  <tr style={{ backgroundColor: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
+                    <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase' }}>
+                      Site Name
+                    </th>
+                    <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase' }}>
+                      Code / Short ID
+                    </th>
+                    <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase' }}>
+                      Address / Hub Location
+                    </th>
+                    <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase' }}>
+                      Status
+                    </th>
+                    <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase' }}>
+                      Created At
+                    </th>
+                    <th style={{ padding: '12px 20px', fontSize: 12, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', textAlign: 'right' }}>
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loading && sites.length === 0 ? (
+                    Array.from({ length: 5 }).map((_, i) => (
+                      <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                        <td style={{ padding: '16px 20px' }}><Skeleton width="60%" height={16} /></td>
+                        <td style={{ padding: '16px 20px' }}><Skeleton width={80} height={20} borderRadius={10} /></td>
+                        <td style={{ padding: '16px 20px' }}><Skeleton width="75%" height={16} /></td>
+                        <td style={{ padding: '16px 20px' }}><Skeleton width={120} height={16} /></td>
+                        <td style={{ padding: '16px 20px' }}><Skeleton width={60} height={16} /></td>
+                        <td style={{ padding: '16px 20px', textAlign: 'right' }}><Skeleton width={60} height={28} borderRadius={6} style={{ marginLeft: 'auto' }} /></td>
+                      </tr>
+                    ))
+                  ) : filteredSites.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} style={{ padding: '48px 20px', textAlign: 'center', color: 'var(--muted)' }}>
+                        <MapPin size={36} style={{ margin: '0 auto 12px', opacity: 0.4 }} />
+                        <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)' }}>
+                          No operating sites found
+                        </div>
+                        <div style={{ fontSize: 13, marginTop: 4, color: 'var(--muted)' }}>
+                          {search ? 'Try adjusting your search criteria.' : 'Click "Add Operating Site" to create your first site.'}
+                        </div>
+                        {!search && canManage ? (
+                          <button
+                            type="button"
+                            className="btn-primary"
+                            onClick={openCreateModal}
+                            style={{ marginTop: 16, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                          >
+                            <Plus size={16} />
+                            Add Operating Site
+                          </button>
+                        ) : null}
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredSites.map((site) => (
+                      <tr
+                        key={site.id}
                         style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 6,
-                          padding: '4px 10px',
-                          borderRadius: 20,
-                          fontSize: 12,
-                          fontWeight: 600,
-                          cursor: canManage ? 'pointer' : 'default',
-                          border: site.isActive ? '1px solid var(--success-border)' : '1px solid var(--danger-border)',
-                          backgroundColor: site.isActive ? 'var(--success-bg)' : 'var(--danger-bg)',
-                          color: site.isActive ? 'var(--success-text)' : 'var(--danger-text)',
+                          borderBottom: '1px solid var(--border)',
+                          transition: 'background-color 0.15s ease',
                         }}
                       >
-                        <span style={{
-                          width: 6,
-                          height: 6,
-                          borderRadius: '50%',
-                          backgroundColor: site.isActive ? 'var(--success-text)' : 'var(--danger-text)',
-                        }} />
-                        {site.isActive ? 'Active' : 'Inactive'}
-                      </button>
-                    </td>
-                    <td style={{ padding: '14px 20px', color: 'var(--muted)', fontSize: 13 }}>
-                      {new Date(site.createdAt).toLocaleDateString(undefined, {
-                        year: 'numeric',
-                        month: 'short',
-                        day: 'numeric',
-                      })}
-                    </td>
-                    <td style={{ padding: '14px 20px', textAlign: 'right' }}>
-                      {canManage ? (
-                        <div style={{ display: 'inline-flex', gap: 6 }}>
-                          <button
-                            type="button"
-                            onClick={() => openEditModal(site)}
-                            title="Edit site"
-                            style={{
-                              padding: 6,
-                              borderRadius: 6,
+                        <td style={{ padding: '14px 20px', fontWeight: 600, color: 'var(--text)' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <MapPin size={16} style={{ color: site.isActive ? 'var(--accent)' : 'var(--muted)' }} />
+                            <span>{site.name}</span>
+                          </div>
+                        </td>
+                        <td style={{ padding: '14px 20px' }}>
+                          {site.code ? (
+                            <span style={{
+                              padding: '3px 8px',
+                              borderRadius: 4,
+                              fontSize: 12,
+                              fontWeight: 700,
+                              backgroundColor: 'rgba(99, 102, 241, 0.15)',
+                              color: 'var(--accent)',
                               border: '1px solid var(--border)',
-                              backgroundColor: 'transparent',
-                              cursor: 'pointer',
-                              color: 'var(--text)',
-                            }}
-                          >
-                            <Edit2 size={15} />
-                          </button>
+                              letterSpacing: '0.05em',
+                            }}>
+                              {site.code}
+                            </span>
+                          ) : (
+                            <span style={{ color: 'var(--muted)', fontSize: 13 }}>—</span>
+                          )}
+                        </td>
+                        <td style={{ padding: '14px 20px', color: 'var(--text)', fontSize: 13, maxWidth: 300 }}>
+                          {site.address || <span style={{ color: 'var(--muted)' }}>No address specified</span>}
+                        </td>
+                        <td style={{ padding: '14px 20px' }}>
                           <button
                             type="button"
-                            onClick={() => setDeletingSite(site)}
-                            title="Delete site"
+                            onClick={() => canManage && handleToggleActive(site)}
+                            disabled={!canManage}
+                            title={canManage ? 'Click to toggle status' : undefined}
                             style={{
-                              padding: 6,
-                              borderRadius: 6,
-                              border: '1px solid var(--danger-border)',
-                              backgroundColor: 'var(--danger-bg)',
-                              cursor: 'pointer',
-                              color: 'var(--danger-text)',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 6,
+                              padding: '4px 10px',
+                              borderRadius: 20,
+                              fontSize: 12,
+                              fontWeight: 600,
+                              cursor: canManage ? 'pointer' : 'default',
+                              border: site.isActive ? '1px solid var(--success-border)' : '1px solid var(--danger-border)',
+                              backgroundColor: site.isActive ? 'var(--success-bg)' : 'var(--danger-bg)',
+                              color: site.isActive ? 'var(--success-text)' : 'var(--danger-text)',
                             }}
                           >
-                            <Trash2 size={15} />
+                            <span style={{
+                              width: 6,
+                              height: 6,
+                              borderRadius: '50%',
+                              backgroundColor: site.isActive ? 'var(--success-text)' : 'var(--danger-text)',
+                            }} />
+                            {site.isActive ? 'Active' : 'Inactive'}
                           </button>
-                        </div>
-                      ) : (
-                        <span style={{ color: 'var(--muted)', fontSize: 12 }}>View only</span>
-                      )}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      </>
+                        </td>
+                        <td style={{ padding: '14px 20px', color: 'var(--muted)', fontSize: 13 }}>
+                          {new Date(site.createdAt).toLocaleDateString(undefined, {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                          })}
+                        </td>
+                        <td style={{ padding: '14px 20px', textAlign: 'right' }}>
+                          {canManage ? (
+                            <div style={{ display: 'inline-flex', gap: 6 }}>
+                              <button
+                                type="button"
+                                onClick={() => openEditModal(site)}
+                                title="Edit site"
+                                style={{
+                                  padding: 6,
+                                  borderRadius: 6,
+                                  border: '1px solid var(--border)',
+                                  backgroundColor: 'transparent',
+                                  cursor: 'pointer',
+                                  color: 'var(--text)',
+                                }}
+                              >
+                                <Edit2 size={15} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setDeletingSite(site)}
+                                title="Delete site"
+                                style={{
+                                  padding: 6,
+                                  borderRadius: 6,
+                                  border: '1px solid var(--danger-border)',
+                                  backgroundColor: 'var(--danger-bg)',
+                                  cursor: 'pointer',
+                                  color: 'var(--danger-text)',
+                                }}
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </div>
+                          ) : (
+                            <span style={{ color: 'var(--muted)', fontSize: 12 }}>View only</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
       )}
 
       {/* Create / Edit Modal */}

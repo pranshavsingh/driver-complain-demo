@@ -275,6 +275,7 @@ export function toNotificationPublic(notification: Notification): NotificationPu
     complaintId: notification.complaintId ?? null,
     isRead: notification.isRead,
     readAt: iso(notification.readAt),
+    clearedAt: iso(notification.clearedAt),
     createdAt: notification.createdAt.toISOString(),
   };
 }

@@ -24,6 +24,7 @@ import { ErrorBanner } from '../components/ErrorBanner';
 import { useApiResource } from '../hooks/useApiResource';
 import { useAuth, isSuperAdmin } from '../auth/AuthContext';
 import { useRealtime } from '../realtime/RealtimeProvider';
+import { SkeletonTable } from '../components/LoadingSystem';
 
 const WHEEL_OPTIONS = [
   '4 Wheeler',
@@ -463,9 +464,9 @@ export function VehiclesPage(): ReactElement {
   const [driverId, setDriverId] = useState<string>('');
   const [siteInchargeId, setSiteInchargeId] = useState<string>('');
 
-  const vehiclesResource = useApiResource('vehicles:list', () => api.vehicles.list());
-  const driversResource = useApiResource('drivers:list', () => api.drivers.list());
-  const usersResource = useApiResource('users:admins', () => api.users.list());
+  const vehiclesResource = useApiResource('api:vehicles:list', () => api.vehicles.list());
+  const driversResource = useApiResource('api:drivers:list', () => api.drivers.list());
+  const usersResource = useApiResource('api:users:list', () => api.users.list());
   const { subscribeCustom } = useRealtime();
 
   // Live Realtime Subscriptions for Vehicle Add/Edit/Delete/Assign & Driver updates
@@ -1293,9 +1294,8 @@ export function VehiclesPage(): ReactElement {
 
           {/* Table Body */}
           {vehiclesResource.loading && vehiclesList.length === 0 ? (
-            <div style={{ padding: 40, textAlign: 'center', color: 'var(--fo-text-muted)', fontSize: 13 }}>
-              <RotateCw size={20} className="spin" style={{ margin: '0 auto 10px auto' }} />
-              Loading vehicle directory…
+            <div style={{ padding: 16 }}>
+              <SkeletonTable rows={7} columns={7} />
             </div>
           ) : filteredVehicles.length === 0 ? (
             <div style={{ padding: 40, textAlign: 'center', color: 'var(--fo-text-muted)', fontSize: 13 }}>

@@ -170,25 +170,26 @@ export async function createUser(actor: Actor, input: CreateUser): Promise<UserP
     });
 
     if (superAdmins.length > 0) {
-      await prisma.notification.createMany({
-        data: superAdmins.map((sa) => ({
-          userId: sa.id,
-          type: 'USER_APPROVAL_REQUESTED',
-          title: 'New Driver Approval Request',
-          body: `Driver ${user.firstName} ${user.lastName} (${user.employeeId}) submitted by Admin for approval.`,
-          data: { userId: user.id, employeeId: user.employeeId, role: user.role },
-        })),
-      });
-
       for (const sa of superAdmins) {
+        const n = await prisma.notification.create({
+          data: {
+            userId: sa.id,
+            type: 'USER_APPROVAL_REQUESTED',
+            title: 'New Driver Approval Request',
+            body: `Driver ${user.firstName} ${user.lastName} (${user.employeeId}) submitted by Admin for approval.`,
+            data: { userId: user.id, employeeId: user.employeeId, role: user.role },
+          },
+        });
+
         emitEventToUsers([sa.id], 'notification:new', {
-          id: `notif-${user.id}-${Date.now()}`,
+          id: n.id,
           userId: sa.id,
-          type: 'USER_APPROVAL_REQUESTED',
-          title: 'New Driver Approval Request',
-          body: `Driver ${user.firstName} ${user.lastName} (${user.employeeId}) submitted by Admin for approval.`,
-          createdAt: new Date().toISOString(),
-          isRead: false,
+          type: n.type,
+          title: n.title,
+          body: n.body,
+          createdAt: n.createdAt.toISOString(),
+          isRead: n.isRead,
+          data: n.data,
         });
       }
     }
@@ -376,7 +377,7 @@ export async function approveUser(userId: string): Promise<UserPublic> {
 
   // If created by an Admin, notify that Admin
   if (user.createdByAdminId) {
-    await prisma.notification.create({
+    const n = await prisma.notification.create({
       data: {
         userId: user.createdByAdminId,
         type: 'USER_APPROVED',
@@ -387,13 +388,14 @@ export async function approveUser(userId: string): Promise<UserPublic> {
     });
 
     emitEventToUsers([user.createdByAdminId], 'notification:new', {
-      id: `notif-${updated.id}-appr-${Date.now()}`,
-      userId: user.createdByAdminId,
-      type: 'USER_APPROVED',
-      title: 'Driver Approved',
-      body: `Driver ${updated.firstName} ${updated.lastName} (${updated.employeeId}) has been approved by SuperAdmin.`,
-      createdAt: new Date().toISOString(),
-      isRead: false,
+      id: n.id,
+      userId: n.userId,
+      type: n.type,
+      title: n.title,
+      body: n.body,
+      createdAt: n.createdAt.toISOString(),
+      isRead: n.isRead,
+      data: n.data,
     });
   }
 
@@ -435,7 +437,7 @@ export async function rejectUser(userId: string): Promise<UserPublic> {
 
   // If created by an Admin, notify that Admin
   if (user.createdByAdminId) {
-    await prisma.notification.create({
+    const n = await prisma.notification.create({
       data: {
         userId: user.createdByAdminId,
         type: 'USER_REJECTED',
@@ -446,13 +448,14 @@ export async function rejectUser(userId: string): Promise<UserPublic> {
     });
 
     emitEventToUsers([user.createdByAdminId], 'notification:new', {
-      id: `notif-${updated.id}-rej-${Date.now()}`,
-      userId: user.createdByAdminId,
-      type: 'USER_REJECTED',
-      title: 'Driver Approval Rejected',
-      body: `Driver ${updated.firstName} ${updated.lastName} (${updated.employeeId}) was rejected by SuperAdmin.`,
-      createdAt: new Date().toISOString(),
-      isRead: false,
+      id: n.id,
+      userId: n.userId,
+      type: n.type,
+      title: n.title,
+      body: n.body,
+      createdAt: n.createdAt.toISOString(),
+      isRead: n.isRead,
+      data: n.data,
     });
   }
 

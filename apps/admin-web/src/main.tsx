@@ -7,6 +7,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { App } from './App';
 import './styles.css';
 import './fleetops.css';
+import './loading.css';
 
 const container = document.getElementById('root');
 // Fail loudly: a missing #root means index.html and this entry point have drifted apart, and

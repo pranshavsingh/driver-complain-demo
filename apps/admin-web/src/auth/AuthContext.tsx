@@ -12,6 +12,7 @@ import type { Role, UserPublic } from '@driver-complaint/shared-types';
 import * as api from '../api/endpoints';
 import { getRefreshToken, onSessionEnded, setTokens } from '../api/tokens';
 import { refreshSession } from '../api/client';
+import { clearApiCache } from '../hooks/useApiResource';
 
 const ADMIN_ROLES: Role[] = ['EXECUTIVE', 'ADMIN', 'SUPER_ADMIN'];
 
@@ -82,6 +83,7 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactElemen
   useEffect(
     () =>
       onSessionEnded(() => {
+        clearApiCache();
         setUser(null);
         setStatus('anonymous');
       }),
@@ -99,14 +101,19 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactElemen
       throw new Error('This dashboard is for staff, executives, and administrators. Drivers use the mobile app.');
     }
 
+    clearApiCache();
     setUser(result.user);
     setStatus('authenticated');
   }, []);
 
   const logout = useCallback(async (): Promise<void> => {
-    await api.auth.logout();
-    setUser(null);
-    setStatus('anonymous');
+    try {
+      await api.auth.logout();
+    } finally {
+      clearApiCache();
+      setUser(null);
+      setStatus('anonymous');
+    }
   }, []);
 
   const value = useMemo<AuthContextValue>(

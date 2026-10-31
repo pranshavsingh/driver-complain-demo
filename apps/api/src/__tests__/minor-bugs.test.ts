@@ -108,7 +108,10 @@ describe('Minor Bug Fixes (M-1 to M-10) — Verification Suite', () => {
 
       let txExecuted = false;
       const mockTx = {
-        notification: { createMany: vi.fn().mockResolvedValue({ count: 2 }) },
+        notification: { 
+          createMany: vi.fn().mockResolvedValue({ count: 2 }),
+          create: vi.fn().mockResolvedValue({ id: 'mock-id', userId: 'mock-user', createdAt: new Date() }),
+        },
         complaint: { updateMany: vi.fn().mockResolvedValue({ count: 2 }) },
       };
 
@@ -122,7 +125,7 @@ describe('Minor Bug Fixes (M-1 to M-10) — Verification Suite', () => {
       expect(result.checkedCount).toBe(2);
       expect(result.escalatedCount).toBe(2);
       expect(txExecuted).toBe(true);
-      expect(mockTx.notification.createMany).toHaveBeenCalledTimes(1);
+      expect(mockTx.notification.create).toHaveBeenCalledTimes(2);
       expect(mockTx.complaint.updateMany).toHaveBeenCalledWith({
         where: { id: { in: [VALID_UUID_1, VALID_UUID_2] } },
         data: { lastSlaEscalatedAt: expect.any(Date) },
@@ -203,7 +206,7 @@ describe('Minor Bug Fixes (M-1 to M-10) — Verification Suite', () => {
         complaint: { updateMany: vi.fn() },
         sparePartRequest: { updateMany: vi.fn() },
         complaintAttachment: { updateMany: vi.fn() },
-        complaintUpdate: { deleteMany: vi.fn() },
+        complaintUpdate: { deleteMany: vi.fn(), updateMany: vi.fn() },
         driver: { findUnique: vi.fn().mockResolvedValue(null) },
         notification: { deleteMany: vi.fn() },
         deviceToken: { deleteMany: vi.fn() },

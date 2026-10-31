@@ -28,6 +28,7 @@ import { ErrorBanner } from '../components/ErrorBanner';
 import { Pagination } from '../components/Pagination';
 import { useAuth } from '../auth/AuthContext';
 import { useApiResource } from '../hooks/useApiResource';
+import { SkeletonTable } from '../components/LoadingSystem';
 import { formatDateTime } from '../lib/format';
 import { useRealtime } from '../realtime/RealtimeProvider';
 
@@ -114,7 +115,7 @@ export function TripDetailsPage(): ReactElement {
   }, [selectedPhoto]);
 
   // Fetch Drivers list for dropdown filter
-  const driversResource = useApiResource('admin:drivers', () => api.drivers.list());
+  const driversResource = useApiResource('api:drivers:list', () => api.drivers.list());
   const driverList: DriverListItem[] = driversResource.data ?? [];
 
   // Query object
@@ -1087,9 +1088,8 @@ export function TripDetailsPage(): ReactElement {
             </div>
 
             {summaryResource.loading && summaries.length === 0 ? (
-              <div style={{ padding: 40, textAlign: 'center', color: 'var(--fo-text-muted)', fontSize: 13 }}>
-                <RotateCw size={20} className="spin" style={{ margin: '0 auto 10px auto' }} />
-                Loading monthly trip summaries…
+              <div style={{ padding: 16 }}>
+                <SkeletonTable rows={5} columns={6} />
               </div>
             ) : summaries.length === 0 ? (
               <div style={{ padding: 40, textAlign: 'center', color: 'var(--fo-text-muted)', fontSize: 13 }}>
@@ -1335,9 +1335,8 @@ export function TripDetailsPage(): ReactElement {
             </div>
 
             {logsResource.loading && records.length === 0 ? (
-              <div style={{ padding: 40, textAlign: 'center', color: 'var(--fo-text-muted)', fontSize: 13 }}>
-                <RotateCw size={20} className="spin" style={{ margin: '0 auto 10px auto' }} />
-                Loading trip logs…
+              <div style={{ padding: 16 }}>
+                <SkeletonTable rows={7} columns={8} />
               </div>
             ) : records.length === 0 ? (
               <div style={{ padding: 40, textAlign: 'center', color: 'var(--fo-text-muted)', fontSize: 13 }}>

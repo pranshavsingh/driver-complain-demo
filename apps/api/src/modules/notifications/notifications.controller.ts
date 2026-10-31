@@ -35,3 +35,13 @@ export async function markAllRead(req: Request, res: Response): Promise<void> {
   if (!req.user) throw ApiError.unauthorized();
   sendSuccess(res, await notificationsService.markAllRead(req.user.id));
 }
+
+export async function clearAll(req: Request, res: Response): Promise<void> {
+  if (!req.user) throw ApiError.unauthorized();
+  sendSuccess(res, await notificationsService.clearAll(req.user.id));
+}
+
+export async function clearOne(req: Request<{ id: string }>, res: Response): Promise<void> {
+  if (!req.user) throw ApiError.unauthorized();
+  sendSuccess(res, await notificationsService.clearOne(req.user.id, req.params.id));
+}

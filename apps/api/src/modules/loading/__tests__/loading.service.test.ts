@@ -46,37 +46,51 @@ const gps = { latitude: 22.5726, longitude: 88.3639 };
 
 /** Drive one cycle up to (but not including) the unloading tap. Returns the record id. */
 async function reachUnloadingPoint(): Promise<string> {
+  console.log('[reachUnloadingPoint] markReachedLoadingPoint');
   const reached = await markReachedLoadingPoint({ userId: driver1UserId, fileBuffer: photo(), ...gps });
+  console.log('[reachUnloadingPoint] markLoadingCompleted');
   await markLoadingCompleted({ userId: driver1UserId, loadingId: reached.id, fileBuffer: photo(), ...gps });
+  console.log('[reachUnloadingPoint] startTrip');
   await startTrip({ userId: driver1UserId, loadingId: reached.id, ...gps });
+  console.log('[reachUnloadingPoint] completeTrip');
   await completeTrip({ userId: driver1UserId, loadingId: reached.id, fileBuffer: photo(), ...gps });
+  console.log('[reachUnloadingPoint] done');
   return reached.id;
 }
 
 async function cleanupLoadingRecords(): Promise<void> {
+  console.log('[loading.service.test.ts] cleanupLoadingRecords started');
+  const count = await prisma.loadingRecord.count({ where: { driverId: driver1Id } });
+  console.log('[loading.service.test.ts] count done', count);
   await prisma.loadingRecord.deleteMany({ where: { driverId: driver1Id } });
+  console.log('[loading.service.test.ts] cleanupLoadingRecords done');
 }
 
 beforeAll(async () => {
+  console.log('[loading.service.test.ts] beforeAll started');
   const pinHash = await hashPin('9999');
+  console.log('[loading.service.test.ts] hashPin done');
 
   const u1 = await prisma.user.upsert({
     where: { employeeId: D1 },
     update: { pinHash, isActive: true, role: 'DRIVER' },
     create: { employeeId: D1, pinHash, role: 'DRIVER', firstName: 'Lana', lastName: 'Loader' },
   });
+  console.log('[loading.service.test.ts] user.upsert done');
   driver1UserId = u1.id;
   const d1 = await prisma.driver.upsert({
     where: { userId: u1.id },
     update: {},
     create: { userId: u1.id, licenseNumber: 'LTEST-DL-1' },
   });
+  console.log('[loading.service.test.ts] driver.upsert done');
   driver1Id = d1.id;
   await prisma.vehicle.upsert({
     where: { plateNumber: 'LTEST-PLATE-1' },
     update: { driverId: d1.id },
     create: { driverId: d1.id, plateNumber: 'LTEST-PLATE-1', make: 'Test', model: 'Tipper' },
   });
+  console.log('[loading.service.test.ts] vehicle.upsert done');
 });
 
 beforeEach(cleanupLoadingRecords);
@@ -155,8 +169,8 @@ describe('loading.service — completeUnloading', () => {
 
   it('measures the unloading wait from tripCompletedAt, not from trip start', async () => {
     const id = await reachUnloadingPoint();
-    // Backdate arrival at the unloading point by 90 minutes; trip start goes back further so a
-    // regression that measured from tripStartedAt would produce 150, not 90.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-09T10:00:00Z'));
     const arrivedAt = new Date(Date.now() - 90 * 60_000);
     await prisma.loadingRecord.update({
       where: { id },
@@ -172,6 +186,7 @@ describe('loading.service — completeUnloading', () => {
 
     expect(done.unloadingDurationMinutes).toBe(90);
     expect(done.formattedUnloadingDuration).toBe('01:30:00');
+    vi.useRealTimers();
   });
 
   it('never reports a negative duration', async () => {
@@ -220,7 +235,9 @@ describe('loading.service — completeUnloading', () => {
 
 describe('loading.service — getDriverMonthlyTripSummaries', () => {
   it('sums and averages unloading minutes across a driver-month', async () => {
-    const now = new Date();
+    vi.useFakeTimers();
+    const now = new Date('2026-10-09T10:00:00Z');
+    vi.setSystemTime(now);
     // Two closed trips in the current month: 30 and 90 minutes of unloading.
     for (const minutes of [30, 90]) {
       const id = await reachUnloadingPoint();
@@ -241,6 +258,7 @@ describe('loading.service — getDriverMonthlyTripSummaries', () => {
     expect(summaries[0]!.completedTripsCount).toBe(2);
     expect(summaries[0]!.totalUnloadingTimeMinutes).toBe(120);
     expect(summaries[0]!.avgUnloadingTimeMinutes).toBe(60);
+    vi.useRealTimers();
   });
 
   it('reports zero rather than NaN for a driver-month with no unloading data', async () => {

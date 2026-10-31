@@ -76,8 +76,25 @@ export async function withDbRetry<T>(fn: () => Promise<T>, maxRetries = 3): Prom
 const extendedPrisma = basePrisma.$extends({
   query: {
     $allModels: {
-      async $allOperations({ args, query }) {
-        return withDbRetry(() => query(args));
+      async $allOperations({ model, operation, args, query }) {
+        return withDbRetry(async () => {
+          const t0 = Date.now();
+          if (process.env.NODE_ENV === 'test') {
+             console.log(`[${new Date().toISOString()}] [PRISMA] ${model}.${operation} START`);
+          }
+          try {
+            const res = await query(args);
+            if (process.env.NODE_ENV === 'test') {
+               console.log(`[${new Date().toISOString()}] [PRISMA] ${model}.${operation} SUCCESS (${Date.now() - t0}ms)`);
+            }
+            return res;
+          } catch (e: any) {
+            if (process.env.NODE_ENV === 'test') {
+               console.log(`[${new Date().toISOString()}] [PRISMA] ${model}.${operation} ERROR: ${e?.message} (${Date.now() - t0}ms)`);
+            }
+            throw e;
+          }
+        });
       },
     },
   },
@@ -95,10 +112,10 @@ export const prisma: ExtendedPrismaClient = new Proxy(extendedPrisma, {
         // Case A — Interactive transaction callback: execute directly without callback retry
         // to prevent duplicate side-effects (complaints, updates, notifications).
         if (typeof firstArg === 'function') {
-          return (target.$transaction as any)(...args);
+          return Reflect.apply(target.$transaction, target, args);
         }
         // Case B — Batch array or options transaction: safe to retry connection errors.
-        return withDbRetry(() => (target.$transaction as any)(...args));
+        return withDbRetry(() => Reflect.apply(target.$transaction, target, args));
       };
     }
     return Reflect.get(target, prop, receiver);

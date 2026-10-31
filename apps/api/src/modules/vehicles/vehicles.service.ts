@@ -199,7 +199,7 @@ export async function create(input: CreateVehicle): Promise<VehiclePublic> {
     const body = `Vehicle ${vehicle.plateNumber} (${vehicle.model || vehicle.wheels || 'Fleet Vehicle'}) has been assigned to you.`;
     void (async () => {
       try {
-        await prisma.notification.create({
+        const n = await prisma.notification.create({
           data: {
             userId: vehicle.driver!.user.id,
             type: 'VEHICLE_ASSIGNED' as any,
@@ -223,10 +223,14 @@ export async function create(input: CreateVehicle): Promise<VehiclePublic> {
           },
         });
         emitToUsers([vehicle.driver!.user.id], 'notification:new' as any, {
-          type: 'VEHICLE_ASSIGNED',
-          title,
-          body,
-          data: { vehicleId: vehicle.id, plateNumber: vehicle.plateNumber },
+          id: n.id,
+          userId: n.userId,
+          type: n.type,
+          title: n.title,
+          body: n.body,
+          data: n.data,
+          createdAt: n.createdAt.toISOString(),
+          isRead: n.isRead,
         } as any);
       } catch (err) {
         logger.error({ err, vehicleId: vehicle.id }, 'Failed to notify assigned driver');
@@ -366,7 +370,7 @@ export async function update(
       const body = `Vehicle ${vehicle.plateNumber} has been unassigned from your profile.`;
       void (async () => {
         try {
-          await prisma.notification.create({
+          const n = await prisma.notification.create({
             data: {
               userId: previousDriverUserId,
               type: 'VEHICLE_UNASSIGNED' as any,
@@ -388,10 +392,14 @@ export async function update(
             },
           });
           emitToUsers([previousDriverUserId], 'notification:new' as any, {
-            type: 'VEHICLE_UNASSIGNED',
-            title,
-            body,
-            data: { vehicleId: vehicle.id, plateNumber: vehicle.plateNumber },
+            id: n.id,
+            userId: n.userId,
+            type: n.type,
+            title: n.title,
+            body: n.body,
+            data: n.data,
+            createdAt: n.createdAt.toISOString(),
+            isRead: n.isRead,
           } as any);
         } catch (err) {
           logger.error({ err, userId: previousDriverUserId }, 'Failed to notify unassigned driver');
@@ -405,7 +413,7 @@ export async function update(
       const body = `Vehicle ${vehicle.plateNumber} (${vehicle.model || vehicle.wheels || 'Fleet Vehicle'}) has been assigned to you.`;
       void (async () => {
         try {
-          await prisma.notification.create({
+          const n = await prisma.notification.create({
             data: {
               userId: newDriverUserId,
               type: 'VEHICLE_ASSIGNED' as any,
@@ -429,10 +437,14 @@ export async function update(
             },
           });
           emitToUsers([newDriverUserId], 'notification:new' as any, {
-            type: 'VEHICLE_ASSIGNED',
-            title,
-            body,
-            data: { vehicleId: vehicle.id, plateNumber: vehicle.plateNumber },
+            id: n.id,
+            userId: n.userId,
+            type: n.type,
+            title: n.title,
+            body: n.body,
+            data: n.data,
+            createdAt: n.createdAt.toISOString(),
+            isRead: n.isRead,
           } as any);
         } catch (err) {
           logger.error({ err, userId: newDriverUserId }, 'Failed to notify assigned driver');

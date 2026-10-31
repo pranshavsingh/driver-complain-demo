@@ -17,6 +17,10 @@ spec:
     metadata:
       labels:
         app: driver-complaint-api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "4000"
+        prometheus.io/path: "/metrics"
     spec:
       containers:
         - name: api
@@ -30,6 +34,8 @@ spec:
               value: '4000'
             - name: UV_THREADPOOL_SIZE
               value: '16'
+            - name: REQUIRE_REDIS_READY
+              value: 'true'
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -50,6 +56,12 @@ spec:
                 secretKeyRef:
                   name: api-secrets
                   key: refresh-token-secret
+            - name: METRICS_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: api-secrets
+                  key: metrics-auth-token
+                  optional: true
           resources:
             requests:
               cpu: 250m
@@ -59,13 +71,15 @@ spec:
               memory: 1Gi
           readinessProbe:
             httpGet:
-              path: /health
+              path: /health/readiness
               port: 4000
             initialDelaySeconds: 5
             periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
           livenessProbe:
             httpGet:
-              path: /health
+              path: /health/liveness
               port: 4000
             initialDelaySeconds: 15
             periodSeconds: 20
@@ -78,7 +92,8 @@ spec:
   selector:
     app: driver-complaint-api
   ports:
-    - port: 80
+    - name: http
+      port: 80
       targetPort: 4000
   type: ClusterIP
 ---

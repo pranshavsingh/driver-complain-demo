@@ -374,6 +374,9 @@ export async function completeTrip(opts: {
   const diffMs = tripCompletedAt.getTime() - recordToUpdate.tripStartedAt.getTime();
   const tripDurationMinutes = Math.max(0, Math.round(diffMs / 60000));
 
+  console.log('[DEBUG completeTrip] recordToUpdate:', recordToUpdate);
+  console.log('[DEBUG completeTrip] updating id:', recordToUpdate.id);
+
   const updated = await prisma.loadingRecord.update({
     where: { id: recordToUpdate.id },
     data: {

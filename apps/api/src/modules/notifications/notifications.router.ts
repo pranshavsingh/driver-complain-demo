@@ -29,4 +29,9 @@ notificationsRouter.post(
 notificationsRouter.delete('/devices/:token', notificationsController.unregisterDevice);
 
 notificationsRouter.post('/read-all', notificationsController.markAllRead);
+notificationsRouter.patch('/clear-all', notificationsController.clearAll);
+notificationsRouter.post('/clear-all', notificationsController.clearAll);
+
+notificationsRouter.delete('/:id', validateUuidParam('id'), notificationsController.clearOne);
+notificationsRouter.patch('/:id/clear', validateUuidParam('id'), notificationsController.clearOne);
 notificationsRouter.patch('/:id/read', validateUuidParam('id'), notificationsController.markRead);

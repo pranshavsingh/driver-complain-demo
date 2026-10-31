@@ -333,7 +333,10 @@ export function TakeFuelModal({ visible, onClose, vehicles, onSuccess }: TakeFue
             disabled={submitting}
           >
             {submitting ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
+              <>
+                <ActivityIndicator color="#FFFFFF" size="small" style={{ marginRight: 8 }} />
+                <Text style={styles.submitBtnText}>Recording Entry...</Text>
+              </>
             ) : (
               <>
                 <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />

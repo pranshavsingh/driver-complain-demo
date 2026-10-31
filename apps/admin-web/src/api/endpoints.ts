@@ -48,6 +48,8 @@ import {
   type OperatingSitePublic,
   type CreateOperatingSite,
   type UpdateOperatingSite,
+  ClearAllNotificationsResponseSchema,
+  type ClearAllNotificationsResponse,
   CategorySlaItemSchema,
   type CategorySlaItem,
   type UpdateCategorySla,
@@ -486,6 +488,10 @@ export const notifications = {
     request(z.any(), `/notifications/${id}/read`, { method: 'PATCH' }),
   markAllRead: (): Promise<{ updated: number }> =>
     request(z.any(), '/notifications/read-all', { method: 'POST' }),
+  clearAll: (): Promise<ClearAllNotificationsResponse> =>
+    request(ClearAllNotificationsResponseSchema, '/notifications/clear-all', { method: 'PATCH' }),
+  clearOne: (id: string): Promise<{ success: boolean; id: string; unreadCount: number }> =>
+    request(z.any(), `/notifications/${id}/clear`, { method: 'PATCH' }),
 };
 
 export const sites = {

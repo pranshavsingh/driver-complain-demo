@@ -96,7 +96,7 @@ export function LoginPage(): ReactElement {
               <Truck size={32} color="#ffffff" />
             </div>
             <div className="brand-titles">
-              <h2>Driver Care</h2>
+              <h2>SSE Connect+</h2>
               <span className="brand-badge">Admin Workspace</span>
             </div>
           </div>

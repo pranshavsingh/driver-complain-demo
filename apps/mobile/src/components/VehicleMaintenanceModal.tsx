@@ -381,7 +381,7 @@ export function VehicleMaintenanceModal({
               {isTyre
                 ? 'Old Tyre Number (replaced with this)'
                 : 'Old Battery Number (replaced with this)'}{' '}
-                <Text style={styles.requiredStar}>*</Text>
+              <Text style={styles.requiredStar}>*</Text>
             </Text>
             <View style={styles.inputBox}>
               <Ionicons
@@ -477,7 +477,10 @@ export function VehicleMaintenanceModal({
             disabled={submitting}
           >
             {submitting ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
+              <>
+                <ActivityIndicator color="#FFFFFF" size="small" style={{ marginRight: 8 }} />
+                <Text style={styles.submitBtnText}>Recording Service...</Text>
+              </>
             ) : (
               <>
                 <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />

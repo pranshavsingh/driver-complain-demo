@@ -27,6 +27,7 @@ import type {
   ComplaintCategory,
   Priority,
 } from '@driver-complaint/shared-types';
+import { Skeleton, SkeletonCircle } from '../components/LoadingSystem';
 
 type RoleFilter = 'ALL' | 'DRIVER' | 'ADMIN' | 'EXECUTIVE';
 
@@ -221,8 +222,8 @@ export function SupportChatPage(): ReactElement {
           m.type === 'AUDIO'
             ? ' [Voice Note Attached]'
             : m.type === 'IMAGE'
-            ? ' [Photo Evidence Attached]'
-            : '';
+              ? ' [Photo Evidence Attached]'
+              : '';
         return `[${timeStr}] ${senderLabel}: ${m.content || mediaNote}`;
       })
       .join('\n');
@@ -642,10 +643,10 @@ export function SupportChatPage(): ReactElement {
                   {tab === 'ALL'
                     ? 'All'
                     : tab === 'DRIVER'
-                    ? 'Drivers'
-                    : tab === 'ADMIN'
-                    ? 'Admins'
-                    : 'Executives'}
+                      ? 'Drivers'
+                      : tab === 'ADMIN'
+                        ? 'Admins'
+                        : 'Executives'}
                 </button>
               ))}
             </div>
@@ -654,9 +655,16 @@ export function SupportChatPage(): ReactElement {
           {/* Contact List */}
           <div className="chat-contact-list-container">
             {loadingConversations ? (
-              <div className="chat-loading-state">
-                <Loader size={24} className="icon-spin" />
-                <span>Loading conversations…</span>
+              <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px' }}>
+                    <SkeletonCircle size={40} />
+                    <div style={{ flex: 1 }}>
+                      <Skeleton width="60%" height={14} style={{ marginBottom: 6 }} />
+                      <Skeleton width="85%" height={12} />
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : filteredConversations.length === 0 ? (
               <div className="chat-empty-state">
@@ -809,9 +817,21 @@ export function SupportChatPage(): ReactElement {
               {/* Chat Message Stream */}
               <div className={`chat-messages-container ${isSelectionMode ? 'selection-mode' : ''}`}>
                 {loadingMessages ? (
-                  <div className="chat-loading-state">
-                    <Loader size={28} className="icon-spin" />
-                    <span>Loading conversation history…</span>
+                  <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+                      <SkeletonCircle size={32} />
+                      <Skeleton width={220} height={48} borderRadius={16} />
+                    </div>
+                    <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', alignItems: 'flex-end' }}>
+                      <Skeleton width={180} height={40} borderRadius={16} />
+                    </div>
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+                      <SkeletonCircle size={32} />
+                      <Skeleton width={260} height={60} borderRadius={16} />
+                    </div>
+                    <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', alignItems: 'flex-end' }}>
+                      <Skeleton width={210} height={48} borderRadius={16} />
+                    </div>
                   </div>
                 ) : messages.length === 0 ? (
                   <div className="chat-conversation-empty">
@@ -831,7 +851,7 @@ export function SupportChatPage(): ReactElement {
                     const showDateDivider =
                       !prevMsg ||
                       new Date(prevMsg.createdAt).toDateString() !==
-                        new Date(msg.createdAt).toDateString();
+                      new Date(msg.createdAt).toDateString();
                     const isSelected = selectedMessageIds.includes(msg.id);
 
                     return (
@@ -981,8 +1001,8 @@ export function SupportChatPage(): ReactElement {
 
                             {/* 3. TEXT CONTENT */}
                             {msg.content &&
-                            msg.content !== 'Photo' &&
-                            msg.content !== 'Voice Message' ? (
+                              msg.content !== 'Photo' &&
+                              msg.content !== 'Voice Message' ? (
                               <p className="chat-bubble-text">{msg.content}</p>
                             ) : null}
 
@@ -1117,8 +1137,8 @@ export function SupportChatPage(): ReactElement {
                     isRecording
                       ? 'Recording voice note…'
                       : filePreview
-                      ? 'Add a caption…'
-                      : 'Type a message… (Press Enter to send)'
+                        ? 'Add a caption…'
+                        : 'Type a message… (Press Enter to send)'
                   }
                   value={textInput}
                   onChange={(e) => setTextInput(e.target.value)}

@@ -6,6 +6,8 @@ import { env } from '../../config/env';
 import { pushToUsers } from '../../lib/fcm';
 import { logger } from '../../lib/logger';
 import { resolveUserScope } from '../../lib/user-scope';
+import { emitToRoles, emitEventToUsers } from '../../realtime/socket';
+import { REALTIME_EVENTS } from '@driver-complaint/shared-types';
 import type {
   CreateSparePartRequestInput,
   ProposeIssueSparePartInput,
@@ -287,21 +289,35 @@ export async function createRequest(
     });
 
     if (admins.length > 0) {
-      await tx.notification.createMany({
-        data: admins.map((admin) => ({
-          userId: admin.id,
-          type: 'SPARE_PART_REQUESTED' as const,
-          title: `New Spare Part Request: ${requestNo}`,
-          body: `Driver ${driver.user.firstName} ${driver.user.lastName} requested ${input.partName || 'spare parts'} (Qty: ${input.quantity ?? 1})`,
-          data: { requestId: newRequest.id, requestNo, type: 'SPARE_PART_REQUESTED' },
-        })),
-      });
+      for (const admin of admins) {
+        const n = await tx.notification.create({
+          data: {
+            userId: admin.id,
+            type: 'SPARE_PART_REQUESTED',
+            title: `New Spare Part Request: ${requestNo}`,
+            body: `Driver ${driver.user.firstName} ${driver.user.lastName} requested ${input.partName || 'spare parts'} (Qty: ${input.quantity ?? 1})`,
+            data: { requestId: newRequest.id, requestNo, type: 'SPARE_PART_REQUESTED' },
+          },
+        });
+        emitEventToUsers([n.userId], 'notification:new', {
+          id: n.id,
+          type: n.type,
+          title: n.title,
+          body: n.body,
+          complaintId: null,
+          createdAt: n.createdAt.toISOString(),
+          isRead: n.isRead,
+          data: n.data,
+        });
+      }
     }
 
     return newRequest;
   });
 
-  return toSparePartPublic(created);
+  const res = toSparePartPublic(created);
+  emitToRoles(['SUPER_ADMIN', 'ADMIN', 'EXECUTIVE'], REALTIME_EVENTS.sparePartCreated, res);
+  return res;
 }
 
 export async function listRequests(actor: Actor, query: SparePartListQuery) {
@@ -517,21 +533,38 @@ export async function proposeIssueRequest(
     });
 
     if (superAdmins.length > 0) {
-      await tx.notification.createMany({
-        data: superAdmins.map((sa) => ({
-          userId: sa.id,
-          type: 'SPARE_PART_ISSUE_PROPOSED' as const,
-          title: `Spare Part Issue Prepared: ${existing.requestNo}`,
-          body: `Issuance for ${finalPartName} (Qty: ${finalQty}, Type: ${input.type}) requires SuperAdmin approval.`,
-          data: { requestId: id, requestNo: existing.requestNo, type: 'SPARE_PART_ISSUE_PROPOSED' },
-        })),
-      });
+      for (const sa of superAdmins) {
+        const n = await tx.notification.create({
+          data: {
+            userId: sa.id,
+            type: 'SPARE_PART_ISSUE_PROPOSED',
+            title: `Spare Part Issue Prepared: ${existing.requestNo}`,
+            body: `Issuance for ${finalPartName} (Qty: ${finalQty}, Type: ${input.type}) requires SuperAdmin approval.`,
+            data: { requestId: id, requestNo: existing.requestNo, type: 'SPARE_PART_ISSUE_PROPOSED' },
+          },
+        });
+        emitEventToUsers([n.userId], 'notification:new', {
+          id: n.id,
+          type: n.type,
+          title: n.title,
+          body: n.body,
+          complaintId: null,
+          createdAt: n.createdAt.toISOString(),
+          isRead: n.isRead,
+          data: n.data,
+        });
+      }
     }
 
     return row;
   });
 
-  return toSparePartPublic(updated);
+  const res = toSparePartPublic(updated);
+  emitToRoles(['SUPER_ADMIN', 'ADMIN', 'EXECUTIVE'], REALTIME_EVENTS.sparePartUpdated, res);
+  if (existing.driver?.userId) {
+    emitEventToUsers([existing.driver.userId], REALTIME_EVENTS.sparePartUpdated, res);
+  }
+  return res;
 }
 
 export async function approveAndIssueRequest(
@@ -631,7 +664,7 @@ export async function approveAndIssueRequest(
     });
 
     // Notify the Driver
-    await tx.notification.create({
+    const n = await tx.notification.create({
       data: {
         userId: existing.driver.userId,
         type: 'SPARE_PART_ISSUED',
@@ -639,6 +672,16 @@ export async function approveAndIssueRequest(
         body: `Item ${finalPartName} (Qty: ${finalQty}) has been issued from ${warehouse.name}.`,
         data: { requestId: id, requestNo: existing.requestNo, type: 'SPARE_PART_ISSUED' },
       },
+    });
+    emitEventToUsers([n.userId], 'notification:new', {
+      id: n.id,
+      type: n.type,
+      title: n.title,
+      body: n.body,
+      complaintId: null,
+      createdAt: n.createdAt.toISOString(),
+      isRead: n.isRead,
+      data: n.data,
     });
 
     return row;
@@ -653,7 +696,12 @@ export async function approveAndIssueRequest(
     logger.error({ err }, 'FCM push for spare part issuance failed');
   });
 
-  return toSparePartPublic(updated);
+  const res = toSparePartPublic(updated);
+  emitToRoles(['SUPER_ADMIN', 'ADMIN', 'EXECUTIVE'], REALTIME_EVENTS.sparePartUpdated, res);
+  if (existing.driver?.userId) {
+    emitEventToUsers([existing.driver.userId], REALTIME_EVENTS.sparePartUpdated, res);
+  }
+  return res;
 }
 
 export async function rejectRequest(
@@ -684,7 +732,7 @@ export async function rejectRequest(
     });
 
     // Notify the Driver
-    await tx.notification.create({
+    const n = await tx.notification.create({
       data: {
         userId: existing.driver.userId,
         type: 'SPARE_PART_REJECTED',
@@ -692,6 +740,16 @@ export async function rejectRequest(
         body: `Your request was rejected. Reason: ${input.rejectionReason}`,
         data: { requestId: id, requestNo: existing.requestNo, type: 'SPARE_PART_REJECTED' },
       },
+    });
+    emitEventToUsers([n.userId], 'notification:new', {
+      id: n.id,
+      type: n.type,
+      title: n.title,
+      body: n.body,
+      complaintId: null,
+      createdAt: n.createdAt.toISOString(),
+      isRead: n.isRead,
+      data: n.data,
     });
 
     return row;
@@ -706,7 +764,12 @@ export async function rejectRequest(
     logger.error({ err }, 'FCM push for spare part rejection failed');
   });
 
-  return toSparePartPublic(updated);
+  const res = toSparePartPublic(updated);
+  emitToRoles(['SUPER_ADMIN', 'ADMIN', 'EXECUTIVE'], REALTIME_EVENTS.sparePartUpdated, res);
+  if (existing.driver?.userId) {
+    emitEventToUsers([existing.driver.userId], REALTIME_EVENTS.sparePartUpdated, res);
+  }
+  return res;
 }
 
 export async function getStats(opts: { startDate?: string; endDate?: string; vehicleId?: string }): Promise<SparePartStatsSummary> {
@@ -794,5 +857,10 @@ export async function confirmReturnItems(
     include: sparePartInclude,
   });
 
-  return toSparePartPublic(updated);
+  const res = toSparePartPublic(updated);
+  emitToRoles(['SUPER_ADMIN', 'ADMIN', 'EXECUTIVE'], REALTIME_EVENTS.sparePartUpdated, res);
+  if (existing.driver?.userId) {
+    emitEventToUsers([existing.driver.userId], REALTIME_EVENTS.sparePartUpdated, res);
+  }
+  return res;
 }

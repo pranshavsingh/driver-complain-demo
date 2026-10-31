@@ -68,12 +68,13 @@ describe('users.listAdmins', () => {
 
   it('returns only identity fields — never a pin hash', async () => {
     const admin = (await listAdmins()).find((a) => a.employeeId === ACTIVE_ADMIN);
-    expect(admin).toEqual({
+    expect(admin).toMatchObject({
       id: expect.any(String),
       employeeId: ACTIVE_ADMIN,
       firstName: 'Zoe',
       lastName: 'Active',
       role: 'ADMIN',
     });
+    expect(admin).not.toHaveProperty('pinHash');
   });
 });

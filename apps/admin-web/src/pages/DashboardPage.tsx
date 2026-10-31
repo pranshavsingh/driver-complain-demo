@@ -15,6 +15,7 @@ import { getUserCategories, canAccessPath } from '../auth/permissions';
 import { useRealtime } from '../realtime/RealtimeProvider';
 import { useCategorySlaMap } from '../hooks/useCategorySlaMap';
 import { getCategoryLabel } from './UsersPage';
+import { DashboardSkeleton } from '../components/LoadingSystem';
 
 type DashboardTab = 'complaints' | 'loading' | 'spare-parts';
 
@@ -37,16 +38,16 @@ export function DashboardPage(): ReactElement {
   const complaintsResource = useApiResource('dashboard:complaints', () =>
     api.complaints.list(api.EMPTY_FILTER, 1, 100),
   );
-  const vehiclesResource = useApiResource('dashboard:vehicles', () => api.vehicles.list());
-  const loadingResource = useApiResource('dashboard:loading', () => api.loading.list());
+  const vehiclesResource = useApiResource('api:vehicles:list', () => api.vehicles.list());
+  const loadingResource = useApiResource('api:loading:list', () => api.loading.list());
   const sparePartsResource = useApiResource('dashboard:spare-parts', () =>
     api.spareParts.list({ limit: 25 }),
   );
-  const usersResource = useApiResource('dashboard:users', () =>
+  const usersResource = useApiResource('api:users:list', () =>
     isSuperAdmin(user) || user?.role === 'ADMIN' ? api.users.list() : Promise.resolve([]),
   );
-  const sitesResource = useApiResource('dashboard:sites', () => api.sites.list());
-  const driversResource = useApiResource('dashboard:drivers', () => api.drivers.list());
+  const sitesResource = useApiResource('api:sites:list', () => api.sites.list());
+  const driversResource = useApiResource('api:drivers:list', () => api.drivers.list());
 
   const complaintsList: ComplaintPublic[] = complaintsResource.data?.data ?? [];
   const vehicleList: VehiclePublic[] = vehiclesResource.data ?? [];
@@ -69,7 +70,9 @@ export function DashboardPage(): ReactElement {
     const unsubU1 = subscribeCustom('user:approval-requested', () => void usersResource.reload());
     const unsubU2 = subscribeCustom('user:approved', () => void usersResource.reload());
     const unsubSP1 = subscribeCustom('spare-part:created', () => void sparePartsResource.reload());
-    const unsubL1 = subscribeCustom('loading:updated', () => void loadingResource.reload());
+    const unsubSP2 = subscribeCustom('spare-part:updated', () => void sparePartsResource.reload());
+    const unsubL1 = subscribeCustom('loading:reached', () => void loadingResource.reload());
+    const unsubL2 = subscribeCustom('loading:completed', () => void loadingResource.reload());
 
     return () => {
       unsubC1();
@@ -78,7 +81,9 @@ export function DashboardPage(): ReactElement {
       unsubU1();
       unsubU2();
       unsubSP1();
+      unsubSP2();
       unsubL1();
+      unsubL2();
     };
   }, [subscribeCustom, complaintsResource, loadingResource, usersResource, sparePartsResource]);
 
@@ -217,6 +222,10 @@ export function DashboardPage(): ReactElement {
 
   const totalPages = Math.max(1, Math.ceil(filteredComplaints.length / pageSize));
 
+  if (complaintsResource.loading && complaintsResource.data === null) {
+    return <DashboardSkeleton />;
+  }
+
   return (
     <div className="fleetops-view">
       <div className="fleetops-container">
@@ -244,8 +253,8 @@ export function DashboardPage(): ReactElement {
                 </p>
               </div>
             </div>
-            {canAccessPath(user, '/loading') && (
-              <Link to="/loading" className="fo-alert-action">
+            {(canAccessPath(user, '/complaints') || canAccessPath(user, '/loading')) && (
+              <Link to="/complaints?filter=overSla" className="fo-alert-action">
                 <span>View Radar</span>
                 <span className="material-symbols-outlined" style={{ fontSize: 14 }}>
                   arrow_forward
@@ -272,7 +281,7 @@ export function DashboardPage(): ReactElement {
               </div>
             </div>
             {canAccessPath(user, '/users') && (
-              <Link to="/users" className="fo-alert-action">
+              <Link to="/users?tab=pending" className="fo-alert-action">
                 <span>Review Approvals</span>
                 <span className="material-symbols-outlined" style={{ fontSize: 14 }}>
                   arrow_forward
@@ -963,7 +972,10 @@ export function DashboardPage(): ReactElement {
                         )}
                       </td>
                       <td style={{ textAlign: 'right' }}>
-                        <Link to="/loading" className="fo-btn-investigate">
+                        <Link
+                          to={`/complaints?filter=overSla${l.vehiclePlate ? `&search=${encodeURIComponent(l.vehiclePlate)}` : ''}`}
+                          className="fo-btn-investigate"
+                        >
                           <span>View Radar</span>
                         </Link>
                       </td>

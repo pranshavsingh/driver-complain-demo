@@ -18,6 +18,8 @@ interface Props {
   variant?: Variant;
   /** Blocks presses AND shows a spinner. Every submit path uses it — see the note below. */
   loading?: boolean;
+  /** Optional text to display while loading, e.g. "Submitting...", "Saving..." */
+  loadingText?: string;
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
 }
@@ -35,10 +37,12 @@ export function Button({
   onPress,
   variant = 'primary',
   loading = false,
+  loadingText,
   disabled = false,
   style,
 }: Props): ReactElement {
   const isDisabled = disabled || loading;
+  const displayText = loading && loadingText ? loadingText : label;
 
   return (
     <Pressable
@@ -69,12 +73,14 @@ export function Button({
             variant === 'secondary' ? styles.labelSecondary : styles.labelOnColor,
           ]}
         >
-          {label}
+          {displayText}
         </Text>
       </View>
     </Pressable>
   );
 }
+
+export const LoadingButton = Button;
 
 const styles = StyleSheet.create({
   base: {

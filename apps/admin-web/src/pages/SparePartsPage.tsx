@@ -1,9 +1,8 @@
-import { useState, useMemo, type ReactElement } from 'react';
+import { useState, useMemo, useEffect, useRef, type ReactElement } from 'react';
 import type {
   SparePartRequestPublic,
   WarehousePublic,
   SparePartRequestStatus,
-  SparePartType,
 } from '@driver-complaint/shared-types';
 import {
   Package,
@@ -29,7 +28,9 @@ import { useAuth, isSuperAdmin } from '../auth/AuthContext';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { Pagination } from '../components/Pagination';
 import { useApiResource } from '../hooks/useApiResource';
+import { useRealtime } from '../realtime/RealtimeProvider';
 import { formatDateTime } from '../lib/format';
+import { SkeletonTable } from '../components/LoadingSystem';
 
 interface IssueProductItem {
   id: string;
@@ -54,6 +55,17 @@ export interface ReturnTrackingInfo {
 }
 
 export function getReturnStatus(req: SparePartRequestPublic): ReturnTrackingInfo {
+  if (req.status !== 'ISSUED') {
+    return {
+      status: 'NOT_APPLICABLE',
+      totalItems: 0,
+      returnedItems: 0,
+      pendingItems: 0,
+      items: [],
+      returnDate: null,
+    };
+  }
+
   if (req.issuedItems && req.issuedItems.length > 0) {
     const items = req.issuedItems;
     const returnedCount = items.filter((i) => i.returned).length;
@@ -81,19 +93,20 @@ export function getReturnStatus(req: SparePartRequestPublic): ReturnTrackingInfo
     };
   }
 
-  // Fallback for requests where issuedItems is not populated as an array
-  if (req.status === 'ISSUED' || req.returnedPartNo || req.type === 'EXCHANGE' || req.status === 'ISSUE_PENDING_APPROVAL') {
+  // Fallback for older requests that used the old return tracking fields
+  if (req.returnedPartNo) {
     const isRet = Boolean(req.returnedPartNo);
     const itemName = req.issuedPartName || req.partName || 'Spare Part';
     const itemQty = req.issuedQty || req.quantity || 1;
     const itemSerial = req.returnedPartNo || req.issuedPartNo || '';
     const items = [
       {
+        id: 'legacy',
         name: itemName,
         quantity: itemQty,
         serialNumber: itemSerial,
         returned: isRet,
-        returnedAt: isRet ? req.updatedAt : null,
+        returnedAt: isRet && req.updatedAt ? req.updatedAt : null,
       },
     ];
     return {
@@ -102,7 +115,7 @@ export function getReturnStatus(req: SparePartRequestPublic): ReturnTrackingInfo
       returnedItems: isRet ? 1 : 0,
       pendingItems: isRet ? 0 : 1,
       items,
-      returnDate: isRet ? req.updatedAt : null,
+      returnDate: isRet && req.updatedAt ? req.updatedAt : null,
     };
   }
 
@@ -128,7 +141,6 @@ export function SparePartsPage(): ReactElement {
   const [activeTab, setActiveTab] = useState<'requests' | 'returns' | 'warehouses'>('requests');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
-  const [typeFilter, setTypeFilter] = useState<string>('ALL');
   const [warehouseFilter, setWarehouseFilter] = useState<string>('ALL');
   const [returnStatusFilter, setReturnStatusFilter] = useState<string>('ALL');
   const [warehouseStatusFilter, setWarehouseStatusFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
@@ -167,7 +179,6 @@ export function SparePartsPage(): ReactElement {
 
   // Form states for Propose Issue
   const [issueWarehouseId, setIssueWarehouseId] = useState('');
-  const [issueType, setIssueType] = useState<SparePartType>('NEW');
   const [issueNotes, setIssueNotes] = useState('');
   const [issueProductItems, setIssueProductItems] = useState<IssueProductItem[]>([
     { id: '1', name: '', quantity: 1, serialNumber: '' },
@@ -190,15 +201,37 @@ export function SparePartsPage(): ReactElement {
   const [exporting, setExporting] = useState(false);
 
   // API Resources
-  const requestsResource = useApiResource('admin:spare-parts:requests', () =>
+  const requestsResource = useApiResource(`admin:spare-parts:requests:${statusFilter}:${warehouseFilter}`, () =>
     api.spareParts.list({
+      limit: 100,
       status: statusFilter === 'ALL' || statusFilter === 'CORE_RETURN_AWAITING' ? undefined : statusFilter,
       warehouseId: warehouseFilter === 'ALL' ? undefined : warehouseFilter,
     }),
   );
 
-  const statsResource = useApiResource('admin:spare-parts:stats', () => api.spareParts.stats());
+  const statsResource = useApiResource('api:spareParts:stats', () => api.spareParts.stats());
   const warehousesResource = useApiResource('admin:warehouses:list', () => api.warehouses.list(true));
+
+  const { subscribeCustom } = useRealtime();
+
+  const reqRef = useRef(requestsResource);
+  reqRef.current = requestsResource;
+
+  const statsRef = useRef(statsResource);
+  statsRef.current = statsResource;
+
+  useEffect(() => {
+    const handleUpdate = () => {
+      void reqRef.current.reload();
+      void statsRef.current.reload();
+    };
+    const unsub1 = subscribeCustom('spare-part:created', handleUpdate);
+    const unsub2 = subscribeCustom('spare-part:updated', handleUpdate);
+    return () => {
+      unsub1();
+      unsub2();
+    };
+  }, [subscribeCustom]);
 
   const requests: SparePartRequestPublic[] = useMemo(() => {
     const res = requestsResource.data as any;
@@ -222,10 +255,7 @@ export function SparePartsPage(): ReactElement {
         return false;
       }
 
-      // Type filter
-      if (typeFilter !== 'ALL' && req.type !== typeFilter) {
-        return false;
-      }
+
 
       // Warehouse filter
       if (warehouseFilter !== 'ALL' && req.warehouseId !== warehouseFilter) {
@@ -250,7 +280,7 @@ export function SparePartsPage(): ReactElement {
 
       return true;
     });
-  }, [requests, statusFilter, typeFilter, warehouseFilter, searchQuery]);
+  }, [requests, statusFilter, warehouseFilter, searchQuery]);
 
   // Compute return counts across all requests
   const totalReturnsCount = useMemo(() => {
@@ -338,7 +368,6 @@ export function SparePartsPage(): ReactElement {
   const handleClearFilters = () => {
     setSearchQuery('');
     setStatusFilter('ALL');
-    setTypeFilter('ALL');
     setWarehouseFilter('ALL');
     setReturnStatusFilter('ALL');
     setWarehouseStatusFilter('ALL');
@@ -347,7 +376,7 @@ export function SparePartsPage(): ReactElement {
 
   const hasActiveFilters =
     Boolean(searchQuery) ||
-    (activeTab === 'requests' && (statusFilter !== 'ALL' || typeFilter !== 'ALL' || warehouseFilter !== 'ALL')) ||
+    (activeTab === 'requests' && (statusFilter !== 'ALL' || warehouseFilter !== 'ALL')) ||
     (activeTab === 'returns' && returnStatusFilter !== 'ALL') ||
     (activeTab === 'warehouses' && warehouseStatusFilter !== 'ALL');
 
@@ -382,7 +411,6 @@ export function SparePartsPage(): ReactElement {
   const handleOpenProposeIssue = (req: SparePartRequestPublic): void => {
     setIssuingRequest(req);
     setIssueWarehouseId(req.warehouseId || warehousesList[0]?.id || '');
-    setIssueType(req.type || 'NEW');
     setIssueNotes('');
     setActionError(null);
 
@@ -495,7 +523,7 @@ export function SparePartsPage(): ReactElement {
         // Direct issue for SuperAdmin
         await api.spareParts.approveAndIssue(issuingRequest.id, {
           warehouseId: issueWarehouseId,
-          type: issueType,
+          type: 'NEW',
           issuedPartName: primaryItem.name.trim(),
           issuedPartNo: primaryItem.serialNumber.trim() || undefined,
           issuedQty: Number(primaryItem.quantity),
@@ -506,7 +534,7 @@ export function SparePartsPage(): ReactElement {
         // Prepare/propose for Executive/Admin
         await api.spareParts.proposeIssue(issuingRequest.id, {
           warehouseId: issueWarehouseId,
-          type: issueType,
+          type: 'NEW',
           issuedPartName: primaryItem.name.trim(),
           issuedPartNo: primaryItem.serialNumber.trim() || undefined,
           issuedQty: Number(primaryItem.quantity),
@@ -537,7 +565,7 @@ export function SparePartsPage(): ReactElement {
 
       await api.spareParts.approveAndIssue(approvingRequest.id, {
         warehouseId: issueWarehouseId || approvingRequest.warehouseId || undefined,
-        type: approvingRequest.type || 'NEW',
+        type: 'NEW',
         issuedPartName: approvingRequest.issuedPartName || approvingRequest.partName || 'Spare Part',
         issuedPartNo: approvingRequest.issuedPartNo || undefined,
         issuedQty: approvingRequest.issuedQty || approvingRequest.quantity || 1,
@@ -640,67 +668,29 @@ export function SparePartsPage(): ReactElement {
     }
   };
 
-  const handleExportCsv = (): void => {
-    if (requests.length === 0) return;
-    setExporting(true);
+  const handleExportXlsx = async (): Promise<void> => {
     try {
-      const headers = [
-        'Request No',
-        'Created Date',
-        'Vehicle Plate',
-        'Driver Name',
-        'Driver Employee ID',
-        'Driver Phone',
-        'Requisition Type',
-        'Status',
-        'Driver Description',
-        'Issued Part Name',
-        'Issued Part No',
-        'Issued Qty',
-        'Warehouse',
-        'Returned Part No',
-        'Returned Part Condition',
-        'Prepared By',
-        'Approved By',
-        'Issued At',
-        'Notes',
-      ];
+      setExporting(true);
+      const query: any = {};
+      if (activeTab === 'returns') {
+        query.status = 'ISSUED';
+      } else if (statusFilter !== 'ALL' && statusFilter !== 'CORE_RETURN_AWAITING') {
+        query.status = statusFilter;
+      }
+      if (warehouseFilter !== 'ALL') {
+        query.warehouseId = warehouseFilter;
+      }
+      if (searchQuery.trim()) {
+        query.search = searchQuery.trim();
+      }
 
-      const rows = filteredRequests.map((r) => [
-        r.requestNo,
-        new Date(r.createdAt).toISOString(),
-        r.vehicle?.plateNumber ?? '',
-        r.driver?.user ? `${r.driver.user.firstName} ${r.driver.user.lastName}` : '',
-        r.driver?.user?.employeeId ?? '',
-        r.driver?.user?.phone ?? '',
-        r.type ?? '',
-        r.status,
-        (r.description ?? '').replace(/"/g, '""'),
-        (r.issuedPartName ?? r.partName ?? '').replace(/"/g, '""'),
-        r.issuedPartNo ?? '',
-        r.issuedQty ?? r.quantity ?? '',
-        r.warehouse?.name ?? '',
-        r.returnedPartNo ?? '',
-        r.returnedPartCondition ?? '',
-        r.issueProposedBy ? `${r.issueProposedBy.firstName} ${r.issueProposedBy.lastName}` : '',
-        r.approvedBy ? `${r.approvedBy.firstName} ${r.approvedBy.lastName}` : '',
-        r.issuedAt ? new Date(r.issuedAt).toISOString() : '',
-        (r.adminNotes ?? '').replace(/"/g, '""'),
-      ]);
-
-      const csvContent =
-        'data:text/csv;charset=utf-8,' +
-        [headers.join(','), ...rows.map((row) => row.map((val) => `"${val}"`).join(','))].join('\n');
-
-      const encodedUri = encodeURI(csvContent);
-      const link = document.createElement('a');
-      link.setAttribute('href', encodedUri);
-      link.setAttribute('download', `spare-part-requisitions-${new Date().toISOString().slice(0, 10)}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    } catch (err) {
-      alert('Failed to export CSV');
+      const prefix = activeTab === 'returns' ? 'spare-parts-returns' : 'spare-part-requisitions';
+      await api.spareParts.exportXlsx(
+        query,
+        `${prefix}-${new Date().toISOString().slice(0, 10)}.xlsx`
+      );
+    } catch (err: any) {
+      alert(err?.message || 'Failed to generate Excel report');
     } finally {
       setExporting(false);
     }
@@ -791,77 +781,7 @@ export function SparePartsPage(): ReactElement {
     }
   };
 
-  const getTypeBadge = (type: SparePartType) => {
-    switch (type) {
-      case 'NEW':
-        return (
-          <span
-            style={{
-              display: 'inline-block',
-              padding: '2px 8px',
-              borderRadius: 4,
-              fontSize: 11,
-              fontWeight: 600,
-              color: '#d3e4fe',
-              background: '#162942',
-              border: '1px solid #1f3654',
-            }}
-          >
-            New Part
-          </span>
-        );
-      case 'EXCHANGE':
-        return (
-          <span
-            style={{
-              display: 'inline-block',
-              padding: '2px 8px',
-              borderRadius: 4,
-              fontSize: 11,
-              fontWeight: 600,
-              color: '#93ccff',
-              background: '#162942',
-              border: '1px solid #1f3654',
-            }}
-          >
-            Core Exchange
-          </span>
-        );
-      case 'REPAIR':
-        return (
-          <span
-            style={{
-              display: 'inline-block',
-              padding: '2px 8px',
-              borderRadius: 4,
-              fontSize: 11,
-              fontWeight: 600,
-              color: '#c084fc',
-              background: '#162942',
-              border: '1px solid #1f3654',
-            }}
-          >
-            Repair
-          </span>
-        );
-      default:
-        return (
-          <span
-            style={{
-              display: 'inline-block',
-              padding: '2px 8px',
-              borderRadius: 4,
-              fontSize: 11,
-              fontWeight: 600,
-              color: '#8c909f',
-              background: '#162942',
-            }}
-          >
-            {type}
-          </span>
-        );
-    }
-  };
+
 
   const pendingCount = stats?.totalPending ?? requests.filter((r) => r.status === 'PENDING_APPROVAL').length;
   const issuePendingCount = stats?.totalIssuePending ?? requests.filter((r) => r.status === 'ISSUE_PENDING_APPROVAL').length;
@@ -909,9 +829,9 @@ export function SparePartsPage(): ReactElement {
             <button
               type="button"
               className="fo-spare-btn-ghost"
-              onClick={handleExportCsv}
+              onClick={handleExportXlsx}
               disabled={exporting || requests.length === 0}
-              title="Export Excel / CSV"
+              title="Export Excel"
             >
               <Download size={14} color="#93ccff" />
               <span>{exporting ? 'Exporting…' : 'Export Excel'}</span>
@@ -1332,26 +1252,6 @@ export function SparePartsPage(): ReactElement {
                   </select>
                 </div>
 
-                {/* Type Dropdown */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ fontSize: 11, fontFamily: 'var(--fo-font-mono)', fontWeight: 700, color: '#8c909f' }}>
-                    TYPE:
-                  </span>
-                  <select
-                    className="fo-spare-filter-select"
-                    value={typeFilter}
-                    onChange={(e) => {
-                      setTypeFilter(e.target.value);
-                      setPage(1);
-                    }}
-                  >
-                    <option value="ALL">All Types</option>
-                    <option value="NEW">New Part</option>
-                    <option value="EXCHANGE">Core Exchange</option>
-                    <option value="REPAIR">Repair</option>
-                  </select>
-                </div>
-
                 {/* Warehouse Dropdown */}
                 <select
                   className="fo-spare-filter-select"
@@ -1434,9 +1334,8 @@ export function SparePartsPage(): ReactElement {
             </div>
 
             {requestsResource.loading && requests.length === 0 ? (
-              <div style={{ padding: 48, textAlign: 'center', color: '#8c909f', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-                <RotateCw size={24} className="fo-spin" color="#3b82f6" />
-                <span>Loading requisitions…</span>
+              <div style={{ padding: 16 }}>
+                <SkeletonTable rows={7} columns={7} />
               </div>
             ) : filteredRequests.length === 0 ? (
               <div style={{ padding: 48, textAlign: 'center', color: '#8c909f', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
@@ -1454,7 +1353,6 @@ export function SparePartsPage(): ReactElement {
                       <th>DRIVER</th>
                       <th>VEHICLE</th>
                       <th>VOICE &amp; PROOF</th>
-                      <th>TYPE</th>
                       <th>STATUS</th>
                       <th>FULFILLMENT DETAILS</th>
                     </tr>
@@ -1553,11 +1451,6 @@ export function SparePartsPage(): ReactElement {
                                 </button>
                               ) : null}
                             </div>
-                          </td>
-
-                          {/* Type */}
-                          <td style={{ whiteSpace: 'nowrap' }}>
-                            {getTypeBadge(req.type || 'NEW')}
                           </td>
 
                           {/* Status */}
@@ -1851,9 +1744,8 @@ export function SparePartsPage(): ReactElement {
             </div>
 
             {warehousesResource.loading && warehousesList.length === 0 ? (
-              <div style={{ padding: 48, textAlign: 'center', color: '#8c909f', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-                <RotateCw size={24} className="fo-spin" color="#3b82f6" />
-                <span>Loading warehouses…</span>
+              <div style={{ padding: 16 }}>
+                <SkeletonTable rows={5} columns={6} />
               </div>
             ) : filteredWarehouses.length === 0 ? (
               <div style={{ padding: 48, textAlign: 'center', color: '#8c909f', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
@@ -2079,7 +1971,6 @@ export function SparePartsPage(): ReactElement {
                       <span style={{ fontFamily: 'var(--fo-font-mono)', fontSize: 18, fontWeight: 800, color: '#ffffff' }}>
                         {viewingRequest.requestNo}
                       </span>
-                      {getTypeBadge(viewingRequest.type || 'NEW')}
                     </div>
                     <p style={{ margin: '2px 0 0 0', fontSize: 12, color: '#8c909f' }}>
                       Requisition Ticket &bull; Vehicle: <strong style={{ color: '#ffffff' }}>{viewingRequest.vehicle?.plateNumber || 'N/A'}</strong>
@@ -2153,131 +2044,127 @@ export function SparePartsPage(): ReactElement {
                 </div>
               )}
 
-              {/* Itemized Return Tracking Checklist */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#ffffff' }}>
-                      Issued Items &mdash; Return Tracking
-                    </h3>
-                    <span
-                      style={{
-                        padding: '2px 8px',
-                        borderRadius: 4,
-                        fontSize: 11,
-                        fontFamily: 'var(--fo-font-mono)',
-                        background: '#162942',
-                        color: '#93ccff',
-                        border: '1px solid #1f3654',
-                      }}
-                    >
-                      {getReturnStatus(viewingRequest).totalItems} items / {getReturnStatus(viewingRequest).returnedItems} returned
-                    </span>
-                  </div>
-                  <span style={{ fontSize: 11, fontFamily: 'var(--fo-font-mono)', color: '#8c909f' }}>
-                    Audit Protocol #ISO-9001
-                  </span>
-                </div>
+              {/* Itemized Return Tracking Checklist - Only display when items have actually been issued */}
+              {(() => {
+                const ret = getReturnStatus(viewingRequest);
+                if (ret.status === 'NOT_APPLICABLE' || ret.totalItems === 0 || ret.items.length === 0) {
+                  return null;
+                }
 
-                {returnError && (
-                  <div style={{ padding: 8, fontSize: 12, color: '#ffb4ab', background: 'rgba(239,68,68,0.15)', borderRadius: 6, border: '1px solid rgba(239,68,68,0.3)' }}>
-                    {returnError}
-                  </div>
-                )}
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {(() => {
-                    const ret = getReturnStatus(viewingRequest);
-                    const items = ret.items.length > 0 ? ret.items : [
-                      {
-                        name: viewingRequest.issuedPartName || viewingRequest.partName || 'Brake Pad Assembly',
-                        quantity: viewingRequest.issuedQty || viewingRequest.quantity || 2,
-                        serialNumber: viewingRequest.issuedPartNo || 'BP-2024-001',
-                        returned: Boolean(viewingRequest.returnedPartNo),
-                        returnedAt: viewingRequest.returnedPartNo ? viewingRequest.updatedAt : null,
-                      },
-                    ];
-
-                    return items.map((item, idx) => {
-                      const isReturned = Boolean(item.returned);
-                      const isChecked = Boolean(returnChecked[idx]);
-
-                      return (
-                        <div
-                          key={idx}
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#ffffff' }}>
+                          Issued Items &mdash; Return Tracking
+                        </h3>
+                        <span
                           style={{
-                            background: '#0b1c30',
-                            borderRadius: 8,
-                            padding: '10px 14px',
+                            padding: '2px 8px',
+                            borderRadius: 4,
+                            fontSize: 11,
+                            fontFamily: 'var(--fo-font-mono)',
+                            background: '#162942',
+                            color: '#93ccff',
                             border: '1px solid #1f3654',
-                            borderLeft: `4px solid ${isReturned ? '#10b981' : '#f59e0b'}`,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            gap: 12,
                           }}
                         >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                            <input
-                              type="checkbox"
-                              checked={isReturned || isChecked}
-                              disabled={isReturned || returnLoading}
-                              onChange={(e) => {
-                                if (isReturned) return;
-                                setReturnChecked((prev) => ({ ...prev, [idx]: e.target.checked }));
-                              }}
-                              style={{ width: 16, height: 16, accentColor: '#3b82f6', cursor: 'pointer' }}
-                            />
-                            <div>
-                              <div style={{ fontSize: 13, fontWeight: 700, color: '#ffffff' }}>
-                                {item.name} <span style={{ color: '#8c909f', fontFamily: 'var(--fo-font-mono)' }}>(Qty x{item.quantity})</span>
-                              </div>
-                              <div style={{ fontSize: 11, color: '#8c909f', fontFamily: 'var(--fo-font-mono)' }}>
-                                S/N: {item.serialNumber || 'SN-REQ-001'}
+                          {ret.totalItems} items / {ret.returnedItems} returned
+                        </span>
+                      </div>
+                      <span style={{ fontSize: 11, fontFamily: 'var(--fo-font-mono)', color: '#8c909f' }}>
+                        Audit Protocol #ISO-9001
+                      </span>
+                    </div>
+
+                    {returnError && (
+                      <div style={{ padding: 8, fontSize: 12, color: '#ffb4ab', background: 'rgba(239,68,68,0.15)', borderRadius: 6, border: '1px solid rgba(239,68,68,0.3)' }}>
+                        {returnError}
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {ret.items.map((item, idx) => {
+                        const isReturned = Boolean(item.returned);
+                        const isChecked = Boolean(returnChecked[idx]);
+
+                        return (
+                          <div
+                            key={idx}
+                            style={{
+                              background: '#0b1c30',
+                              borderRadius: 8,
+                              padding: '10px 14px',
+                              border: '1px solid #1f3654',
+                              borderLeft: `4px solid ${isReturned ? '#10b981' : '#f59e0b'}`,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: 12,
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                              <input
+                                type="checkbox"
+                                checked={isReturned || isChecked}
+                                disabled={isReturned || returnLoading}
+                                onChange={(e) => {
+                                  if (isReturned) return;
+                                  setReturnChecked((prev) => ({ ...prev, [idx]: e.target.checked }));
+                                }}
+                                style={{ width: 16, height: 16, accentColor: '#3b82f6', cursor: 'pointer' }}
+                              />
+                              <div>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: '#ffffff' }}>
+                                  {item.name} <span style={{ color: '#8c909f', fontFamily: 'var(--fo-font-mono)' }}>(Qty x{item.quantity})</span>
+                                </div>
+                                <div style={{ fontSize: 11, color: '#8c909f', fontFamily: 'var(--fo-font-mono)' }}>
+                                  S/N: {item.serialNumber || 'N/A'}
+                                </div>
                               </div>
                             </div>
-                          </div>
 
-                          <div>
-                            {isReturned ? (
-                              <span
-                                className="fo-spare-status-badge"
-                                style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#6ee7b7', border: '1px solid rgba(16, 185, 129, 0.4)' }}
-                              >
-                                <Check size={11} /> Returned {item.returnedAt ? `(${formatDateTime(item.returnedAt).slice(-8)})` : ''}
-                              </span>
-                            ) : (
-                              <span
-                                className="fo-spare-status-badge"
-                                style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#fed65b', border: '1px solid rgba(245, 158, 11, 0.4)' }}
-                              >
-                                <Clock size={11} /> Pending Return
-                              </span>
-                            )}
+                            <div>
+                              {isReturned ? (
+                                <span
+                                  className="fo-spare-status-badge"
+                                  style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#6ee7b7', border: '1px solid rgba(16, 185, 129, 0.4)' }}
+                                >
+                                  <Check size={11} /> Returned {item.returnedAt ? `(${formatDateTime(item.returnedAt).slice(-8)})` : ''}
+                                </span>
+                              ) : (
+                                <span
+                                  className="fo-spare-status-badge"
+                                  style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#fed65b', border: '1px solid rgba(245, 158, 11, 0.4)' }}
+                                >
+                                  <Clock size={11} /> Pending Return
+                                </span>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      );
-                    });
-                  })()}
-                </div>
-
-                {/* Return Action Confirm Bar - Only displayed when items are pending return */}
-                {getReturnStatus(viewingRequest).pendingItems > 0 && (
-                  <div style={{ background: '#0b1c30', padding: '10px 14px', borderRadius: 8, border: '1px solid #1f3654', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ fontSize: 12, color: '#8c909f', fontFamily: 'var(--fo-font-mono)' }}>
-                      <strong style={{ color: '#ffffff' }}>{Object.values(returnChecked).filter(Boolean).length}</strong> item(s) selected for return
+                        );
+                      })}
                     </div>
-                    <button
-                      type="button"
-                      className="fo-spare-btn-primary"
-                      disabled={returnLoading || !Object.values(returnChecked).some(Boolean)}
-                      onClick={handleConfirmReturns}
-                    >
-                      {returnLoading ? 'Updating…' : 'Confirm Selected Returns'}
-                    </button>
+
+                    {/* Return Action Confirm Bar - Only displayed when items are pending return */}
+                    {ret.pendingItems > 0 && (
+                      <div style={{ background: '#0b1c30', padding: '10px 14px', borderRadius: 8, border: '1px solid #1f3654', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ fontSize: 12, color: '#8c909f', fontFamily: 'var(--fo-font-mono)' }}>
+                          <strong style={{ color: '#ffffff' }}>{Object.values(returnChecked).filter(Boolean).length}</strong> item(s) selected for return
+                        </div>
+                        <button
+                          type="button"
+                          className="fo-spare-btn-primary"
+                          disabled={returnLoading || !Object.values(returnChecked).some(Boolean)}
+                          onClick={handleConfirmReturns}
+                        >
+                          {returnLoading ? 'Updating…' : 'Confirm Selected Returns'}
+                        </button>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                );
+              })()}
 
               {/* Bottom Actions */}
               <div className="fo-spare-modal-foot">
@@ -2411,20 +2298,6 @@ export function SparePartsPage(): ReactElement {
                   </select>
                 </div>
 
-                <div>
-                  <label style={{ fontSize: 11, fontFamily: 'var(--fo-font-mono)', color: '#8c909f', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
-                    Requisition Type *
-                  </label>
-                  <select
-                    className="fo-spare-filter-select"
-                    style={{ width: '100%' }}
-                    value={issueType}
-                    onChange={(e) => setIssueType(e.target.value as SparePartType)}
-                  >
-                    <option value="NEW">New Part</option>
-                    <option value="EXCHANGE">Core Exchange</option>
-                  </select>
-                </div>
 
                 <div style={{ background: '#0b1c30', padding: 12, borderRadius: 8, border: '1px solid #1f3654', display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

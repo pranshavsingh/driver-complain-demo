@@ -10,6 +10,7 @@ import { createRequire } from 'node:module';
 import { redis } from '../lib/redis';
 import { logger } from '../lib/logger';
 import { prisma } from '../lib/prisma';
+import { tryAdvisoryXactLock, ADVISORY_LOCK_IDS } from '../lib/advisory-lock';
 import { QUEUES } from './queue';
 
 const require = createRequire(import.meta.url);
@@ -28,27 +29,38 @@ async function runCleanup(): Promise<void> {
   const deviceCutoff = new Date(Date.now() - DEVICE_STALE_MS);
 
   try {
-    // 1. Prune expired refresh tokens.
-    const { count: expiredCount } = await prisma.refreshToken.deleteMany({
-      where: {
-        OR: [
-          { expiresAt: { lt: cutoff } },
-          { revokedAt: { not: null, lt: cutoff } },
-        ],
+    await prisma.$transaction(
+      async (tx) => {
+        const acquired = await tryAdvisoryXactLock(tx, ADVISORY_LOCK_IDS.CLEANUP_MAINTENANCE);
+        if (!acquired) {
+          logger.info('Cleanup task skipped: lock held by another cluster instance');
+          return;
+        }
+
+        // 1. Prune expired refresh tokens.
+        const { count: expiredCount } = await tx.refreshToken.deleteMany({
+          where: {
+            OR: [
+              { expiresAt: { lt: cutoff } },
+              { revokedAt: { not: null, lt: cutoff } },
+            ],
+          },
+        });
+
+        // 2. Prune stale device tokens (unused for 90 days).
+        const { count: deviceCount } = await tx.deviceToken.deleteMany({
+          where: { lastUsedAt: { lt: deviceCutoff } },
+        });
+
+        if (expiredCount > 0 || deviceCount > 0) {
+          logger.info(
+            { expiredTokens: expiredCount, staleDevices: deviceCount },
+            'Cleanup: pruned expired tokens and stale devices',
+          );
+        }
       },
-    });
-
-    // 2. Prune stale device tokens (unused for 90 days).
-    const { count: deviceCount } = await prisma.deviceToken.deleteMany({
-      where: { lastUsedAt: { lt: deviceCutoff } },
-    });
-
-    if (expiredCount > 0 || deviceCount > 0) {
-      logger.info(
-        { expiredTokens: expiredCount, staleDevices: deviceCount },
-        'Cleanup: pruned expired tokens and stale devices',
-      );
-    }
+      { timeout: 10000 },
+    );
   } catch (err) {
     logger.error({ err }, 'Cleanup task failed');
   }

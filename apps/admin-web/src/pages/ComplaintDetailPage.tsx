@@ -12,6 +12,7 @@ import { useCategorySlaMap } from '../hooks/useCategorySlaMap';
 import { useRealtime } from '../realtime/RealtimeProvider';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { formatDateTime, computeSlaInfo } from '../lib/format';
+import { ComplaintDetailSkeleton } from '../components/LoadingSystem';
 
 function formatRelativeTime(iso: string | null | undefined): string {
   if (!iso) return '—';
@@ -90,7 +91,7 @@ export function ComplaintDetailPage(): ReactElement {
     api.complaints.get(id),
   );
   const reload = detailRes.reload;
-  const adminsRes = useApiResource<AdminSummary[]>('admins', () => api.users.admins());
+  const adminsRes = useApiResource<AdminSummary[]>('api:users:admins', () => api.users.admins());
   const { slaMap } = useCategorySlaMap();
   const { subscribe } = useRealtime();
 
@@ -360,16 +361,7 @@ export function ComplaintDetailPage(): ReactElement {
   }
 
   if (!complaint) {
-    return (
-      <div className="fleetops-view">
-        <div style={{ padding: 40, textAlign: 'center', color: '#8c909f' }}>
-          <span className="material-symbols-outlined fo-spin-slow" style={{ fontSize: 32, color: '#38bdf8' }}>
-            sync
-          </span>
-          <p style={{ marginTop: 12, fontFamily: 'Outfit', fontSize: 16 }}>Loading Investigation Room Telemetry…</p>
-        </div>
-      </div>
-    );
+    return <ComplaintDetailSkeleton />;
   }
 
   // Pure dynamic values from real database object

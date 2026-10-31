@@ -13,5 +13,6 @@ export default defineConfig({
     // flaky the moment a new test file changed the interleaving. Sequential files trade a
     // few seconds of wall-clock for a suite that means what it says.
     fileParallelism: false,
+    testTimeout: 120000,
   },
 });

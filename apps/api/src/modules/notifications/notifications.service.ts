@@ -5,17 +5,22 @@ import type {
   ListNotificationsResponse,
   NotificationPublic,
   MarkAllReadResponse,
+  ClearAllNotificationsResponse,
 } from '@driver-complaint/shared-types';
 import { prisma } from '../../lib/prisma';
 import { toNotificationPublic, toDeviceTokenPublic } from '../../lib/serializers';
 import { ApiError } from '../../errors/api-error';
 
-/** A user's own inbox, newest first, plus the unread total for the badge. */
+/** A user's own inbox, newest first, excluding cleared notifications, plus the unread total for the badge. */
 export async function listForUser(
   userId: string,
   query: NotificationListQuery,
 ): Promise<ListNotificationsResponse> {
-  const where = { userId, ...(query.unreadOnly ? { isRead: false } : {}) };
+  const where = {
+    userId,
+    clearedAt: null,
+    ...(query.unreadOnly ? { isRead: false } : {}),
+  };
   const skip = (query.page - 1) * query.pageSize;
 
   const [rows, total, unreadCount] = await prisma.$transaction([
@@ -26,8 +31,8 @@ export async function listForUser(
       take: query.pageSize,
     }),
     prisma.notification.count({ where }),
-    // Always the full unread count, independent of the unreadOnly filter and paging.
-    prisma.notification.count({ where: { userId, isRead: false } }),
+    // Always the full unread count, independent of the unreadOnly filter and paging, excluding cleared.
+    prisma.notification.count({ where: { userId, clearedAt: null, isRead: false } }),
   ]);
 
   return {
@@ -72,8 +77,10 @@ export async function unregisterDevice(userId: string, token: string): Promise<v
 }
 
 export async function markRead(userId: string, id: string): Promise<NotificationPublic> {
-  // Scope the lookup by userId so another user's notification is a 404, not a 403 leak.
-  const existing = await prisma.notification.findFirst({ where: { id, userId } });
+  // Scope the lookup by userId and uncleared so another user's notification is a 404, not a 403 leak.
+  const existing = await prisma.notification.findFirst({
+    where: { id, userId, clearedAt: null },
+  });
   if (!existing) throw ApiError.notFound('Notification not found');
   if (existing.isRead) return toNotificationPublic(existing);
 
@@ -86,8 +93,62 @@ export async function markRead(userId: string, id: string): Promise<Notification
 
 export async function markAllRead(userId: string): Promise<MarkAllReadResponse> {
   const { count } = await prisma.notification.updateMany({
-    where: { userId, isRead: false },
+    where: { userId, clearedAt: null, isRead: false },
     data: { isRead: true, readAt: new Date() },
   });
   return { updated: count };
+}
+
+/**
+ * Mark all currently visible notifications as cleared for the authenticated user.
+ * Scoped strictly to the caller's notifications — other users' notifications are unaffected.
+ */
+export async function clearAll(userId: string): Promise<ClearAllNotificationsResponse> {
+  const now = new Date();
+  const [updateResult, unreadCount] = await prisma.$transaction([
+    prisma.notification.updateMany({
+      where: { userId, clearedAt: null },
+      data: { clearedAt: now, isRead: true, readAt: now },
+    }),
+    prisma.notification.count({
+      where: { userId, clearedAt: null, isRead: false },
+    }),
+  ]);
+
+  return {
+    success: true,
+    cleared: updateResult.count,
+    unreadCount,
+  };
+}
+
+/**
+ * Clear a single notification for the authenticated user.
+ * Scoped strictly to the caller's notification.
+ */
+export async function clearOne(
+  userId: string,
+  id: string,
+): Promise<{ success: boolean; id: string; unreadCount: number }> {
+  const existing = await prisma.notification.findFirst({
+    where: { id, userId, clearedAt: null },
+  });
+  if (!existing) throw ApiError.notFound('Notification not found');
+
+  const now = new Date();
+  const [, unreadCount] = await prisma.$transaction([
+    prisma.notification.update({
+      where: { id: existing.id },
+      data: { clearedAt: now, isRead: true, readAt: existing.readAt ?? now },
+    }),
+    prisma.notification.count({
+      where: { userId, clearedAt: null, isRead: false },
+    }),
+  ]);
+
+  return {
+    success: true,
+    id: existing.id,
+    unreadCount,
+  };
 }

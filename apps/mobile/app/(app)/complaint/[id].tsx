@@ -11,7 +11,7 @@ import { Button } from '../../../src/components/Button';
 import { Card, Row } from '../../../src/components/Card';
 import { ErrorNotice } from '../../../src/components/ErrorNotice';
 import { Header } from '../../../src/components/Header';
-import { LoadingScreen } from '../../../src/components/ScreenState';
+import { ComplaintDetailSkeleton } from '../../../src/components/LoadingSystem';
 import { useApiResource } from '../../../src/hooks/useApiResource';
 import { describeVehicle, formatDateTime, formatDuration, formatEnum, fullName } from '../../../src/lib/format';
 import { colors, fontSize, radius, spacing } from '../../../src/theme';
@@ -24,7 +24,7 @@ export default function ComplaintDetailScreen(): ReactElement {
     return (
       <SafeAreaView style={styles.screen} edges={['top']}>
         <Header title="Report" back />
-        <LoadingScreen label="Loading the report…" />
+        <ComplaintDetailSkeleton />
       </SafeAreaView>
     );
   }
@@ -235,7 +235,7 @@ function TimelineEntry({ update }: { update: ComplaintUpdatePublic }): ReactElem
       <Text style={styles.entryChange}>{change}</Text>
       {update.note ? <Text style={styles.entryNote}>{update.note}</Text> : null}
       <Text style={styles.entryMeta}>
-        {fullName(update.author)} · {formatDateTime(update.createdAt)}
+        {update.author ? fullName(update.author) : 'System'} · {formatDateTime(update.createdAt)}
       </Text>
     </View>
   );

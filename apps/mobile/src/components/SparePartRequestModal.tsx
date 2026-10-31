@@ -362,7 +362,10 @@ export function SparePartRequestModal({
               disabled={submitting || isRecording}
             >
               {submitting ? (
-                <ActivityIndicator color="#ffffff" />
+                <>
+                  <ActivityIndicator color="#ffffff" size="small" style={{ marginRight: 8 }} />
+                  <Text style={styles.submitButtonText}>Submitting Request...</Text>
+                </>
               ) : (
                 <>
                   <Ionicons name="paper-plane" size={18} color="#ffffff" style={{ marginRight: 8 }} />

@@ -5,6 +5,7 @@ import { ErrorBanner } from '../components/ErrorBanner';
 import { useApiResource } from '../hooks/useApiResource';
 import { formatDateTime } from '../lib/format';
 import { useRealtime } from '../realtime/RealtimeProvider';
+import { SkeletonTable } from '../components/LoadingSystem';
 
 function waitingMinutes(record: LoadingRecord, now: number): number | null {
   if (record.waitingTimeMinutes !== null && record.waitingTimeMinutes !== undefined) {
@@ -68,7 +69,7 @@ export function LoadingTrackerPage(): ReactElement {
   const [selectedYear, setSelectedYear] = useState<number | ''>('');
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const loadingResource = useApiResource('admin:loading', () => api.loading.list());
+  const loadingResource = useApiResource('api:loading:list', () => api.loading.list());
   const { subscribe } = useRealtime();
 
   // Reload on realtime socket events
@@ -486,11 +487,8 @@ export function LoadingTrackerPage(): ReactElement {
 
           {/* High Density Table */}
           {loadingResource.loading && rawRecords.length === 0 ? (
-            <div style={{ padding: 48, textAlign: 'center', color: 'var(--fo-text-muted)' }}>
-              <span className="material-symbols-outlined fo-spin-slow" style={{ fontSize: 32, color: 'var(--fo-primary-accent)' }}>
-                sync
-              </span>
-              <p style={{ marginTop: 12, fontSize: 14 }}>Loading Telemetry Records…</p>
+            <div style={{ padding: 16 }}>
+              <SkeletonTable rows={7} columns={7} />
             </div>
           ) : filteredRecords.length === 0 ? (
             <div style={{ padding: 48, textAlign: 'center', color: 'var(--fo-text-muted)' }}>

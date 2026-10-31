@@ -21,6 +21,7 @@ import { DashboardGrid, type GridTile } from '../../../src/components/DashboardG
 import { LoadingAssistantCard } from '../../../src/components/LoadingAssistantCard';
 import { SparePartRequestModal } from '../../../src/components/SparePartRequestModal';
 import { SupportChatModal } from '../../../src/components/SupportChatModal';
+import { DriverVehicleCardSkeleton } from '../../../src/components/LoadingSystem';
 
 export default function DriverHomeDashboardScreen(): ReactElement {
   const insets = useSafeAreaInsets();
@@ -31,6 +32,11 @@ export default function DriverHomeDashboardScreen(): ReactElement {
 
   const vehicles = useApiResource('vehicles:mine', () => api.vehicles.mine());
   const reloadVehicles = vehicles.reload;
+
+  const notifsResource = useApiResource('driver:header:notifs', () =>
+    api.notifications.list({ pageSize: 1, unreadOnly: true }).catch(() => null),
+  );
+  const unreadCount = notifsResource.data?.meta.unreadCount ?? 0;
 
   // Auto reload on focus so when admin assigns a vehicle, it shows up immediately
   const firstFocus = useRef(true);
@@ -120,9 +126,26 @@ export default function DriverHomeDashboardScreen(): ReactElement {
           </View>
         </View>
 
-        <Pressable onPress={confirmSignOut} style={styles.logoutBtn} accessibilityLabel="Sign out">
-          <Ionicons name="log-out-outline" size={22} color="#FFFFFF" />
-        </Pressable>
+        <View style={styles.headerActions}>
+          <Pressable
+            onPress={() => router.push('/(app)/notifications' as any)}
+            style={styles.headerBtn}
+            accessibilityLabel="Notifications"
+            hitSlop={8}
+          >
+            <Ionicons name="notifications-outline" size={22} color="#FFFFFF" />
+            {unreadCount > 0 ? (
+              <View style={styles.badgeCount}>
+                <Text style={styles.badgeCountText}>
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </Text>
+              </View>
+            ) : null}
+          </Pressable>
+          <Pressable onPress={confirmSignOut} style={styles.headerBtn} accessibilityLabel="Sign out" hitSlop={8}>
+            <Ionicons name="log-out-outline" size={22} color="#FFFFFF" />
+          </Pressable>
+        </View>
       </View>
 
       <ScrollView
@@ -136,7 +159,9 @@ export default function DriverHomeDashboardScreen(): ReactElement {
         }
       >
         {/* Prominent Vehicle Assignment Status Card */}
-        {activeVehicle ? (
+        {vehicles.loading && vehicles.data === null ? (
+          <DriverVehicleCardSkeleton />
+        ) : activeVehicle ? (
           <View style={styles.assignedVehicleCard}>
             <View style={styles.assignedVehicleHeader}>
               <View style={styles.plateBadge}>
@@ -266,8 +291,31 @@ const styles = StyleSheet.create({
     color: '#E0F2FE',
     fontWeight: '600',
   },
-  logoutBtn: {
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  headerBtn: {
     padding: spacing.xs,
+    position: 'relative',
+  },
+  badgeCount: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    backgroundColor: '#EF4444',
+    borderRadius: radius.pill,
+    minWidth: 16,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  badgeCountText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '800',
   },
   scrollContent: {
     paddingBottom: spacing.xl,

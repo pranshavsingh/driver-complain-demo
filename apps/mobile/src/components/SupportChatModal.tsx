@@ -18,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import * as api from '../api/endpoints';
+import { Skeleton, SkeletonCircle } from './LoadingSystem';
 import { useAuth } from '../auth/AuthContext';
 import { useVoiceRecorder, type VoiceNote } from '../media/recorder';
 import { PHOTO_QUALITY, MAX_PHOTO_BYTES } from '../media/limits';
@@ -305,9 +306,18 @@ export function SupportChatModal({ visible, onClose }: SupportChatModalProps): R
           keyboardVerticalOffset={Platform.OS === 'ios' ? 10 : 0}
         >
           {loading ? (
-            <View style={styles.centerLoading}>
-              <ActivityIndicator size="large" color="#075E54" />
-              <Text style={styles.loadingText}>Connecting to SuperAdmin Support…</Text>
+            <View style={{ padding: 16, gap: 14 }}>
+              <View style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-end' }}>
+                <SkeletonCircle size={32} />
+                <Skeleton width={200} height={44} borderRadius={16} />
+              </View>
+              <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
+                <Skeleton width={180} height={38} borderRadius={16} />
+              </View>
+              <View style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-end' }}>
+                <SkeletonCircle size={32} />
+                <Skeleton width={240} height={56} borderRadius={16} />
+              </View>
             </View>
           ) : (
             <FlatList

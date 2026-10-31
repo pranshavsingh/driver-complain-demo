@@ -52,7 +52,20 @@ function toCells(row: SparePartRequestPublic): Record<string, any> {
   const approvedUser = row.approvedBy;
 
   // Build structured item columns from issuedItems JSON
-  const items = row.issuedItems ?? [];
+  let items = row.issuedItems ?? [];
+  if (items.length === 0 && row.returnedPartNo) {
+    const isRet = Boolean(row.returnedPartNo);
+    items = [
+      {
+        name: row.issuedPartName || row.partName || 'Spare Part',
+        quantity: row.issuedQty || row.quantity || 1,
+        serialNumber: row.returnedPartNo || row.issuedPartNo || '',
+        returned: isRet,
+        returnedAt: isRet && row.updatedAt ? row.updatedAt : null,
+      } as any
+    ];
+  }
+
   const issuedItemsList = items.length > 0
     ? items.map((it, i) => `${i + 1}. ${it.name} x${it.quantity}${it.serialNumber ? ` (S/N: ${it.serialNumber})` : ''}`).join('\n')
     : '';

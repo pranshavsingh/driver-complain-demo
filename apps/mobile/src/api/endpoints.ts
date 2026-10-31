@@ -27,6 +27,10 @@ import {
   type LoadingRecord,
   type FuelRecordPublic,
   type MaintenanceRecordPublic,
+  ListNotificationsResponseSchema,
+  ClearAllNotificationsResponseSchema,
+  type ListNotificationsResponse,
+  type ClearAllNotificationsResponse,
 } from '@driver-complaint/shared-types';
 import { request, requestNoContent, warmUpServer } from './client';
 import { clearTokens, getRefreshToken } from './tokens';
@@ -97,12 +101,29 @@ export const auth = {
 
 export const users = {
   me: (): Promise<UserPublic> => request(UserPublicSchema, '/users/me'),
+  list: (query?: { role?: string; approvalStatus?: string; isActive?: boolean; search?: string }): Promise<UserPublic[]> =>
+    request(z.array(UserPublicSchema), '/users', { query: query as Record<string, any> }),
+  admins: (): Promise<any[]> => request(z.array(z.any()), '/users/admins'),
+  pendingCount: (): Promise<{ pendingCount: number }> =>
+    request(z.object({ pendingCount: z.number() }), '/users/pending-count'),
+  create: (input: any): Promise<UserPublic> =>
+    request(UserPublicSchema, '/users', { method: 'POST', body: input }),
+  update: (id: string, input: any): Promise<UserPublic> =>
+    request(UserPublicSchema, `/users/${encodeURIComponent(id)}`, { method: 'PATCH', body: input }),
 };
 
 export const vehicles = {
   /** The vehicles currently assigned to the logged-in driver. */
   mine: (): Promise<VehiclePublic[]> =>
     request(z.array(VehiclePublicSchema), '/vehicles/mine'),
+  list: (query?: { search?: string; agreementStatus?: string; wheels?: string; driverId?: string }): Promise<VehiclePublic[]> =>
+    request(z.array(VehiclePublicSchema), '/vehicles', { query: query as Record<string, any> }),
+  get: (id: string): Promise<VehiclePublic> =>
+    request(VehiclePublicSchema, `/vehicles/${encodeURIComponent(id)}`),
+  create: (input: any): Promise<VehiclePublic> =>
+    request(VehiclePublicSchema, '/vehicles', { method: 'POST', body: input }),
+  update: (id: string, input: any): Promise<VehiclePublic> =>
+    request(VehiclePublicSchema, `/vehicles/${encodeURIComponent(id)}`, { method: 'PATCH', body: input }),
 };
 
 /**
@@ -159,14 +180,49 @@ export const complaints = {
       query: query as Record<string, string | number>,
     }),
 
+  list: (query?: Record<string, any>): Promise<ListComplaintsResponse> =>
+    request(ListComplaintsResponseSchema, '/complaints', {
+      query: query as Record<string, any>,
+    }),
+
   get: (id: string): Promise<ComplaintDetail> =>
     request(ComplaintDetailSchema, `/complaints/${encodeURIComponent(id)}`),
 
   getById: (id: string): Promise<ComplaintDetail> =>
     request(ComplaintDetailSchema, `/complaints/${encodeURIComponent(id)}`),
+
+  updateStatus: (id: string, input: { status: string; resolutionNotes?: string; note?: string }): Promise<ComplaintPublic> =>
+    request(ComplaintPublicSchema, `/complaints/${encodeURIComponent(id)}/status`, { method: 'PATCH', body: input }),
+
+  assign: (id: string, assignedToId: string): Promise<ComplaintPublic> =>
+    request(ComplaintPublicSchema, `/complaints/${encodeURIComponent(id)}/assign`, {
+      method: 'POST',
+      body: { assignedToId },
+    }),
 };
 
 export const notifications = {
+  list: (query?: { page?: number; pageSize?: number; unreadOnly?: boolean }): Promise<ListNotificationsResponse> =>
+    request(ListNotificationsResponseSchema, '/notifications', {
+      query: {
+        ...(query?.page ? { page: String(query.page) } : {}),
+        ...(query?.pageSize ? { pageSize: String(query.pageSize) } : {}),
+        ...(query?.unreadOnly !== undefined ? { unreadOnly: String(query.unreadOnly) } : {}),
+      },
+    }),
+
+  markRead: (id: string): Promise<any> =>
+    request(z.any(), `/notifications/${id}/read`, { method: 'PATCH' }),
+
+  markAllRead: (): Promise<{ updated: number }> =>
+    request(z.any(), '/notifications/read-all', { method: 'POST' }),
+
+  clearAll: (): Promise<ClearAllNotificationsResponse> =>
+    request(ClearAllNotificationsResponseSchema, '/notifications/clear-all', { method: 'PATCH' }),
+
+  clearOne: (id: string): Promise<{ success: boolean; id: string; unreadCount: number }> =>
+    request(z.any(), `/notifications/${id}/clear`, { method: 'PATCH' }),
+
   registerDevice: (input: RegisterDeviceToken): Promise<DeviceTokenPublic> =>
     request(DeviceTokenPublicSchema, '/notifications/devices', {
       method: 'POST',
@@ -276,6 +332,9 @@ export const loading = {
       body: form,
     });
   },
+
+  list: (query?: Record<string, any>): Promise<{ data: LoadingRecord[] }> =>
+    request(z.object({ data: z.array(LoadingRecordSchema) }), '/loading', { query }),
 };
 
 export const fuel = {
@@ -307,6 +366,12 @@ export const fuel = {
 
   mine: (page = 1, limit = 20): Promise<{ data: FuelRecordPublic[]; meta: any }> =>
     request(ListFuelRecordsResponseSchema, '/fuel', { query: { page, limit } }),
+
+  list: (query?: Record<string, any>): Promise<any> =>
+    request(z.any(), '/fuel', { query }),
+
+  stats: (query?: { startDate?: string; endDate?: string; vehicleId?: string }): Promise<any> =>
+    request(z.any(), '/fuel/stats', { query }),
 };
 
 export const maintenance = {
@@ -346,6 +411,12 @@ export const maintenance = {
 
   mine: (page = 1, limit = 20): Promise<{ data: MaintenanceRecordPublic[]; meta: any }> =>
     request(ListMaintenanceRecordsResponseSchema, '/maintenance', { query: { page, limit } }),
+
+  list: (query?: Record<string, any>): Promise<any> =>
+    request(z.any(), '/maintenance', { query }),
+
+  stats: (query?: { startDate?: string; endDate?: string; vehicleId?: string }): Promise<any> =>
+    request(z.any(), '/maintenance/stats', { query }),
 };
 
 export const spareParts = {
@@ -380,6 +451,35 @@ export const spareParts = {
 
   mine: (page = 1, limit = 20): Promise<{ data: any[]; meta: any }> =>
     request(z.any(), '/spare-parts', { query: { page, limit } }),
+
+  list: (query?: Record<string, any>): Promise<{ data: any[]; total: number; page: number; limit: number; totalPages: number }> =>
+    request(z.any(), '/spare-parts', { query }),
+
+  getOne: (id: string): Promise<any> =>
+    request(z.any(), `/spare-parts/${encodeURIComponent(id)}`),
+
+  approveAndIssue: (id: string, input?: any): Promise<any> =>
+    request(z.any(), `/spare-parts/${encodeURIComponent(id)}/issue`, {
+      method: 'PATCH',
+      body: input || {},
+    }),
+
+  reject: (id: string, input: any): Promise<any> =>
+    request(z.any(), `/spare-parts/${encodeURIComponent(id)}/reject`, {
+      method: 'PATCH',
+      body: input,
+    }),
+
+  stats: (query?: { startDate?: string; endDate?: string; vehicleId?: string }): Promise<any> =>
+    request(z.any(), '/spare-parts/stats', { query }),
+};
+
+export const reports = {
+  listFleet: (): Promise<any[]> =>
+    request(z.array(z.any()), '/reports/fleet'),
+
+  getVehicleReport: (query?: { vehicleId?: string; dateFrom?: string; dateTo?: string }): Promise<any> =>
+    request(z.any(), '/reports/vehicle', { query }),
 };
 
 export const support = {

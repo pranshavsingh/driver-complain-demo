@@ -81,7 +81,7 @@ export default function LoginScreen(): ReactElement {
             editable={!submitting}
           />
 
-          <Button label="Sign in" onPress={submit} loading={submitting} />
+          <Button label="Sign in" onPress={submit} loading={submitting} loadingText="Signing in..." />
 
           {/* Which server this build talks to, and which build it is. When a driver says "it
               doesn't work", these two lines answer the first two questions without a call. */}

@@ -28,15 +28,27 @@ const EnvSchema = z.object({
 
   CORS_ORIGINS: z.string().default('http://localhost:3000'),
   REDIS_URL: z.string().optional(),
+  REQUIRE_REDIS_READY: z.string().optional(),
+  METRICS_AUTH_TOKEN: z.string().optional(),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   LOGIN_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(5),
   LOGIN_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(900_000),
 });
 
-const parsed = EnvSchema.safeParse(process.env);
+export const EnvSchemaWithValidation = EnvSchema.superRefine((data, ctx) => {
+  if (data.NODE_ENV === 'production' && (!data.REDIS_URL || data.REDIS_URL.trim() === '')) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'REDIS_URL is mandatory in production environment for horizontal clustering and Socket.IO cross-pod event propagation',
+      path: ['REDIS_URL'],
+    });
+  }
+});
+
+const parsed = EnvSchemaWithValidation.safeParse(process.env);
 if (!parsed.success) {
   console.error(`❌ Invalid environment variables:\n${parsed.error.issues.map((i) => i.message).join('\n')}`);
-  throw new Error('Invalid environment variables');
+  throw new Error(`Invalid environment variables: ${parsed.error.issues.map((i) => i.message).join(', ')}`);
 }
 
 export const env = parsed.data;

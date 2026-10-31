@@ -8,6 +8,8 @@ import {
   unregisterDevice,
   markRead,
   markAllRead,
+  clearAll,
+  clearOne,
 } from '../notifications.service';
 
 // Self-contained integration test — requires a migrated database (docker compose up -d db).
@@ -180,5 +182,80 @@ describe('notifications.service — device tokens', () => {
 
   it('silently succeeds for an unknown token', async () => {
     await expect(unregisterDevice(user1Id, 'ntest-never-existed')).resolves.toBeUndefined();
+  });
+});
+
+describe('notifications.service — clearAll / clearOne', () => {
+  it('clears all notifications for the user, persists clearedAt, and zeroes unreadCount', async () => {
+    await seedNotification(user1Id, 'notif-1');
+    await seedNotification(user1Id, 'notif-2');
+    await seedNotification(user1Id, 'notif-3', true);
+    const theirsId = await seedNotification(user2Id, 'theirs');
+
+    const res = await clearAll(user1Id);
+    expect(res.success).toBe(true);
+    expect(res.cleared).toBe(3);
+    expect(res.unreadCount).toBe(0);
+
+    // List for user1 is now empty
+    const listUser1 = await listForUser(user1Id, q());
+    expect(listUser1.data).toHaveLength(0);
+    expect(listUser1.meta.total).toBe(0);
+    expect(listUser1.meta.unreadCount).toBe(0);
+
+    // User2's notifications are completely untouched
+    const listUser2 = await listForUser(user2Id, q());
+    expect(listUser2.data).toHaveLength(1);
+    expect(listUser2.data[0]?.id).toBe(theirsId);
+    expect(listUser2.meta.unreadCount).toBe(1);
+  });
+
+  it('allows new notifications created after clearAll to appear normally', async () => {
+    await seedNotification(user1Id, 'old-notif');
+    await clearAll(user1Id);
+
+    // Initial check: empty
+    const emptyList = await listForUser(user1Id, q());
+    expect(emptyList.data).toHaveLength(0);
+
+    // A new notification arrives
+    const newId = await seedNotification(user1Id, 'brand-new-notif');
+
+    // Only the new notification is returned
+    const listAfterNew = await listForUser(user1Id, q());
+    expect(listAfterNew.data).toHaveLength(1);
+    expect(listAfterNew.data[0]?.id).toBe(newId);
+    expect(listAfterNew.data[0]?.title).toBe('brand-new-notif');
+    expect(listAfterNew.meta.total).toBe(1);
+    expect(listAfterNew.meta.unreadCount).toBe(1);
+  });
+
+  it('is idempotent — calling clearAll when no notifications exist succeeds with 0', async () => {
+    const res = await clearAll(user1Id);
+    expect(res.success).toBe(true);
+    expect(res.cleared).toBe(0);
+    expect(res.unreadCount).toBe(0);
+  });
+
+  it('clearOne clears only the targeted notification and updates list and count', async () => {
+    const id1 = await seedNotification(user1Id, 'target-me');
+    const id2 = await seedNotification(user1Id, 'keep-me');
+
+    const res = await clearOne(user1Id, id1);
+    expect(res.success).toBe(true);
+    expect(res.id).toBe(id1);
+    expect(res.unreadCount).toBe(1);
+
+    const list = await listForUser(user1Id, q());
+    expect(list.data).toHaveLength(1);
+    expect(list.data[0]?.id).toBe(id2);
+  });
+
+  it('clearOne 404s when attempting to clear another user’s notification', async () => {
+    const theirsId = await seedNotification(user2Id, 'theirs-private');
+    await expect(clearOne(user1Id, theirsId)).rejects.toMatchObject({ statusCode: 404 });
+
+    const untouched = await prisma.notification.findUnique({ where: { id: theirsId } });
+    expect(untouched?.clearedAt).toBeNull();
   });
 });

@@ -88,6 +88,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }): ReactEl
 
     const socket: Socket = io(apiUrl, {
       path: '/socket.io',
+      transports: ['websocket'],
       // The API authenticates the CONNECT packet (not the HTTP handshake) and reads
       // handshake.auth.token. Supplying `auth` as a callback means each reconnect attempt
       // fetches the CURRENT access token, rather than reusing the one captured at mount —

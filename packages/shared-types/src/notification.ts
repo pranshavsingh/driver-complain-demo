@@ -12,6 +12,7 @@ export const NotificationPublicSchema = z.object({
   complaintId: z.string().nullable().optional(),
   isRead: z.boolean(),
   readAt: z.string().nullable().optional(),
+  clearedAt: z.string().nullable().optional(),
   createdAt: z.string(),
 });
 export type NotificationPublic = z.infer<typeof NotificationPublicSchema>;
@@ -37,3 +38,10 @@ export type ListNotificationsResponse = z.infer<typeof ListNotificationsResponse
 
 export const MarkAllReadResponseSchema = z.object({ updated: z.number().int() });
 export type MarkAllReadResponse = z.infer<typeof MarkAllReadResponseSchema>;
+
+export const ClearAllNotificationsResponseSchema = z.object({
+  success: z.boolean(),
+  cleared: z.number().int(),
+  unreadCount: z.number().int(),
+});
+export type ClearAllNotificationsResponse = z.infer<typeof ClearAllNotificationsResponseSchema>;

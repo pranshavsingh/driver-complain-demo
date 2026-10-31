@@ -8,15 +8,34 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react';
-import type { UserPublic } from '@driver-complaint/shared-types';
+import type { Role, UserPublic } from '@driver-complaint/shared-types';
 import * as api from '../api/endpoints';
 import { onSessionEnded, restoreTokens, setTokens } from '../api/tokens';
 import { refreshSession } from '../api/client';
 import { unregisterThisDevice } from '../push/registration';
 
-/** Whether this user may use the driver app at all. */
+const ADMIN_ROLES: Role[] = ['EXECUTIVE', 'ADMIN', 'SUPER_ADMIN'];
+
+/** Whether this user may use the driver app screens. */
 export function isDriver(user: UserPublic | null): boolean {
   return user !== null && user.role === 'DRIVER';
+}
+
+/** Whether this user is an admin or executive who can use the mobile admin portal. */
+export function isAdmin(user: UserPublic | null): boolean {
+  return user !== null && ADMIN_ROLES.includes(user.role);
+}
+
+export function isSuperAdmin(user: UserPublic | null): boolean {
+  return user !== null && user.role === 'SUPER_ADMIN';
+}
+
+export function isExecutive(user: UserPublic | null): boolean {
+  return user !== null && user.role === 'EXECUTIVE';
+}
+
+export function isAuthorizedUser(user: UserPublic | null): boolean {
+  return user !== null && (user.role === 'DRIVER' || ADMIN_ROLES.includes(user.role));
 }
 
 type Status = 'loading' | 'authenticated' | 'anonymous';
@@ -35,9 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactElemen
   const [user, setUser] = useState<UserPublic | null>(null);
 
   // Resume the session on launch. The access token died with the process, but the refresh token
-  // in the keychain mints a new one — this is what stops a driver re-entering their PIN every
-  // morning. `me()` then confirms the account is still valid: a driver who left the company
-  // overnight must not get a working app from a stored token.
+  // in the keychain mints a new one. `me()` then confirms the account is still valid.
   useEffect(() => {
     let active = true;
 
@@ -56,11 +73,8 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactElemen
         const me = await api.users.me();
         if (!active) return;
         setUser(me);
-        setStatus(isDriver(me) ? 'authenticated' : 'anonymous');
+        setStatus(isAuthorizedUser(me) ? 'authenticated' : 'anonymous');
       } catch {
-        // Offline on launch ends up here too. Showing the login screen is the honest outcome:
-        // there is no cached complaint data to show, so pretending to be signed in would only
-        // produce a home screen full of errors. Offline support is not in this MVP.
         if (active) setStatus('anonymous');
       }
     };
@@ -71,8 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactElemen
     };
   }, []);
 
-  // Any request that ends the session (refresh token rejected, account deactivated) unwinds the
-  // UI to the login screen from wherever it happened.
+  // Any request that ends the session unwinds the UI to the login screen.
   useEffect(
     () =>
       onSessionEnded(() => {
@@ -86,11 +99,9 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactElemen
     const result = await api.auth.login({ employeeId, pin });
     await setTokens(result);
 
-    if (!isDriver(result.user)) {
-      // The credentials are valid, but this app is not theirs. Drop the tokens immediately
-      // rather than leaving a live admin session sitting on a phone in a vehicle.
+    if (!isAuthorizedUser(result.user)) {
       await api.auth.logout();
-      throw new Error('This app is for drivers. Administrators use the web dashboard.');
+      throw new Error('You do not have permission to access this application.');
     }
 
     setUser(result.user);

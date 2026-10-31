@@ -24,6 +24,10 @@ let fallbackTimer: ReturnType<typeof setInterval> | null = null;
 async function runSlaCheck(): Promise<void> {
   try {
     const res = await checkAndEscalateSlaBreaches();
+    if (res.skipped) {
+      logger.debug('SLA Escalation Worker: skipped execution (lock held by another pod)');
+      return;
+    }
     if (res.escalatedCount > 0) {
       logger.info(res, `SLA Escalation Worker: escalated ${res.escalatedCount} breached complaint(s)`);
     }

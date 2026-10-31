@@ -1,0 +1,25 @@
+# ──────────────────────────────────────────────────────────────
+# Prometheus ServiceMonitor for SSE Connect+ API Metrics
+# Securely references Kubernetes Secret `api-secrets` for Bearer token.
+# ──────────────────────────────────────────────────────────────
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: api-metrics-monitor
+  labels:
+    app: driver-complaint-api
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: driver-complaint-api
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+      scheme: http
+      authorization:
+        credentials:
+          name: api-secrets
+          key: metrics-auth-token
+

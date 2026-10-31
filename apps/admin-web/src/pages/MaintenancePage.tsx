@@ -6,7 +6,8 @@ import { useAuth } from '../auth/AuthContext';
 import { useApiResource } from '../hooks/useApiResource';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { Pagination } from '../components/Pagination';
-import { formatDateTime, splitDateTime } from '../lib/format';
+import { splitDateTime, formatDateTime } from '../lib/format';
+import { SkeletonTable } from '../components/LoadingSystem';
 import {
   Wrench,
   Fuel,
@@ -72,11 +73,11 @@ export function MaintenancePage(): ReactElement {
   const [logPhotoFile, setLogPhotoFile] = useState<File | null>(null);
 
   // Common Vehicles Resource
-  const vehiclesRes = useApiResource('admin:vehicles', () => api.vehicles.list());
+  const vehiclesRes = useApiResource('api:vehicles:list', () => api.vehicles.list());
   const vehicles = vehiclesRes.data ?? [];
 
   // Common Drivers Resource
-  const driversRes = useApiResource('admin:drivers', () => api.drivers.list());
+  const driversRes = useApiResource('api:drivers:list', () => api.drivers.list());
   const drivers = driversRes.data ?? [];
 
   // =========================================================================
@@ -759,9 +760,8 @@ export function MaintenancePage(): ReactElement {
               </div>
 
               {maintLogsRes.loading && rawMaintLogs.length === 0 ? (
-                <div style={{ padding: '60px 20px', textAlign: 'center', color: '#8c909f' }}>
-                  <RotateCw size={28} className="fo-spin" style={{ margin: '0 auto 12px' }} color="#adc6ff" />
-                  <p style={{ margin: 0, fontSize: 14 }}>Loading verified replacement records…</p>
+                <div style={{ padding: 16 }}>
+                  <SkeletonTable rows={7} columns={8} />
                 </div>
               ) : filteredMaintLogs.length === 0 ? (
                 <div style={{ padding: '60px 20px', textAlign: 'center', color: '#8c909f' }}>
@@ -1215,9 +1215,8 @@ export function MaintenancePage(): ReactElement {
               </div>
 
               {fuelLogsRes.loading && rawFuelLogs.length === 0 ? (
-                <div style={{ padding: '60px 20px', textAlign: 'center', color: '#8c909f' }}>
-                  <RotateCw size={28} className="fo-spin" style={{ margin: '0 auto 12px' }} color="#adc6ff" />
-                  <p style={{ margin: 0, fontSize: 14 }}>Loading fuel &amp; DEF telemetry logs…</p>
+                <div style={{ padding: 16 }}>
+                  <SkeletonTable rows={7} columns={8} />
                 </div>
               ) : filteredFuelLogs.length === 0 ? (
                 <div style={{ padding: '60px 20px', textAlign: 'center', color: '#8c909f' }}>

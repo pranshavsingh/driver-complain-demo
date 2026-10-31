@@ -21,7 +21,7 @@ import { transcribeAudio, transcribeAudioFromUrl, translateText } from '../../li
 import { getActiveAdminUserIds } from '../../lib/admin-cache';
 import { logger } from '../../lib/logger';
 import { ApiError } from '../../errors/api-error';
-import { emitToRoles } from '../../realtime/socket';
+import { emitToRoles, emitEventToUsers } from '../../realtime/socket';
 import { resolveUserScope } from '../../lib/user-scope';
 
 async function findLeastLoadedAdmin(
@@ -228,7 +228,7 @@ const detailInclude = {
 } satisfies Prisma.ComplaintInclude;
 
 export const listInclude = {
-  driver: { include: { user: true, vehicles: { orderBy: { updatedAt: 'desc' }, take: 1 } } },
+  driver: { include: { user: true } },
   vehicle: true,
   assignedTo: true,
   _count: { select: { updates: true } },
@@ -438,16 +438,29 @@ export async function create(
         );
 
         if (notifyUserIds.length > 0) {
-          await tx.notification.createMany({
-            data: notifyUserIds.map((id) => ({
-              userId: id,
-              type: 'COMMENT_ADDED' as const,
-              title: `Update on ${existingOpenComplaint.complaintNo}`,
-              body: `Driver added update: ${finalDescription.slice(0, 100)}`,
-              complaintId: existingOpenComplaint.id,
-              data: { complaintId: existingOpenComplaint.id, type: 'COMMENT_ADDED' },
-            })),
-          });
+          for (const id of notifyUserIds) {
+            const n = await tx.notification.create({
+              data: {
+                userId: id,
+                type: 'COMMENT_ADDED',
+                title: `Update on ${existingOpenComplaint.complaintNo}`,
+                body: `Driver added update: ${finalDescription.slice(0, 100)}`,
+                complaintId: existingOpenComplaint.id,
+                data: { complaintId: existingOpenComplaint.id, type: 'COMMENT_ADDED' },
+              }
+            });
+            emitEventToUsers([n.userId], 'notification:new', {
+              id: n.id,
+              type: n.type,
+              title: n.title,
+              body: n.body,
+              complaintId: n.complaintId,
+              complaintNo: existingOpenComplaint.complaintNo,
+              isRead: n.isRead,
+              createdAt: n.createdAt.toISOString(),
+              data: n.data,
+            });
+          }
         }
 
         return tx.complaint.findUniqueOrThrow({
@@ -610,16 +623,29 @@ export async function create(
     );
 
     if (notifyUserIds.length > 0) {
-      await tx.notification.createMany({
-        data: notifyUserIds.map((id) => ({
-          userId: id,
-          type: 'COMPLAINT_CREATED' as const,
-          title: `New complaint ${complaintNo}`,
-          body: input.title,
-          complaintId: complaint.id,
-          data: { complaintId: complaint.id, type: 'COMPLAINT_CREATED' },
-        })),
-      });
+      for (const id of notifyUserIds) {
+        const n = await tx.notification.create({
+          data: {
+            userId: id,
+            type: 'COMPLAINT_CREATED',
+            title: `New complaint ${complaintNo}`,
+            body: input.title,
+            complaintId: complaint.id,
+            data: { complaintId: complaint.id, type: 'COMPLAINT_CREATED' },
+          }
+        });
+        emitEventToUsers([n.userId], 'notification:new', {
+          id: n.id,
+          type: n.type,
+          title: n.title,
+          body: n.body,
+          complaintId: n.complaintId,
+          complaintNo: complaintNo,
+          isRead: n.isRead,
+          createdAt: n.createdAt.toISOString(),
+          data: n.data,
+        });
+      }
     }
 
     return tx.complaint.findUniqueOrThrow({
@@ -678,17 +704,8 @@ export async function create(
     at: new Date().toISOString(),
   });
 
-  emitToRoles(['SUPER_ADMIN', 'ADMIN', 'EXECUTIVE'], 'notification:new', {
-    id: `notif-${created.id}`,
-    type: 'COMPLAINT_CREATED',
-    title: `New complaint ${created.complaintNo}`,
-    body: created.title,
-    complaintId: created.id,
-    complaintNo: created.complaintNo,
-    isRead: false,
-    createdAt: new Date().toISOString(),
-    data: { complaintId: created.id, type: 'COMPLAINT_CREATED' },
-  });
+  // Real notifications are now emitted individually during the transaction,
+  // preventing the "Zombie ID" issue in the React frontend.
 
   return toComplaintPublic(created);
 }
@@ -1366,7 +1383,7 @@ export async function rejectAssignment(
     });
 
     if (previousAdminId) {
-      await tx.notification.create({
+      const n = await tx.notification.create({
         data: {
           userId: previousAdminId,
           type: 'ASSIGNMENT_REJECTED',
@@ -1375,6 +1392,17 @@ export async function rejectAssignment(
           complaintId: id,
           data: { complaintId: id, type: 'ASSIGNMENT_REJECTED' },
         },
+      });
+
+      emitEventToUsers([n.userId], 'notification:new', {
+        id: n.id,
+        type: n.type,
+        title: n.title,
+        body: n.body,
+        complaintId: n.complaintId,
+        createdAt: n.createdAt.toISOString(),
+        isRead: n.isRead,
+        data: n.data,
       });
     }
 

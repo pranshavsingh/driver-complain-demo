@@ -15,6 +15,7 @@ import { useRealtime } from '../realtime/RealtimeProvider';
 import { computeSlaInfo } from '../lib/format';
 import { useCategorySlaMap } from '../hooks/useCategorySlaMap';
 import { getCategoryLabel } from './UsersPage';
+import { Skeleton } from '../components/LoadingSystem';
 
 const PAGE_SIZE = 15;
 const FILTER_KEYS = Object.keys(EMPTY_FILTER) as (keyof ComplaintFilterInput)[];
@@ -260,9 +261,96 @@ export function ComplaintsListPage(): ReactElement {
   // Manual Log Modal State
   const [isManualLogModalOpen, setIsManualLogModalOpen] = useState(false);
 
+  // Date-wise Export Modal State
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [exportFromDate, setExportFromDate] = useState('');
+  const [exportToDate, setExportToDate] = useState('');
+
+  const handleCloseExportModal = () => {
+    setIsExportModalOpen(false);
+    setExportFromDate('');
+    setExportToDate('');
+  };
+
   // Admin list for reassigning
-  const adminsResource = useApiResource('complaints:admins', () => api.users.admins());
+  const adminsResource = useApiResource('api:users:admins', () => api.users.admins());
   const adminsList: AdminSummary[] = adminsResource.data ?? [];
+
+  const handleExecuteExport = () => {
+    if (!exportFromDate || !exportToDate) return;
+
+    const fromTime = new Date(`${exportFromDate}T00:00:00`).getTime();
+    const toTime = new Date(`${exportToDate}T23:59:59.999`).getTime();
+
+    const sourceList = rawAllComplaints.length > 0 ? rawAllComplaints : complaints;
+    const filteredByDate = sourceList.filter((c) => {
+      if (isDeptAdmin && !userCategories.includes(c.category as any)) {
+        return false;
+      }
+      const cTime = new Date(c.createdAt).getTime();
+      return !isNaN(cTime) && cTime >= fromTime && cTime <= toTime;
+    });
+
+    const headers = [
+      'ComplaintNo',
+      'Vehicle',
+      'Driver',
+      'Category',
+      'Priority',
+      'Status',
+      'Title',
+      'AssignedTo',
+      'CreatedAt',
+      'ResolvedAt',
+      'ResolutionDuration',
+    ];
+
+    const csvRows = [
+      headers.join(','),
+      ...filteredByDate.map((c) => {
+        const assignedAdmin = c.assignedToId ? adminsList.find((a) => a.id === c.assignedToId) : null;
+        const assignedName =
+          c.assignedToName ||
+          (assignedAdmin ? `${assignedAdmin.firstName} ${assignedAdmin.lastName}`.trim() : 'Unassigned');
+
+        let durationStr = 'Unresolved';
+        if (c.resolvedAt && c.createdAt) {
+          const start = new Date(c.createdAt).getTime();
+          const end = new Date(c.resolvedAt).getTime();
+          if (!isNaN(start) && !isNaN(end) && end >= start) {
+            const diffMins = Math.floor((end - start) / 60000);
+            const hrs = Math.floor(diffMins / 60);
+            const mins = diffMins % 60;
+            durationStr = hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`;
+          }
+        }
+
+        return [
+          `"${c.complaintNo || ''}"`,
+          `"${c.vehiclePlateNumber || ''}"`,
+          `"${c.driverName || ''}"`,
+          `"${c.category || ''}"`,
+          `"${c.priority || ''}"`,
+          `"${c.status || ''}"`,
+          `"${(c.title || '').replace(/"/g, '""')}"`,
+          `"${assignedName}"`,
+          `"${c.createdAt || ''}"`,
+          `"${c.resolvedAt || ''}"`,
+          `"${durationStr}"`,
+        ].join(',');
+      }),
+    ];
+
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `complaints-export-${exportFromDate}-to-${exportToDate}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    handleCloseExportModal();
+  };
 
   // Update URL on debounced search
   useEffect(() => {
@@ -271,6 +359,25 @@ export function ComplaintsListPage(): ReactElement {
       setSearchParams(writeParams(next, 1));
     }
   }, [debouncedSearch, filter, setSearchParams]);
+
+  // Sync URL query params like filter=overSla or segment=UNASSIGNED
+  useEffect(() => {
+    const filterParam = searchParams.get('filter');
+    const segParam = searchParams.get('segment');
+    const searchParam = searchParams.get('search');
+
+    if (filterParam === 'overSla' || segParam === 'UNASSIGNED') {
+      setActiveSegment('UNASSIGNED');
+    } else if (segParam === 'IN_PROGRESS') {
+      setActiveSegment('IN_PROGRESS');
+    } else if (segParam === 'RESOLVED') {
+      setActiveSegment('RESOLVED');
+    }
+
+    if (searchParam !== null && searchParam !== searchDraft) {
+      setSearchDraft(searchParam);
+    }
+  }, [searchParams]);
 
   // Primary resource
   const cacheKey = `complaints:list:${JSON.stringify(filter)}:${page}`;
@@ -486,41 +593,13 @@ export function ComplaintsListPage(): ReactElement {
             <button
               type="button"
               className="fo-btn-sync"
-              onClick={handleResetFilters}
-              title="Reset all search filters"
-            >
-              <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
-                tune
-              </span>
-              <span>Filter Presets</span>
-            </button>
-
-            <button
-              type="button"
-              className="fo-btn-sync"
-              onClick={() => {
-                const csvData = displayedComplaints.map((c) => ({
-                  ComplaintNo: c.complaintNo,
-                  Vehicle: c.vehiclePlateNumber,
-                  Driver: c.driverName,
-                  Category: c.category,
-                  Priority: c.priority,
-                  Status: c.status,
-                  CreatedAt: c.createdAt,
-                }));
-                const blob = new Blob([JSON.stringify(csvData, null, 2)], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `complaints-export-${Date.now()}.json`;
-                a.click();
-              }}
-              title="Export current view as file"
+              onClick={() => setIsExportModalOpen(true)}
+              title="Export date-wise complaints as CSV"
             >
               <span className="material-symbols-outlined" style={{ fontSize: 16, color: 'var(--fo-tertiary)' }}>
                 file_download
               </span>
-              <span>Export Excel</span>
+              <span>Export CSV</span>
             </button>
 
             <button
@@ -812,7 +891,22 @@ export function ComplaintsListPage(): ReactElement {
                 </tr>
               </thead>
               <tbody>
-                {displayedComplaints.length === 0 ? (
+                {complaintsResource.loading && complaints.length === 0 ? (
+                  Array.from({ length: 8 }).map((_, r) => (
+                    <tr key={r} style={{ borderBottom: '1px solid var(--fo-border, #334155)' }}>
+                      <td style={{ padding: '16px 12px' }}><Skeleton width={20} height={16} /></td>
+                      <td style={{ padding: '16px 12px' }}><Skeleton width={90} height={16} /></td>
+                      <td style={{ padding: '16px 12px' }}><Skeleton width={110} height={16} /></td>
+                      <td style={{ padding: '16px 12px' }}><Skeleton width={120} height={16} /></td>
+                      <td style={{ padding: '16px 12px' }}><Skeleton width={100} height={16} /></td>
+                      <td style={{ padding: '16px 12px' }}><Skeleton width={110} height={16} /></td>
+                      <td style={{ padding: '16px 12px' }}><Skeleton width={80} height={16} /></td>
+                      <td style={{ padding: '16px 12px' }}><Skeleton width={90} height={16} /></td>
+                      <td style={{ padding: '16px 12px', textAlign: 'center' }}><Skeleton width={70} height={22} borderRadius={11} style={{ margin: '0 auto' }} /></td>
+                      <td style={{ padding: '16px 12px', textAlign: 'right' }}><Skeleton width={40} height={28} borderRadius={6} style={{ marginLeft: 'auto' }} /></td>
+                    </tr>
+                  ))
+                ) : displayedComplaints.length === 0 ? (
                   <tr>
                     <td colSpan={10} style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--fo-text-muted)' }}>
                       No complaints found matching current active filters.
@@ -938,34 +1032,51 @@ export function ComplaintsListPage(): ReactElement {
                         </td>
 
                         <td>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                             <Link
                               to={`/complaints/${c.id}`}
                               style={{ fontSize: 12, fontWeight: 700, color: '#ffffff', textDecoration: 'none' }}
                             >
                               {c.title}
                             </Link>
-                            <span
-                              className="fo-badge-mono"
-                              style={{
-                                width: 'fit-content',
-                                background:
-                                  c.priority === 'URGENT'
-                                    ? 'rgba(239, 68, 68, 0.25)'
-                                    : c.priority === 'HIGH'
-                                      ? 'rgba(249, 115, 22, 0.25)'
-                                      : 'rgba(59, 130, 246, 0.25)',
-                                color:
-                                  c.priority === 'URGENT'
-                                    ? '#ffb4ab'
-                                    : c.priority === 'HIGH'
-                                      ? '#fed65b'
-                                      : '#93ccff',
-                                fontSize: 9.5,
-                              }}
-                            >
-                              {c.priority === 'URGENT' ? 'URGENT DISPATCH' : c.priority}
-                            </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                              {c.category && (
+                                <span
+                                  className="fo-badge-mono"
+                                  style={{
+                                    background: 'rgba(255, 255, 255, 0.08)',
+                                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                                    color: 'var(--fo-text-subtle)',
+                                    fontSize: 9.5,
+                                    padding: '2px 6px',
+                                    borderRadius: 4,
+                                  }}
+                                >
+                                  {getCategoryLabel(c.category)}
+                                </span>
+                              )}
+                              <span
+                                className="fo-badge-mono"
+                                style={{
+                                  width: 'fit-content',
+                                  background:
+                                    c.priority === 'URGENT'
+                                      ? 'rgba(239, 68, 68, 0.25)'
+                                      : c.priority === 'HIGH'
+                                        ? 'rgba(249, 115, 22, 0.25)'
+                                        : 'rgba(59, 130, 246, 0.25)',
+                                  color:
+                                    c.priority === 'URGENT'
+                                      ? '#ffb4ab'
+                                      : c.priority === 'HIGH'
+                                        ? '#fed65b'
+                                        : '#93ccff',
+                                  fontSize: 9.5,
+                                }}
+                              >
+                                {c.priority === 'URGENT' ? 'URGENT DISPATCH' : c.priority}
+                              </span>
+                            </div>
                           </div>
                         </td>
 
@@ -975,7 +1086,7 @@ export function ComplaintsListPage(): ReactElement {
                               <span className="material-symbols-outlined" style={{ fontSize: 14, color: 'var(--fo-tertiary)' }}>
                                 near_me
                               </span>
-                              {c.tripPhase ? c.tripPhase.replace(/_/g, ' ') : '—'}
+                              {c.tripPhase === 'YARD_IDLE' ? 'Parking' : c.tripPhase ? c.tripPhase.replace(/_/g, ' ') : '—'}
                             </span>
                             <span style={{ fontSize: 10, color: 'var(--fo-text-muted)', maxWidth: 160 }} className="truncate">
                               {c.tripLocationName || c.locationName || '—'}
@@ -1505,6 +1616,207 @@ export function ComplaintsListPage(): ReactElement {
                 >
                   Submit Incident
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal for Date-Wise Complaint Export */}
+        {isExportModalOpen && (
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0,0,0,0.75)',
+              backdropFilter: 'blur(4px)',
+              zIndex: 99999,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 20,
+            }}
+          >
+            <div
+              style={{
+                width: 450,
+                maxWidth: '100%',
+                background: '#0b1c30',
+                border: '1px solid var(--fo-border)',
+                borderRadius: 12,
+                boxShadow: '0 20px 40px rgba(0,0,0,0.8)',
+                overflow: 'hidden',
+              }}
+            >
+              <div
+                style={{
+                  padding: '16px 20px',
+                  background: '#0f1f35',
+                  borderBottom: '1px solid var(--fo-border)',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span className="material-symbols-outlined" style={{ color: 'var(--fo-tertiary)', fontSize: 20 }}>
+                    file_download
+                  </span>
+                  <h3
+                    style={{
+                      margin: 0,
+                      fontSize: 15,
+                      fontWeight: 700,
+                      color: '#ffffff',
+                      fontFamily: 'var(--fo-font-head)',
+                    }}
+                  >
+                    Date-Wise Complaints Export
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCloseExportModal}
+                  style={{ background: 'none', border: 'none', color: 'var(--fo-text-muted)', cursor: 'pointer' }}
+                >
+                  <span className="material-symbols-outlined">close</span>
+                </button>
+              </div>
+
+              <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <p style={{ margin: 0, fontSize: 12, color: 'var(--fo-text-subtle)', lineHeight: 1.5 }}>
+                  Select the From Date and To Date range for complaint reports. The export button is disabled until both dates are selected.
+                </p>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div>
+                    <label
+                      style={{
+                        display: 'block',
+                        fontSize: 11,
+                        fontWeight: 600,
+                        color: 'var(--fo-text-muted)',
+                        marginBottom: 6,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.04em',
+                      }}
+                    >
+                      From Date <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <input
+                      type="date"
+                      className="fo-filter-input"
+                      value={exportFromDate}
+                      onChange={(e) => setExportFromDate(e.target.value)}
+                      style={{ width: '100%', boxSizing: 'border-box' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      style={{
+                        display: 'block',
+                        fontSize: 11,
+                        fontWeight: 600,
+                        color: 'var(--fo-text-muted)',
+                        marginBottom: 6,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.04em',
+                      }}
+                    >
+                      To Date <span style={{ color: '#ef4444' }}>*</span>
+                    </label>
+                    <input
+                      type="date"
+                      className="fo-filter-input"
+                      value={exportToDate}
+                      onChange={(e) => setExportToDate(e.target.value)}
+                      style={{ width: '100%', boxSizing: 'border-box' }}
+                    />
+                  </div>
+                </div>
+
+                {!exportFromDate || !exportToDate ? (
+                  <div
+                    style={{
+                      padding: '8px 12px',
+                      background: 'rgba(239, 68, 68, 0.1)',
+                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                      borderRadius: 6,
+                      fontSize: 11.5,
+                      color: '#ffb4ab',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                    }}
+                  >
+                    <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
+                      info
+                    </span>
+                    <span>Please select both From Date and To Date to enable export.</span>
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      padding: '8px 12px',
+                      background: 'rgba(16, 185, 129, 0.1)',
+                      border: '1px solid rgba(16, 185, 129, 0.3)',
+                      borderRadius: 6,
+                      fontSize: 11.5,
+                      color: '#6ee7b7',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                    }}
+                  >
+                    <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
+                      check_circle
+                    </span>
+                    <span>
+                      Ready to export date range: {exportFromDate} to {exportToDate}
+                    </span>
+                  </div>
+                )}
+
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'flex-end',
+                    gap: 10,
+                    marginTop: 8,
+                    paddingTop: 16,
+                    borderTop: '1px solid var(--fo-border)',
+                  }}
+                >
+                  <button
+                    type="button"
+                    className="fo-btn-sync"
+                    onClick={handleCloseExportModal}
+                  >
+                    Cancel
+                  </button>
+
+                  <button
+                    type="button"
+                    className="fo-btn-primary"
+                    disabled={!exportFromDate || !exportToDate}
+                    onClick={handleExecuteExport}
+                    style={{
+                      opacity: !exportFromDate || !exportToDate ? 0.45 : 1,
+                      cursor: !exportFromDate || !exportToDate ? 'not-allowed' : 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                    }}
+                  >
+                    <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
+                      file_download
+                    </span>
+                    <span>Download CSV Export</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>

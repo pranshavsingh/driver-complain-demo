@@ -1,5 +1,6 @@
 import type { Server as HttpServer } from 'node:http';
 import { Server, type Socket } from 'socket.io';
+import { createAdapter } from '@socket.io/redis-adapter';
 import type { Role, ComplaintEventPayload, RealtimeEvent } from '@driver-complaint/shared-types';
 import { verifyAccessToken } from '../lib/jwt';
 import { logger } from '../lib/logger';
@@ -88,20 +89,29 @@ export function initRealtime(server: HttpServer): RealtimeServer {
     });
   });
 
-  // Attach Redis adapter for horizontal scaling — no-op when Redis is unavailable.
+  // Attach Redis adapter for horizontal scaling across pods — enforce Redis in production
   if (redis) {
-    const sub = duplicateRedis();
-    if (sub) {
-      // @ts-expect-error Optional dependency resolved dynamically at runtime
-      import('@socket.io/redis-adapter')
-        .then(({ createAdapter }: { createAdapter: (pubClient: unknown, subClient: unknown) => unknown }) => {
-          instance.adapter(createAdapter(redis, sub) as any);
-          logger.info('Socket.IO Redis adapter attached (horizontal scaling enabled)');
-        })
-        .catch(() => {
-          logger.info('Socket.IO Redis adapter not available — using in-memory (npm i @socket.io/redis-adapter)');
-        });
+    const pubClient = duplicateRedis();
+    const subClient = duplicateRedis();
+    if (pubClient && subClient) {
+      try {
+        instance.adapter(createAdapter(pubClient, subClient));
+        logger.info('Socket.IO Redis adapter attached (horizontal cross-instance scaling enabled)');
+      } catch (err) {
+        if (process.env.NODE_ENV === 'production') {
+          logger.error({ err }, 'FATAL: Failed to attach Socket.IO Redis adapter in production');
+          throw new Error('FATAL: Socket.IO Redis adapter failed to initialize in production environment');
+        }
+        logger.error({ err }, 'Failed to attach Socket.IO Redis adapter — using in-memory');
+      }
+    } else if (process.env.NODE_ENV === 'production') {
+      throw new Error('FATAL: Could not duplicate Redis connections for Socket.IO adapter in production');
     }
+  } else {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('FATAL: Socket.IO Redis adapter cannot be initialized without Redis in production');
+    }
+    logger.info('Socket.IO initialized with in-memory adapter (development/test mode)');
   }
 
   io = instance;
@@ -153,4 +163,9 @@ export async function closeRealtime(): Promise<void> {
   await new Promise<void>((resolve) => {
     instance.close(() => resolve());
   });
+}
+
+/** Access the active Socket.IO instance (or null if not initialized). */
+export function getIo(): RealtimeServer | null {
+  return io;
 }

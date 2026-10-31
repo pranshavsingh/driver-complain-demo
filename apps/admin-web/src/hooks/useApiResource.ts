@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useAuth } from '../auth/AuthContext';
 
 interface ResourceState<T> {
   data: T | null;
@@ -11,34 +12,85 @@ export interface Resource<T> extends ResourceState<T> {
   reload: () => void;
 }
 
+const cache = new Map<string, { data: any, timestamp: number }>();
+const activeRequests = new Map<string, Promise<any>>();
+const CACHE_TTL = 30_000; // 30 seconds
+
+/** Wipes the ENTIRE cache (all users). Used during logout/session expiry. */
+export function clearApiCache() {
+  cache.clear();
+  activeRequests.clear();
+}
+
+/** 
+ * Invalidates specific cache keys for the CURRENT user.
+ * Pass the exact rawKey (e.g., 'api:complaints:list').
+ * If prefix is true, invalidates all keys starting with rawKey.
+ */
+export function invalidateApiCache(userId: string | undefined, rawKey: string, prefix = false) {
+  const scopedKey = `${userId || 'anonymous'}:${rawKey}`;
+  for (const key of cache.keys()) {
+    if (prefix ? key.startsWith(scopedKey) : key === scopedKey) {
+      cache.delete(key);
+    }
+  }
+}
+
 /**
  * Load data from the API and track loading/error/data.
+ * Deduplicates concurrent requests and caches data.
  *
- * `key` is a stable string describing the request (usually the query string). When it
- * changes, the loader re-runs; a response that arrives after the key changed is discarded, so
- * a slow page-1 response cannot overwrite the page-2 rows the admin is already looking at.
- *
- * The loader itself is held in a ref rather than a dependency, so callers can pass an inline
- * arrow function without the hook re-firing on every render.
+ * `rawKey` is a stable string describing the request (usually the query string). 
+ * It is automatically prefixed with the user's ID to prevent cross-session data leaks.
  */
-export function useApiResource<T>(key: string, load: () => Promise<T>): Resource<T> {
+export function useApiResource<T>(rawKey: string, load: () => Promise<T>): Resource<T> {
+  const { user } = useAuth();
+  const key = `${user?.id || 'anonymous'}:${rawKey}`;
+
   const loadRef = useRef(load);
   loadRef.current = load;
 
   const [nonce, setNonce] = useState(0);
-  const [state, setState] = useState<ResourceState<T>>({
-    data: null,
-    error: null,
-    loading: true,
+  const [state, setState] = useState<ResourceState<T>>(() => {
+    const cached = cache.get(key);
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+      return { data: cached.data as T, error: null, loading: false };
+    }
+    return { data: null, error: null, loading: true };
   });
 
   useEffect(() => {
     let active = true;
+
+    const cached = cache.get(key);
+    if (nonce === 0 && cached && Date.now() - cached.timestamp < CACHE_TTL) {
+      // If we already set this synchronously in initial state for this exact key, 
+      // we might not need to set it again, but just to be safe if key changed:
+      setState({ data: cached.data as T, error: null, loading: false });
+      return;
+    }
+
     setState((prev) => ({ ...prev, loading: true, error: null }));
 
-    loadRef.current().then(
+    let promise = activeRequests.get(key);
+    if (!promise) {
+      promise = loadRef.current().then(
+        (data) => {
+          cache.set(key, { data, timestamp: Date.now() });
+          activeRequests.delete(key);
+          return data;
+        },
+        (error) => {
+          activeRequests.delete(key);
+          throw error;
+        }
+      );
+      activeRequests.set(key, promise);
+    }
+
+    promise.then(
       (data) => {
-        if (active) setState({ data, error: null, loading: false });
+        if (active) setState({ data: data as T, error: null, loading: false });
       },
       (error: unknown) => {
         if (active) setState({ data: null, error, loading: false });
@@ -51,8 +103,9 @@ export function useApiResource<T>(key: string, load: () => Promise<T>): Resource
   }, [key, nonce]);
 
   const reload = useCallback(() => {
+    cache.delete(key);
     setNonce((n) => n + 1);
-  }, []);
+  }, [key]);
 
   return { ...state, reload };
 }

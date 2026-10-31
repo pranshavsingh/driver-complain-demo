@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, type ReactElement } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import type { UserPublic, Role, ComplaintCategory, ApprovalStatus } from '@driver-complaint/shared-types';
 import {
   Users,
@@ -20,6 +21,7 @@ import { useAuth } from '../auth/AuthContext';
 import { useRealtime } from '../realtime/RealtimeProvider';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { useApiResource } from '../hooks/useApiResource';
+import { SkeletonTable } from '../components/LoadingSystem';
 
 export const APP_CATEGORY_OPTIONS: { value: ComplaintCategory; label: string; icon: string }[] = [
   { value: 'LOADING', label: 'Loading', icon: '🚛' },
@@ -54,9 +56,32 @@ export function getCategoryBadge(cat?: string | null): ReactElement | null {
 export function UsersPage(): ReactElement {
   const { user: currentUser } = useAuth();
   const { subscribeCustom } = useRealtime();
+  const [searchParams, setSearchParams] = useSearchParams();
   const isSuperAdmin = currentUser?.role === 'SUPER_ADMIN';
 
-  const [activeTab, setActiveTab] = useState<'directory' | 'pending'>('directory');
+  const [activeTab, setActiveTab] = useState<'directory' | 'pending'>(() => {
+    return searchParams.get('tab') === 'pending' ? 'pending' : 'directory';
+  });
+
+  useEffect(() => {
+    const tabParam = searchParams.get('tab');
+    if (tabParam === 'pending' && activeTab !== 'pending') {
+      setActiveTab('pending');
+    } else if (tabParam === 'directory' && activeTab !== 'directory') {
+      setActiveTab('directory');
+    }
+  }, [searchParams, activeTab]);
+
+  const handleTabChange = (tab: 'directory' | 'pending') => {
+    setActiveTab(tab);
+    setPage(1);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('tab', tab);
+      return next;
+    });
+  };
+
   const [roleFilter, setRoleFilter] = useState<string>(isSuperAdmin ? 'ALL' : 'DRIVER');
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
@@ -111,10 +136,10 @@ export function UsersPage(): ReactElement {
   const [emailStatus, setEmailStatus] = useState<{ checking: boolean; available?: boolean; message?: string }>({ checking: false });
   const [dlStatus, setDlStatus] = useState<{ checking: boolean; available?: boolean; message?: string }>({ checking: false });
 
-  const usersResource = useApiResource('users:list', () => api.users.list());
+  const usersResource = useApiResource('api:users:list', () => api.users.list());
   const usersList: UserPublic[] = usersResource.data ?? [];
 
-  const sitesResource = useApiResource('sites:list', () => api.sites.list());
+  const sitesResource = useApiResource('api:sites:list', () => api.sites.list());
   const sitesList = sitesResource.data ?? [];
 
   // Realtime live update on any user creation / approval / rejection / deletion
@@ -711,23 +736,17 @@ export function UsersPage(): ReactElement {
           <button
             type="button"
             className={`fo-users-tab-btn ${activeTab === 'directory' ? 'active' : ''}`}
-            onClick={() => {
-              setActiveTab('directory');
-              setPage(1);
-            }}
+            onClick={() => handleTabChange('directory')}
           >
             <span>{isSuperAdmin ? 'All Users Directory' : 'Drivers Directory'}</span>
             <span className="fo-users-tab-counter">{usersList.length}</span>
           </button>
 
-          {isSuperAdmin && (
+          {(isSuperAdmin || currentUser?.role === 'ADMIN') && (
             <button
               type="button"
               className={`fo-users-tab-btn ${activeTab === 'pending' ? 'active' : ''}`}
-              onClick={() => {
-                setActiveTab('pending');
-                setPage(1);
-              }}
+              onClick={() => handleTabChange('pending')}
             >
               <span>Pending Approvals</span>
               {pendingUsers.length > 0 ? (
@@ -855,9 +874,8 @@ export function UsersPage(): ReactElement {
 
           {/* Table Area */}
           {usersResource.loading && usersList.length === 0 ? (
-            <div style={{ padding: 48, textAlign: 'center', color: '#8c909f', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-              <RotateCw size={24} className="fo-spin" color="#3b82f6" />
-              <span>Loading user directory…</span>
+            <div style={{ padding: 16 }}>
+              <SkeletonTable rows={7} columns={6} />
             </div>
           ) : filteredUsers.length === 0 ? (
             <div style={{ padding: 48, textAlign: 'center', color: '#8c909f', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>

@@ -24,9 +24,20 @@ jobs:
           --health-timeout 5s
           --health-retries 10
 
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
     env:
       NODE_ENV: test
       DATABASE_URL: postgresql://app:app@localhost:5432/driver_complaint?schema=public
+      REDIS_URL: redis://localhost:6379
       JWT_ACCESS_SECRET: ci-access-secret-0123456789abcdef
       REFRESH_TOKEN_SECRET: ci-refresh-secret-0123456789abcdef
 
@@ -80,3 +91,137 @@ jobs:
           --from-schema-datasource ./prisma/schema.prisma
           --to-schema-datamodel ./prisma/schema.prisma
           --exit-code
+
+  docker-build-and-scan:
+    name: Docker Build & Vulnerability Scan
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build API Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: false
+          tags: driver-complaint/api:${{ github.sha }},driver-complaint/api:latest
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verify non-root execution
+        run: |
+          USER_ID=$(docker run --rm driver-complaint/api:latest id -u)
+          echo "Inspected container process user ID: $USER_ID"
+          if [ "$USER_ID" -eq 1000 ]; then
+            echo "Security Verification Succeeded: Container executes as expected non-root user 'node' (UID 1000)"
+          elif [ "$USER_ID" -eq 0 ]; then
+            echo "Security Verification Failed: Container executes as root (UID 0) - privilege vulnerability detected!"
+            exit 1
+          else
+            echo "Security Verification Failed: Container executes as unexpected user UID $USER_ID (expected UID 1000)"
+            exit 1
+          fi
+
+      - name: Run Trivy container vulnerability scanner (CRITICAL blocker)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: driver-complaint/api:latest
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL'
+
+      - name: Enable corepack & setup Node for DB migration
+        run: corepack enable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies for migration runner
+        run: pnpm install --frozen-lockfile
+
+      - name: Real Linux API Container SIGTERM Shutdown Test
+        run: |
+          set -e
+          echo "=== 1. Starting test network and dependencies ==="
+          docker network create test-net
+          docker run -d --name test-postgres --network test-net -p 5432:5432 \
+            -e POSTGRES_USER=app -e POSTGRES_PASSWORD=app -e POSTGRES_DB=driver_complaint \
+            postgres:17
+          docker run -d --name test-redis --network test-net -p 6379:6379 \
+            redis:7-alpine
+
+          echo "=== 2. Waiting for Postgres and Redis readiness ==="
+          for i in $(seq 1 30); do
+            if docker exec test-postgres pg_isready -U app -d driver_complaint >/dev/null 2>&1 && \
+               docker exec test-redis redis-cli ping | grep -q PONG; then
+              echo "Postgres and Redis services ready"
+              break
+            fi
+            sleep 1
+          done
+
+          echo "=== 3. Applying Prisma migrations to test database ==="
+          DATABASE_URL="postgresql://app:app@localhost:5432/driver_complaint?schema=public" pnpm --filter @driver-complaint/api migrate:deploy
+
+          echo "=== 4. Starting real production API container ==="
+          docker run -d --name test-api --network test-net -p 4000:4000 \
+            -e NODE_ENV=production \
+            -e PORT=4000 \
+            -e DATABASE_URL="postgresql://app:app@test-postgres:5432/driver_complaint?schema=public" \
+            -e REDIS_URL="redis://test-redis:6379" \
+            -e REQUIRE_REDIS_READY="true" \
+            -e JWT_ACCESS_SECRET="ci-access-secret-0123456789abcdef" \
+            -e REFRESH_TOKEN_SECRET="ci-refresh-secret-0123456789abcdef" \
+            driver-complaint/api:latest
+
+          echo "=== 5. Waiting for API /health/readiness (Postgres + Redis) ==="
+          for i in $(seq 1 45); do
+            READY_JSON=$(curl -s http://localhost:4000/health/readiness || true)
+            echo "Probe response: $READY_JSON"
+            if echo "$READY_JSON" | grep -q '"status":"READY"'; then
+              echo "Production API container is READY with Redis!"
+              break
+            fi
+            sleep 1
+          done
+
+          echo "=== 6. Verify real HTTP and Socket.IO endpoints ==="
+          curl -f http://localhost:4000/health/liveness
+          curl -f http://localhost:4000/health/readiness
+          curl -f "http://localhost:4000/socket.io/?EIO=4&transport=polling"
+
+          echo "=== 7. Dispatching SIGTERM signal to container ==="
+          docker kill --signal=SIGTERM test-api
+
+          echo "=== 8. Awaiting graceful container termination ==="
+          EXIT_CODE=$(docker wait test-api)
+          echo "Container terminated with exit code: $EXIT_CODE"
+
+          echo "=== 9. Capturing full container lifecycle logs ==="
+          docker logs test-api
+
+          echo "=== 10. Verifying graceful shutdown assertions ==="
+          docker logs test-api | grep -q "Received SIGTERM, shutting down gracefully"
+          docker logs test-api | grep -q "Redis connection closed"
+
+          if [ "$EXIT_CODE" -ne 0 ]; then
+            echo "FAILED: Expected container to exit with code 0 on SIGTERM, got $EXIT_CODE"
+            exit 1
+          fi
+
+          echo "SUCCESS: Container handled Linux SIGTERM cleanly with zero errors"
+          docker rm -f test-api test-postgres test-redis || true
+          docker network rm test-net || true

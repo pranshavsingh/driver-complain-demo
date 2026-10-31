@@ -15,6 +15,8 @@ export const REALTIME_EVENTS = {
   complaintAssigned: 'complaint:assigned',
   loadingReached: 'loading:reached',
   loadingCompleted: 'loading:completed',
+  sparePartCreated: 'spare-part:created',
+  sparePartUpdated: 'spare-part:updated',
   userCreated: 'user:created',
   userApprovalRequested: 'user:approval-requested',
   userApproved: 'user:approved',

@@ -1,0 +1,78 @@
+# SSE Connect+ API Environment Variables Reference
+
+This document provides a comprehensive specification of all environment variables used by `@driver-complaint/api`.
+
+---
+
+## 1. Core Runtime Configuration
+
+| Variable | Type | Default | Required in Production | Description |
+| :--- | :---: | :---: | :---: | :--- |
+| `NODE_ENV` | Enum (`development` \| `test` \| `production`) | `development` | **Yes** | Defines Node runtime mode. When `production`, stack traces are hidden and security headers are enforced. |
+| `PORT` | Integer | `4000` | No | Port on which the HTTP server listens. |
+| `LOG_LEVEL` | Enum (`fatal` \| `error` \| `warn` \| `info` \| `debug` \| `trace` \| `silent`) | `info` | No | Log output verbosity level for Pino logger. |
+| `UV_THREADPOOL_SIZE` | Integer | `16` | No | Libuv worker thread pool size for bcrypt, DNS, and filesystem I/O. |
+
+---
+
+## 2. Database & Persistence
+
+| Variable | Type | Default | Required in Production | Description |
+| :--- | :---: | :---: | :---: | :--- |
+| `DATABASE_URL` | String (URI) | - | **Yes** | PostgreSQL connection URL. In production, connect through PgBouncer or Neon pooler with SSL (`sslmode=require&connection_limit=20`). |
+
+---
+
+## 3. Authentication & JWT Tokens
+
+| Variable | Type | Default | Required in Production | Description |
+| :--- | :---: | :---: | :---: | :--- |
+| `JWT_ACCESS_SECRET` | String (Min 16 chars) | - | **Yes** | Secret used to sign short-lived access JWT tokens. |
+| `REFRESH_TOKEN_SECRET` | String (Min 16 chars) | - | **Yes** | Secret used to sign long-lived refresh tokens. |
+| `ACCESS_TOKEN_TTL` | String | `15m` | No | Lifetime of access tokens (e.g. `15m`, `1h`). |
+| `REFRESH_TOKEN_TTL` | String | `30d` | No | Lifetime of refresh tokens (e.g. `30d`, `60d`). |
+| `JWT_ISSUER` | String | `driver-complaint` | No | Expected JWT issuer claim (`iss`). |
+| `JWT_AUDIENCE` | String | `driver-complaint-api` | No | Expected JWT audience claim (`aud`). |
+
+---
+
+## 4. Telemetry & Metrics Security
+
+| Variable | Type | Default | Required in Production | Description |
+| :--- | :---: | :---: | :---: | :--- |
+| `METRICS_AUTH_TOKEN` | String | - | Recommended | Secret token required to query `/metrics`. When set, requests must pass header `Authorization: Bearer <METRICS_AUTH_TOKEN>` or query `?token=<METRICS_AUTH_TOKEN>`. In production without a token, only localhost requests are allowed. |
+| `SENTRY_DSN` | String (URI) | - | No | Sentry Project DSN for automated crash reporting and performance monitoring. |
+| `SENTRY_ENVIRONMENT` | String | `development` | No | Deployment environment label reported to Sentry (`staging`, `production`). |
+| `SENTRY_TRACES_SAMPLE_RATE` | Float (0.0 to 1.0) | `0.1` | No | Percentage of transactions captured for distributed tracing. |
+
+---
+
+## 5. Media & Storage (Cloudinary)
+
+| Variable | Type | Default | Required in Production | Description |
+| :--- | :---: | :---: | :---: | :--- |
+| `CLOUDINARY_CLOUD_NAME` | String | - | **Yes** | Cloudinary cloud namespace. |
+| `CLOUDINARY_API_KEY` | String | - | **Yes** | API key for Cloudinary authentication. |
+| `CLOUDINARY_API_SECRET` | String | - | **Yes** | API secret for generating upload signatures and managing assets. |
+| `CLOUDINARY_FOLDER` | String | `driver-complaint/local` | No | Root folder prefix inside Cloudinary for uploaded media. |
+
+---
+
+## 6. Realtime, Cache & Rate Limiting
+
+| Variable | Type | Default | Required in Production | Description |
+| :--- | :---: | :---: | :---: | :--- |
+| `REDIS_URL` | String (URI) | - | Recommended | Redis connection URI (`redis://...` or `rediss://...` with TLS). Enables Socket.IO cross-pod broadcasting and distributed rate limiting. |
+| `CORS_ORIGINS` | Comma-separated Strings | `http://localhost:3000` | **Yes** | Allowed origins for browser CORS headers (e.g. `https://admin.sseconnect.com`). |
+| `LOGIN_RATE_LIMIT_MAX` | Integer | `5` | No | Maximum allowed failed login attempts before throttling. |
+| `LOGIN_RATE_LIMIT_WINDOW_MS` | Integer | `900000` (15 min) | No | Time window in milliseconds for login rate limit accumulation. |
+
+---
+
+## 7. Push Notifications (Firebase)
+
+| Variable | Type | Default | Required in Production | Description |
+| :--- | :---: | :---: | :---: | :--- |
+| `FIREBASE_PROJECT_ID` | String | - | No | Firebase Project ID for FCM push notification delivery to mobile apps. |
+| `FIREBASE_SERVICE_ACCOUNT` | JSON String | - | No | Service account credentials JSON string for Firebase Admin SDK. |
+

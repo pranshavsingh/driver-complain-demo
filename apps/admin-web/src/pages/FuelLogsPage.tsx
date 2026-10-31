@@ -20,7 +20,7 @@ export function FuelLogsPage(): ReactElement {
   const [pageSize, setPageSize] = useState(15);
   const [selectedPhoto, setSelectedPhoto] = useState<{ url: string; title: string } | null>(null);
 
-  const vehiclesRes = useApiResource('admin:vehicles', () => api.vehicles.list());
+  const vehiclesRes = useApiResource('api:vehicles:list', () => api.vehicles.list());
   const statsRes = useApiResource(
     `admin:fuel:stats:${startDate}:${endDate}:${vehicleId}`,
     () => api.fuel.stats({ startDate: startDate || undefined, endDate: endDate || undefined, vehicleId: vehicleId || undefined }),

@@ -71,7 +71,7 @@ function getPageSubtitle(pathname: string): string {
     return 'Executive Reporting • Fleet Audits & Operations Intelligence';
   if (pathname.startsWith('/settings'))
     return 'System Administration • SLA Engine & Hub Configuration';
-  return 'FleetOps Enterprise Console';
+  return 'SSE Connect+ Enterprise Console';
 }
 
 interface ToastItem {
@@ -98,6 +98,7 @@ export function Layout(): ReactElement {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [clearingNotifs, setClearingNotifs] = useState(false);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
   const notifRef = useRef<HTMLDivElement>(null);
@@ -118,7 +119,7 @@ export function Layout(): ReactElement {
     }
   }, [complaintsUnreadResource.data?.unreadCount]);
 
-  const loadingResource = useApiResource('layout:loading', () =>
+  const loadingResource = useApiResource('api:loading:list', () =>
     canAccessPath(user, '/loading') ? api.loading.list() : Promise.resolve({ data: [] }),
   );
   const loadingDelayedCount = useMemo(() => {
@@ -139,7 +140,7 @@ export function Layout(): ReactElement {
     }).length;
   }, [loadingResource.data]);
 
-  const sparePartsResource = useApiResource('layout:sparePartsStats', () =>
+  const sparePartsResource = useApiResource('api:spareParts:stats', () =>
     canAccessPath(user, '/spare-parts')
       ? api.spareParts.stats().catch(() => ({ totalPending: 0, totalIssuePending: 0 } as any))
       : Promise.resolve({ totalPending: 0, totalIssuePending: 0 } as any),
@@ -263,16 +264,21 @@ export function Layout(): ReactElement {
     const unsubNotif = subscribeCustom('notification:new', (payload: any) => {
       reloadComplaintsCount();
       if (payload) {
-        setNotifications((prev) => [
-          {
-            id: payload.id || `notif-${Date.now()}`,
-            msg: payload.body || payload.title || 'New notification',
-            time: 'Just now',
-            type: payload.type?.toLowerCase().includes('complaint') ? 'complaint' : 'trip',
-            unread: true,
-          },
-          ...prev.filter((p) => p.id !== payload.id),
-        ]);
+        setNotifications((prev) => {
+          if (payload.id && prev.some((p) => p.id === payload.id)) {
+            return prev;
+          }
+          return [
+            {
+              id: payload.id || `notif-${Date.now()}`,
+              msg: payload.body || payload.title || 'New notification',
+              time: 'Just now',
+              type: payload.type?.toLowerCase().includes('complaint') ? 'complaint' : 'trip',
+              unread: true,
+            },
+            ...prev,
+          ];
+        });
         if (payload.type !== 'COMPLAINT_CREATED') {
           showToast(payload.title || 'Notification', payload.body || '', 'info');
         }
@@ -345,14 +351,28 @@ export function Layout(): ReactElement {
     });
   };
 
-  const handleClearNotifications = (): void => {
+  const handleClearNotifications = async (): Promise<void> => {
+    if (clearingNotifs || notifications.length === 0) return;
+    setClearingNotifs(true);
+    const backup = [...notifications];
     setNotifications([]);
-    void api.notifications.markAllRead().catch(() => {});
+    try {
+      await api.notifications.clearAll();
+    } catch (_err) {
+      setNotifications(backup);
+      showToast('Error', 'Failed to clear notifications. Please try again.', 'warning');
+    } finally {
+      setClearingNotifs(false);
+    }
   };
 
-  const handleDismissNotification = (id: string): void => {
+  const handleDismissNotification = async (id: string): Promise<void> => {
     setNotifications((prev) => prev.filter((item) => item.id !== id));
-    void api.notifications.markRead(id).catch(() => {});
+    try {
+      await api.notifications.clearOne(id);
+    } catch {
+      // Best-effort dismissal: keep UI responsive
+    }
   };
 
   const unreadCount = notifications.filter((n) => n.unread).length;
@@ -452,7 +472,7 @@ export function Layout(): ReactElement {
                   hub
                 </span>
               </div>
-              <span className="fo-brand-title">FleetOps</span>
+              <span className="fo-brand-title">SSE Connect+</span>
             </div>
             <span className="fo-brand-version">v2.4</span>
           </div>
@@ -707,7 +727,7 @@ export function Layout(): ReactElement {
                 className="fo-btn-logout"
                 onClick={handleLogout}
                 disabled={signingOut}
-                title="Sign out of FleetOps"
+                title="Sign out of SSE Connect+"
                 aria-label="Sign out"
               >
                 <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
@@ -738,7 +758,7 @@ export function Layout(): ReactElement {
             <div className="fo-header-titles">
               <h1 className="fo-page-main-heading">{getPageTitle(location.pathname)}</h1>
               <div className="fo-page-sub-row">
-                <span className="fo-page-greeting">{greeting}, {user?.firstName || 'Fleetops'}!</span>
+                <span className="fo-page-greeting">{greeting}, {user?.firstName || 'Operator'}!</span>
                 <span className="fo-role-badge">
                   {user?.role === 'SUPER_ADMIN' ? 'SUPER ADMIN' : user?.role || 'OPERATOR'}
                 </span>
@@ -807,9 +827,10 @@ export function Layout(): ReactElement {
                         type="button"
                         className="btn-clear-notifs"
                         onClick={handleClearNotifications}
+                        disabled={clearingNotifs}
                         title="Clear all notifications"
                       >
-                        <Trash2 size={13} /> Clear All
+                        <Trash2 size={13} /> {clearingNotifs ? 'Clearing...' : 'Clear All'}
                       </button>
                     ) : null}
                   </div>
