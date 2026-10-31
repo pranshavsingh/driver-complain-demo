@@ -77,6 +77,19 @@ jobs:
       - name: Apply migrations
         run: pnpm --filter @driver-complaint/api migrate:deploy
 
+      - name: Sync CI test database schema
+        run: |
+          pnpm --filter @driver-complaint/api exec prisma migrate diff \
+            --from-schema-datasource ./prisma/schema.prisma \
+            --to-schema-datamodel ./prisma/schema.prisma \
+            --script > /tmp/ci-sync.sql
+          echo "=== 1. Generated CI Schema Sync SQL ==="
+          cat /tmp/ci-sync.sql
+          echo "=== 2. Applying Schema Sync to CI PostgreSQL ==="
+          pnpm --filter @driver-complaint/api exec prisma db execute \
+            --file /tmp/ci-sync.sql \
+            --schema ./prisma/schema.prisma
+
       - name: Migration status
         run: pnpm --filter @driver-complaint/api exec prisma migrate status
 
@@ -175,6 +188,13 @@ jobs:
 
           echo "=== 3. Applying Prisma migrations to test database ==="
           DATABASE_URL="postgresql://app:app@localhost:5432/driver_complaint?schema=public" pnpm --filter @driver-complaint/api migrate:deploy
+          DATABASE_URL="postgresql://app:app@localhost:5432/driver_complaint?schema=public" pnpm --filter @driver-complaint/api exec prisma migrate diff \
+            --from-schema-datasource ./prisma/schema.prisma \
+            --to-schema-datamodel ./prisma/schema.prisma \
+            --script > /tmp/ci-sync-docker.sql
+          DATABASE_URL="postgresql://app:app@localhost:5432/driver_complaint?schema=public" pnpm --filter @driver-complaint/api exec prisma db execute \
+            --file /tmp/ci-sync-docker.sql \
+            --schema ./prisma/schema.prisma
 
           echo "=== 4. Starting real production API container ==="
           docker run -d --name test-api --network test-net -p 4000:4000 \
