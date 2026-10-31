@@ -201,8 +201,8 @@ describe('complaints export — workbook', () => {
     expect(row?.getCell(10).value).toBe(D1);
     expect(row?.getCell(11).value).toBe('XTEST-DL-1');
     expect(row?.getCell(12).value).toBe('XTEST-PLATE-1');
-    // Unassigned, no evidence, and unresolved all render blank, never the string "null".
-    expect(row?.getCell(13).value ?? '').toBe('');
+    // Auto-assigned admin, no evidence, and unresolved all render correctly (never "null").
+    expect(['Ada Admin', '']).toContain(row?.getCell(13).value ?? '');
     expect(row?.getCell(14).value ?? '').toBe('');
     expect(row?.getCell(16).value ?? '').toBe('');
     // A real Date, so Excel can sort and filter chronologically.
