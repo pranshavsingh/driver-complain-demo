@@ -26,7 +26,9 @@ describe('Milestone 2: Real Redis Cross-Instance Integration Test', () => {
     for (const rClient of activeRedisClients) {
       try {
         rClient.disconnect();
-      } catch {}
+      } catch {
+        // ignore cleanup error
+      }
     }
     activeRedisClients.length = 0;
   });

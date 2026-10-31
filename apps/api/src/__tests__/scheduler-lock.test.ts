@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { prisma } from '../lib/prisma';
-import { tryAdvisoryXactLock, ADVISORY_LOCK_IDS } from '../lib/advisory-lock';
+import { tryAdvisoryXactLock } from '../lib/advisory-lock';
 
 describe('Milestone 2: Distributed Scheduler Advisory Locking', () => {
   it('acquires transaction-scoped lock and automatically releases upon transaction commit', async () => {

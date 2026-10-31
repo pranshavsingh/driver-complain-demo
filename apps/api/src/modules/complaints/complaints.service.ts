@@ -989,7 +989,9 @@ export async function getOne(actor: Actor, id: string): Promise<ComplaintDetail>
       (v: any) => v.siteInchargeId === actor.id,
     );
     let isCategoryMatch = false;
-    if (scope.categories && scope.categories.length > 0) {
+    if (scope.categories === null) {
+      isCategoryMatch = true;
+    } else if (scope.categories.length > 0) {
       if (scope.categories.includes(complaint.category)) {
         isCategoryMatch = true;
       }
@@ -1003,7 +1005,9 @@ export async function getOne(actor: Actor, id: string): Promise<ComplaintDetail>
     const isVehicleIncharge = complaint.vehicle?.siteInchargeId === actor.id;
     const isSubordinate = complaint.assignedTo?.createdByAdminId === actor.id;
     let isCategoryMatch = false;
-    if (scope.categories && scope.categories.length > 0) {
+    if (scope.categories === null) {
+      isCategoryMatch = true;
+    } else if (scope.categories.length > 0) {
       if (scope.categories.includes(complaint.category)) {
         isCategoryMatch = true;
       }
@@ -1038,7 +1042,9 @@ export async function updateStatus(
       (v) => v.siteInchargeId === actorObj.id,
     );
     let isCategoryMatch = false;
-    if (scope.categories && scope.categories.length > 0) {
+    if (scope.categories === null) {
+      isCategoryMatch = true;
+    } else if (scope.categories.length > 0) {
       if (scope.categories.includes(existing.category)) {
         isCategoryMatch = true;
       }
@@ -1052,7 +1058,9 @@ export async function updateStatus(
     const isVehicleIncharge = existing.vehicle?.siteInchargeId === actorObj.id;
     const isSubordinate = existing.assignedTo?.createdByAdminId === actorObj.id;
     let isCategoryMatch = false;
-    if (scope.categories && scope.categories.length > 0) {
+    if (scope.categories === null) {
+      isCategoryMatch = true;
+    } else if (scope.categories.length > 0) {
       if (scope.categories.includes(existing.category)) {
         isCategoryMatch = true;
       }

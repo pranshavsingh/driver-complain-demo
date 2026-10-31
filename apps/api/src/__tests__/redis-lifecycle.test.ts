@@ -2,9 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import request from 'supertest';
 import { createApp } from '../app';
 import {
-  getRedisStatus,
   isRedisAvailable,
-  pingRedis,
   closeRedis,
   defaultRedisOptions,
 } from '../lib/redis';

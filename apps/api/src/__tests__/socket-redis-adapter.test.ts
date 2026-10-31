@@ -97,7 +97,6 @@ describe('Milestone 2: Socket.IO Redis Adapter & Cross-Instance Realtime', () =>
     activeServers.push(serverA);
 
     await new Promise<void>((r) => serverA.listen(0, r));
-    const portA = (serverA.address() as any).port;
 
     // 2. Instance B (Pod B)
     const serverB = createServer();

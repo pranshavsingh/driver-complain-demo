@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import { SupportMessageTypeSchema, RoleSchema, ComplaintCategorySchema, PrioritySchema } from './enums';
-import type { UserPublic } from './user';
 import type { VehiclePublic } from './vehicle';
 
 export const SendSupportMessageSchema = z.object({
