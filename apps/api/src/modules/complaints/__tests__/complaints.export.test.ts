@@ -194,7 +194,7 @@ describe('complaints export — workbook', () => {
 
     expect(row?.getCell(1).value).toBe(created.complaintNo);
     expect(row?.getCell(2).value).toBe('Brake noise');
-    expect(row?.getCell(3).value).toBe('Support');
+    expect(row?.getCell(3).value).toBe('Breakdown');
     expect(row?.getCell(4).value).toBe('Parking / Yard');
     expect(row?.getCell(5).value).toBe('NEW');
     expect(row?.getCell(9).value).toBe('Dana Driver');

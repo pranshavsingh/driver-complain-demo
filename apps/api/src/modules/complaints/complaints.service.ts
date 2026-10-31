@@ -786,7 +786,9 @@ async function buildWhere(
     }
 
     andConditions.push({ OR: execOrConditions });
-  } else if (query.driverId) {
+  }
+
+  if (actor.role !== 'DRIVER' && query.driverId) {
     andConditions.push({ driverId: query.driverId });
   }
 
