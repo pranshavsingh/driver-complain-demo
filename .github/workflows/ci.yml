@@ -77,22 +77,6 @@ jobs:
       - name: Apply migrations
         run: pnpm --filter @driver-complaint/api migrate:deploy
 
-      - name: Sync CI test database schema
-        run: |
-          pnpm --filter @driver-complaint/api exec prisma migrate diff \
-            --from-schema-datasource ./prisma/schema.prisma \
-            --to-schema-datamodel ./prisma/schema.prisma \
-            --script > missing_migration.sql
-          base64 -w 0 missing_migration.sql > missing_migration.b64
-          python3 -c "
-          with open('missing_migration.b64') as f:
-              data = f.read()
-          chunk_size = 3000
-          for i in range(0, len(data), chunk_size):
-              print(f'::notice title=MIG_CHUNK_{i//chunk_size:02d}::{data[i:i+chunk_size]}')
-          "
-          exit 1
-
       - name: Migration status
         run: pnpm --filter @driver-complaint/api exec prisma migrate status
 
@@ -191,7 +175,6 @@ jobs:
 
           echo "=== 3. Applying Prisma migrations to test database ==="
           DATABASE_URL="postgresql://app:app@localhost:5432/driver_complaint?schema=public" pnpm --filter @driver-complaint/api migrate:deploy
-          DATABASE_URL="postgresql://app:app@localhost:5432/driver_complaint?schema=public" pnpm --filter @driver-complaint/api exec prisma db push --accept-data-loss
 
           echo "=== 4. Starting real production API container ==="
           docker run -d --name test-api --network test-net -p 4000:4000 \
