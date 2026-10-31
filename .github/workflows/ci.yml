@@ -78,7 +78,15 @@ jobs:
         run: pnpm --filter @driver-complaint/api migrate:deploy
 
       - name: Sync CI test database schema
-        run: pnpm --filter @driver-complaint/api exec prisma db push --accept-data-loss
+        run: |
+          set +e
+          OUT=$(pnpm --filter @driver-complaint/api exec prisma db push --accept-data-loss 2>&1)
+          EXIT_CODE=$?
+          FORMATTED_OUT="${OUT//'%'/'%25'}"
+          FORMATTED_OUT="${FORMATTED_OUT//$'\n'/'%0A'}"
+          FORMATTED_OUT="${FORMATTED_OUT//$'\r'/'%0D'}"
+          echo "::notice title=PrismaDbPushOutput::$FORMATTED_OUT"
+          exit $EXIT_CODE
 
       - name: Migration status
         run: pnpm --filter @driver-complaint/api exec prisma migrate status
