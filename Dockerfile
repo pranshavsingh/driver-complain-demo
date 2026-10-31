@@ -49,7 +49,7 @@ RUN pnpm --filter @driver-complaint/api prisma:generate
 # Stage 3: Production Runner
 # ------------------------------------------------------------------------------
 FROM node:24-alpine AS runner
-RUN apk add --no-cache libc6-compat openssl curl
+RUN apk update && apk upgrade --no-cache && apk add --no-cache libc6-compat openssl curl
 WORKDIR /app
 
 # Production environment configurations

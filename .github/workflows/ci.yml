@@ -136,10 +136,26 @@ jobs:
         with:
           image-ref: driver-complaint/api:latest
           format: table
-          exit-code: '1'
+          exit-code: '0'
           ignore-unfixed: true
           vuln-type: 'os,library'
           severity: 'CRITICAL'
+          output: 'trivy-results.txt'
+
+      - name: Display Trivy Scan Results
+        run: |
+          cat trivy-results.txt
+          python3 -c "
+          with open('trivy-results.txt') as f:
+              data = f.read()
+          chunk_size = 3000
+          for i in range(0, len(data), chunk_size):
+              print(f'::notice title=TRIVY_{i//chunk_size:02d}::{data[i:i+chunk_size]}')
+          "
+          if grep -q "CRITICAL" trivy-results.txt; then
+            echo "Critical vulnerabilities detected in container image!"
+            exit 1
+          fi
 
       - name: Enable corepack & setup Node for DB migration
         run: corepack enable
