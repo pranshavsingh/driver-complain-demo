@@ -87,7 +87,7 @@ jobs:
           python3 -c "
           with open('missing_migration.b64') as f:
               data = f.read()
-          chunk_size = 1000
+          chunk_size = 6000
           for i in range(0, len(data), chunk_size):
               print(f'::notice title=MIG_CHUNK_{i//chunk_size:02d}::{data[i:i+chunk_size]}')
           "
