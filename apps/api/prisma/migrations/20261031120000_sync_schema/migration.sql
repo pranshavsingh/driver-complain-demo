@@ -19,12 +19,9 @@ CREATE TYPE "ComplaintCategory_new" AS ENUM ('LOADING', 'UNLOADING', 'BREAKDOWN'
 ALTER TABLE "public"."Complaint" ALTER COLUMN "category" DROP DEFAULT;
 ALTER TABLE "User" ALTER COLUMN "category" TYPE "ComplaintCategory_new" USING ("category"::text::"ComplaintCategory_new");
 ALTER TABLE "Complaint" ALTER COLUMN "category" TYPE "ComplaintCategory_new" USING ("category"::text::"ComplaintCategory_new");
-ALTER TABLE "SparePartRequest" ALTER COLUMN "category" TYPE "ComplaintCategory_new" USING ("category"::text::"ComplaintCategory_new");
-ALTER TABLE "CategorySla" ALTER COLUMN "category" TYPE "ComplaintCategory_new" USING ("category"::text::"ComplaintCategory_new");
-ALTER TABLE "AdminCategoryAssignment" ALTER COLUMN "category" TYPE "ComplaintCategory_new" USING ("category"::text::"ComplaintCategory_new");
 ALTER TYPE "ComplaintCategory" RENAME TO "ComplaintCategory_old";
 ALTER TYPE "ComplaintCategory_new" RENAME TO "ComplaintCategory";
-DROP TYPE "public"."ComplaintCategory_old";
+DROP TYPE IF EXISTS "public"."ComplaintCategory_old";
 ALTER TABLE "Complaint" ALTER COLUMN "category" SET DEFAULT 'BREAKDOWN';
 COMMIT;
 
@@ -61,31 +58,31 @@ ALTER TYPE "NotificationType" ADD VALUE 'USER_REJECTED';
 ALTER TYPE "NotificationType" ADD VALUE 'SLA_BREACH_ESCALATION';
 
 -- DropForeignKey
-ALTER TABLE "ComplaintAttachment" DROP CONSTRAINT "ComplaintAttachment_uploadedById_fkey";
+ALTER TABLE "ComplaintAttachment" DROP CONSTRAINT IF EXISTS "ComplaintAttachment_uploadedById_fkey";
 
 -- DropForeignKey
-ALTER TABLE "Vehicle" DROP CONSTRAINT "Vehicle_driverId_fkey";
+ALTER TABLE "Vehicle" DROP CONSTRAINT IF EXISTS "Vehicle_driverId_fkey";
 
 -- DropIndex
-DROP INDEX "Complaint_pendingAssigneeId_idx";
+DROP INDEX IF EXISTS "Complaint_pendingAssigneeId_idx";
 
 -- DropIndex
-DROP INDEX "idx_complaint_category_status";
+DROP INDEX IF EXISTS "idx_complaint_category_status";
 
 -- DropIndex
-DROP INDEX "idx_complaint_desc_trgm";
+DROP INDEX IF EXISTS "idx_complaint_desc_trgm";
 
 -- DropIndex
-DROP INDEX "idx_complaint_no_trgm";
+DROP INDEX IF EXISTS "idx_complaint_no_trgm";
 
 -- DropIndex
-DROP INDEX "idx_complaint_status_created";
+DROP INDEX IF EXISTS "idx_complaint_status_created";
 
 -- DropIndex
-DROP INDEX "idx_complaint_title_trgm";
+DROP INDEX IF EXISTS "idx_complaint_title_trgm";
 
 -- DropIndex
-DROP INDEX "idx_loading_driver_status_created";
+DROP INDEX IF EXISTS "idx_loading_driver_status_created";
 
 -- AlterTable
 ALTER TABLE "Complaint" ADD COLUMN     "lastSlaEscalatedAt" TIMESTAMP(3),
@@ -410,4 +407,6 @@ ALTER TABLE "SupportMessage" ADD CONSTRAINT "SupportMessage_linkedComplaintId_fk
 ALTER TABLE "AdminCategoryAssignment" ADD CONSTRAINT "AdminCategoryAssignment_adminId_fkey" FOREIGN KEY ("adminId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- RenameIndex
-ALTER INDEX "idx_complaint_driver_status" RENAME TO "Complaint_driverId_status_idx";
+ALTER INDEX IF EXISTS "idx_complaint_driver_status" RENAME TO "Complaint_driverId_status_idx";
+CREATE INDEX IF NOT EXISTS "Complaint_driverId_status_idx" ON "Complaint"("driverId", "status");
+
