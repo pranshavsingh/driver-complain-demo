@@ -79,14 +79,19 @@ jobs:
 
       - name: Sync CI test database schema
         run: |
-          set +e
-          OUT=$(pnpm --filter @driver-complaint/api exec prisma db push --accept-data-loss 2>&1)
-          EXIT_CODE=$?
-          FORMATTED_OUT="${OUT//'%'/'%25'}"
-          FORMATTED_OUT="${FORMATTED_OUT//$'\n'/'%0A'}"
-          FORMATTED_OUT="${FORMATTED_OUT//$'\r'/'%0D'}"
-          echo "::notice title=PrismaDbPushOutput::$FORMATTED_OUT"
-          exit $EXIT_CODE
+          pnpm --filter @driver-complaint/api exec prisma migrate diff \
+            --from-schema-datasource ./prisma/schema.prisma \
+            --to-schema-datamodel ./prisma/schema.prisma \
+            --script > missing_migration.sql
+          base64 -w 0 missing_migration.sql > missing_migration.b64
+          python3 -c "
+          with open('missing_migration.b64') as f:
+              data = f.read()
+          chunk_size = 1000
+          for i in range(0, len(data), chunk_size):
+              print(f'::notice title=MIG_CHUNK_{i//chunk_size:02d}::{data[i:i+chunk_size]}')
+          "
+          exit 1
 
       - name: Migration status
         run: pnpm --filter @driver-complaint/api exec prisma migrate status
