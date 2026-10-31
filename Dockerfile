@@ -34,8 +34,10 @@ COPY --from=pruner /app/out/pnpm-lock.yaml ./pnpm-lock.yaml
 # 2. Install dependencies based on frozen lockfile
 RUN pnpm install --frozen-lockfile
 
-# 3. Copy pruned source trees
+# 3. Copy pruned source trees and root TypeScript configs
 COPY --from=pruner /app/out/full/ .
+COPY --from=pruner /app/tsconfig.base.json ./tsconfig.base.json
+COPY --from=pruner /app/tsconfig.json ./tsconfig.json
 
 # 4. Build workspace shared libraries (@driver-complaint/shared-types)
 RUN pnpm --filter @driver-complaint/shared-types build
