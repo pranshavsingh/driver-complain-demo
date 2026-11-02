@@ -15,6 +15,7 @@ import { startMediaWorkers } from './jobs/media.worker';
 import { startCleanupScheduler, stopCleanupScheduler } from './jobs/cleanup.worker';
 import { startSlaEscalationScheduler, stopSlaEscalationScheduler } from './jobs/sla-escalation.worker';
 import { closeQueues } from './jobs/queue';
+import { startOutboxWorkers, stopOutboxWorkers } from './modules/outbox/outbox.worker';
 
 // Socket.IO needs the raw HTTP server, so the app is wrapped here rather than in
 // createApp() — tests import createApp() and must stay socket-free.
@@ -28,12 +29,16 @@ server.listen(env.PORT, () => {
   void startMediaWorkers();
   void startCleanupScheduler();
   void startSlaEscalationScheduler();
+  void startOutboxWorkers();
 });
 
 async function shutdown(signal: string): Promise<void> {
   logger.info(`Received ${signal}, shutting down gracefully`);
   stopCleanupScheduler();
   stopSlaEscalationScheduler();
+  await stopOutboxWorkers().catch((err: unknown) => {
+    logger.error({ err }, 'Failed to stop outbox workers cleanly');
+  });
   // Drop websockets first; otherwise their open connections keep server.close() waiting.
   await closeRealtime().catch((err: unknown) => {
     logger.error({ err }, 'Failed to close realtime cleanly');
