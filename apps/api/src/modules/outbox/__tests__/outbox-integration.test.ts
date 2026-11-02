@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { randomUUID } from 'node:crypto';
 import { prisma } from '../../../lib/prisma';
 import {
   publishOutboxEvent,
@@ -823,8 +824,8 @@ describe('Milestone 3: PostgreSQL Real Integration Tests', () => {
     expect(res2.batchId).toBe(fixedBatchId);
   });
 
-  it('15. SECURITY DEFINER privilege verification: public cannot execute and prosecdef is true', async () => {
-    // Audit Requirement 5: Privilege verification test
+  it('15. SECURITY DEFINER privilege and search_path verification: public cannot execute, app role can execute, search_path is safe', async () => {
+    // Audit Requirement 1 & 2: Privilege and search_path verification
     const procedures = [
       'sp_synthesize_parent_outbox_status',
       'sp_activate_consumer',
@@ -841,30 +842,194 @@ describe('Milestone 3: PostgreSQL Real Integration Tests', () => {
       Array<{
         proname: string;
         prosecdef: boolean;
+        proconfig: string[] | null;
+        owner: string;
         public_execute: boolean;
-        user_execute: boolean;
+        app_execute: boolean;
       }>
     >`
       SELECT
         p.proname,
         p.prosecdef,
+        p.proconfig,
+        r.rolname AS owner,
         has_function_privilege('public', p.oid, 'EXECUTE') as public_execute,
-        has_function_privilege(current_user, p.oid, 'EXECUTE') as user_execute
+        has_function_privilege('app', p.oid, 'EXECUTE') as app_execute
       FROM pg_proc p
+      JOIN pg_roles r ON r.oid = p.proowner
       JOIN pg_namespace n ON n.oid = p.pronamespace
       WHERE n.nspname IN ('public', 'sse_internal')
         AND p.proname = ANY(${procedures});
     `;
 
-    expect(procRows.length).toBeGreaterThanOrEqual(procedures.length);
+    expect(procRows.length).toBe(procedures.length);
 
     for (const row of procRows) {
       // SECURITY DEFINER must be true for all M3 procedures
       expect(row.prosecdef, `Expected ${row.proname} to be SECURITY DEFINER`).toBe(true);
+      // Function owner must be the application role 'app'
+      expect(row.owner, `Expected ${row.proname} to be owned by 'app'`).toBe('app');
       // PUBLIC execution must be revoked
       expect(row.public_execute, `Expected ${row.proname} to revoke EXECUTE from PUBLIC`).toBe(false);
-      // Application / Current User execution must be granted
-      expect(row.user_execute, `Expected ${row.proname} to grant EXECUTE to current user`).toBe(true);
+      // Application role 'app' execution must be granted
+      expect(row.app_execute, `Expected ${row.proname} to grant EXECUTE to 'app' role`).toBe(true);
+      // Restricted safe search path: search_path must be empty string
+      expect(row.proconfig, `Expected ${row.proname} to have secure search_path config`).toContain('search_path=""');
     }
+  });
+
+  it('16. Concurrent cursor resolution: two workers completing sequence 1 and 2 concurrently update cursor safely without skipping', async () => {
+    const c = await activateConsumer({
+      consumerGroup: TEST_PREFIX,
+      consumerName: 'concurrent-cursor-consumer',
+      filterPattern: { eventTypes: ['CONCUR_CURSOR_EVENT'] },
+      maxInFlight: 10,
+    });
+
+    const aggregateId = `concur-agg-${Date.now()}`;
+
+    // Publish Event 1 (sequence 1)
+    const outbox1 = await publishOutboxEvent({
+      aggregateType: 'TEST_AGG_CONCUR_CURSOR',
+      aggregateId,
+      eventType: 'CONCUR_CURSOR_EVENT',
+      payload: { seq: 1 },
+    });
+    await prepareOutboxDispatch(outbox1.id);
+
+    // Preflight Event 1
+    const preflight1 = await executeDeliveryPreflight(c.consumerId, 'worker-concur-1');
+    expect(preflight1).not.toBeNull();
+    expect(preflight1!.sequenceNumber).toBe(1n);
+
+    // Publish Event 2 (sequence 2) for the exact same aggregate
+    const outbox2 = await publishOutboxEvent({
+      aggregateType: 'TEST_AGG_CONCUR_CURSOR',
+      aggregateId,
+      eventType: 'CONCUR_CURSOR_EVENT',
+      payload: { seq: 2 },
+    });
+    await prepareOutboxDispatch(outbox2.id);
+
+    // Query intent 2
+    const intent2 = await prisma.outboxConsumerDispatchIntent.findFirstOrThrow({
+      where: { outboxId: outbox2.id, consumerId: c.consumerId },
+    });
+    expect(intent2.sequenceNumber).toBe(2n);
+
+    // Assign Intent 2 with a valid leased DeliveryLedger to simulate concurrent worker execution
+    const ledger2Token = randomUUID();
+    const ledger2 = await prisma.deliveryLedger.create({
+      data: {
+        intentId: intent2.id,
+        consumerId: c.consumerId,
+        outboxId: outbox2.id,
+        claimEpoch: 1,
+        claimCount: 1,
+        leaseToken: ledger2Token,
+        leaseExpiresAt: new Date(Date.now() + 60000),
+        lastWorkerId: 'worker-concur-2',
+      },
+    });
+    await prisma.outboxConsumerDispatchIntent.update({
+      where: { id: intent2.id },
+      data: { status: DispatchIntentStatus.ASSIGNED },
+    });
+
+    // Run simultaneous completion of both sequences
+    const [res1, res2] = await Promise.all([
+      executeDeliveryCompletion({
+        ledgerId: preflight1!.ledgerId,
+        leaseToken: preflight1!.leaseToken,
+        claimEpoch: preflight1!.claimEpoch,
+        outcome: DeliveryOutcome.DELIVERED,
+      }),
+      executeDeliveryCompletion({
+        ledgerId: ledger2.id,
+        leaseToken: ledger2Token,
+        claimEpoch: 1n,
+        outcome: DeliveryOutcome.DELIVERED,
+      }),
+    ]);
+
+    expect(res1).toBe(true);
+    expect(res2).toBe(true);
+
+    // Verify both intents are DELIVERED
+    const finalIntents = await prisma.outboxConsumerDispatchIntent.findMany({
+      where: { consumerId: c.consumerId, outboxId: { in: [outbox1.id, outbox2.id] } },
+      orderBy: { sequenceNumber: 'asc' },
+    });
+    expect(finalIntents[0]?.status).toBe(DispatchIntentStatus.DELIVERED);
+    expect(finalIntents[1]?.status).toBe(DispatchIntentStatus.DELIVERED);
+
+    // Verify cursor reached sequence 2 and never skipped unresolved sequence
+    const cursor = await prisma.consumerAggregateCursor.findUnique({
+      where: {
+        consumerId_aggregateType_aggregateId: {
+          consumerId: c.consumerId,
+          aggregateType: 'TEST_AGG_CONCUR_CURSOR',
+          aggregateId,
+        },
+      },
+    });
+
+    expect(cursor).not.toBeNull();
+    expect(cursor!.lastDeliveredSequence).toBe(2n);
+    expect(cursor!.lastDeliveredOutboxId).toBe(outbox2.id);
+  });
+
+  it('17. Simultaneous first-time cursor creation: concurrent calls create cursor without duplicate key errors', async () => {
+    const c = await activateConsumer({
+      consumerGroup: TEST_PREFIX,
+      consumerName: 'first-time-cursor-consumer',
+      filterPattern: { eventTypes: ['FIRST_TIME_EVENT'] },
+      maxInFlight: 10,
+    });
+
+    const aggregateId = `first-time-${Date.now()}`;
+
+    // Verify no cursor row exists prior to test
+    const beforeCursor = await prisma.consumerAggregateCursor.findUnique({
+      where: {
+        consumerId_aggregateType_aggregateId: {
+          consumerId: c.consumerId,
+          aggregateType: 'TEST_AGG_FIRST_TIME',
+          aggregateId,
+        },
+      },
+    });
+    expect(beforeCursor).toBeNull();
+
+    // Concurrently trigger first-time cursor resolution from multiple simultaneous callers
+    const results = await Promise.all([
+      prisma.$queryRaw<Array<{ fn_resolve_contiguous_cursor: bigint }>>`
+        SELECT sse_internal.fn_resolve_contiguous_cursor(${c.consumerId}::uuid, 'TEST_AGG_FIRST_TIME', ${aggregateId});
+      `,
+      prisma.$queryRaw<Array<{ fn_resolve_contiguous_cursor: bigint }>>`
+        SELECT sse_internal.fn_resolve_contiguous_cursor(${c.consumerId}::uuid, 'TEST_AGG_FIRST_TIME', ${aggregateId});
+      `,
+      prisma.$queryRaw<Array<{ fn_resolve_contiguous_cursor: bigint }>>`
+        SELECT sse_internal.fn_resolve_contiguous_cursor(${c.consumerId}::uuid, 'TEST_AGG_FIRST_TIME', ${aggregateId});
+      `,
+    ]);
+
+    expect(results).toHaveLength(3);
+    for (const r of results) {
+      expect(r[0]?.fn_resolve_contiguous_cursor).toBeDefined();
+    }
+
+    // Exactly one cursor row exists and lastDeliveredSequence is initialized safely to 0
+    const cursor = await prisma.consumerAggregateCursor.findUnique({
+      where: {
+        consumerId_aggregateType_aggregateId: {
+          consumerId: c.consumerId,
+          aggregateType: 'TEST_AGG_FIRST_TIME',
+          aggregateId,
+        },
+      },
+    });
+    expect(cursor).not.toBeNull();
+    expect(cursor!.lastDeliveredSequence).toBe(0n);
   });
 });
