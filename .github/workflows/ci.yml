@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'feat/**']
   pull_request:
 
 jobs:
@@ -80,17 +80,13 @@ jobs:
       - name: Migration status
         run: pnpm --filter @driver-complaint/api exec prisma migrate status
 
-      - name: Test
-        run: pnpm test
-
       # Drift guard — fails if schema.prisma was changed without a matching migration.
       # Compares the live (migrated) DB against the schema datamodel; no shadow DB needed.
       - name: Migration drift guard
-        run: >-
-          pnpm --filter @driver-complaint/api exec prisma migrate diff
-          --from-schema-datasource ./prisma/schema.prisma
-          --to-schema-datamodel ./prisma/schema.prisma
-          --exit-code
+        run: pnpm --filter @driver-complaint/api migrate:diff
+
+      - name: Test
+        run: pnpm test
 
   docker-build-and-scan:
     name: Docker Build & Vulnerability Scan

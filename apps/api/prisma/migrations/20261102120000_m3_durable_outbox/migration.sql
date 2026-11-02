@@ -249,15 +249,24 @@ ALTER TABLE "SequenceResolutionRecord" ADD CONSTRAINT "SequenceResolutionRecord_
 ALTER TABLE "SequenceResolutionRecord" ADD CONSTRAINT "SequenceResolutionRecord_outboxId_fkey" FOREIGN KEY ("outboxId") REFERENCES "TransactionalOutbox"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- ──────────────────────────────────────────────────────────────
--- Stored Procedures (Lock Ranking Hierarchy Enforced)
+-- Stored Procedures (Strict 7-Rank Lock Ranking Hierarchy)
+-- Rank 1: RegisteredConsumer (id ASC)
+-- Rank 2: TransactionalOutbox (id ASC)
+-- Rank 3: OutboxConsumerDispatchIntent (id ASC)
+-- Rank 4: DeliveryLedger (id ASC)
+-- Rank 5: ConsumerAggregateCursor (id ASC)
+-- Rank 6: SequenceResolutionRecord (id ASC)
+-- Rank 7: Archive Tables
 -- ──────────────────────────────────────────────────────────────
 
--- Procedure 7: Status Synthesis (Declared before callers)
+-- Procedure 7: Status Synthesis
 CREATE OR REPLACE FUNCTION sp_synthesize_parent_outbox_status(
     p_outbox_id UUID
 )
 RETURNS "OutboxStatus"
 LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, sse_internal, pg_temp
 AS $$
 DECLARE
     v_is_sealed BOOLEAN;
@@ -306,22 +315,24 @@ BEGIN
     WHERE di."outboxId" = p_outbox_id;
 
     -- Synthesis truth table:
+    -- 1. All expected consumers succeeded -> COMPLETED
     IF v_delivered = v_expected THEN
         v_new_status := 'COMPLETED'::"OutboxStatus";
+    -- 2. Any consumer is still in flight -> DISPATCHED
     ELSIF v_in_flight > 0 THEN
         v_new_status := 'DISPATCHED'::"OutboxStatus";
-    ELSIF (v_revoked + v_expired) = v_expected THEN
+    -- 3. All non-in-flight: if any consumer permanently failed (revoked or expired), outbox is FAILED
+    ELSIF (v_revoked + v_expired) > 0 THEN
         v_new_status := 'FAILED'::"OutboxStatus";
     ELSE
-        -- Partial deliveries with remaining terminals finished
-        v_new_status := 'COMPLETED'::"OutboxStatus";
+        v_new_status := 'FAILED'::"OutboxStatus";
     END IF;
 
     UPDATE "TransactionalOutbox"
     SET "status" = v_new_status,
         "publishedAt" = CASE
             WHEN v_new_status = 'COMPLETED'::"OutboxStatus" THEN COALESCE("publishedAt", CLOCK_TIMESTAMP())
-            ELSE "publishedAt"
+            ELSE NULL
         END,
         "updatedAt" = CLOCK_TIMESTAMP()
     WHERE "id" = p_outbox_id;
@@ -329,6 +340,9 @@ BEGIN
     RETURN v_new_status;
 END;
 $$;
+
+REVOKE ALL ON FUNCTION sp_synthesize_parent_outbox_status(UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION sp_synthesize_parent_outbox_status(UUID) TO CURRENT_USER;
 
 -- Procedure 1: sp_activate_consumer
 CREATE OR REPLACE FUNCTION sp_activate_consumer(
@@ -349,6 +363,8 @@ RETURNS TABLE (
     lease_duration_seconds INTEGER
 )
 LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, sse_internal, pg_temp
 AS $$
 DECLARE
     v_id UUID;
@@ -379,12 +395,17 @@ BEGIN
 END;
 $$;
 
+REVOKE ALL ON FUNCTION sp_activate_consumer(TEXT, TEXT, JSONB, INTEGER, INTEGER, JSONB) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION sp_activate_consumer(TEXT, TEXT, JSONB, INTEGER, INTEGER, JSONB) TO CURRENT_USER;
+
 -- Procedure 2: sp_retire_consumer
 CREATE OR REPLACE FUNCTION sp_retire_consumer(
     p_consumer_id UUID
 )
 RETURNS BOOLEAN
 LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, sse_internal, pg_temp
 AS $$
 DECLARE
     v_outbox_ids UUID[];
@@ -406,6 +427,22 @@ BEGIN
         "updatedAt" = CLOCK_TIMESTAMP()
     WHERE "id" = p_consumer_id;
 
+    -- Collect all distinct affected outbox IDs in sorted order
+    SELECT ARRAY_AGG(DISTINCT di."outboxId" ORDER BY di."outboxId" ASC)
+    INTO v_outbox_ids
+    FROM "OutboxConsumerDispatchIntent" di
+    WHERE di."consumerId" = p_consumer_id
+      AND di."status" IN ('PLANNED'::"DispatchIntentStatus", 'ASSIGNED'::"DispatchIntentStatus");
+
+    -- Rank 2: Lock affected TransactionalOutbox records in id ASC order
+    IF v_outbox_ids IS NOT NULL AND ARRAY_LENGTH(v_outbox_ids, 1) > 0 THEN
+        PERFORM 1
+        FROM "TransactionalOutbox"
+        WHERE "id" = ANY(v_outbox_ids)
+        ORDER BY "id" ASC
+        FOR UPDATE;
+    END IF;
+
     -- Rank 3: Update DispatchIntents
     UPDATE "OutboxConsumerDispatchIntent"
     SET "status" = 'REVOKED'::"DispatchIntentStatus",
@@ -414,20 +451,16 @@ BEGIN
       AND "status" IN ('PLANNED'::"DispatchIntentStatus", 'ASSIGNED'::"DispatchIntentStatus");
 
     -- Rank 4: Terminate active delivery ledgers
-    WITH suspended_ledgers AS (
-        UPDATE "DeliveryLedger"
-        SET "outcome" = 'SUSPENDED_BY_RETIREMENT'::"DeliveryOutcome",
-            "outcomeReason" = 'Consumer retired by administrative action',
-            "leaseToken" = NULL,
-            "leaseExpiresAt" = CLOCK_TIMESTAMP(),
-            "updatedAt" = CLOCK_TIMESTAMP()
-        WHERE "consumerId" = p_consumer_id
-          AND "outcome" IS NULL
-        RETURNING "outboxId"
-    )
-    SELECT ARRAY_AGG(DISTINCT "outboxId") INTO v_outbox_ids FROM suspended_ledgers;
+    UPDATE "DeliveryLedger"
+    SET "outcome" = 'SUSPENDED_BY_RETIREMENT'::"DeliveryOutcome",
+        "outcomeReason" = 'Consumer retired by administrative action',
+        "leaseToken" = NULL,
+        "leaseExpiresAt" = CLOCK_TIMESTAMP(),
+        "updatedAt" = CLOCK_TIMESTAMP()
+    WHERE "consumerId" = p_consumer_id
+      AND "outcome" IS NULL;
 
-    -- Synthesize parent status for all affected outbox items
+    -- Synthesize parent status for all affected outbox items (already locked at Rank 2)
     IF v_outbox_ids IS NOT NULL THEN
         FOREACH v_outbox_id IN ARRAY v_outbox_ids
         LOOP
@@ -438,6 +471,9 @@ BEGIN
     RETURN TRUE;
 END;
 $$;
+
+REVOKE ALL ON FUNCTION sp_retire_consumer(UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION sp_retire_consumer(UUID) TO CURRENT_USER;
 
 -- Procedure 3: sp_prepare_outbox_dispatch
 CREATE OR REPLACE FUNCTION sp_prepare_outbox_dispatch(
@@ -450,6 +486,8 @@ RETURNS TABLE (
     intents_created INTEGER
 )
 LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, sse_internal, pg_temp
 AS $$
 DECLARE
     v_event_type TEXT;
@@ -567,7 +605,6 @@ BEGIN
     SET "isFanoutSealed" = TRUE,
         "expectedConsumerCount" = ARRAY_LENGTH(v_consumer_ids, 1),
         "status" = 'DISPATCHED'::"OutboxStatus",
-        "publishedAt" = COALESCE("publishedAt", CLOCK_TIMESTAMP()),
         "updatedAt" = CLOCK_TIMESTAMP()
     WHERE "id" = p_outbox_id;
 
@@ -575,6 +612,9 @@ BEGIN
     SELECT p_outbox_id, 'DISPATCHED'::"OutboxStatus", ARRAY_LENGTH(v_consumer_ids, 1), v_count;
 END;
 $$;
+
+REVOKE ALL ON FUNCTION sp_prepare_outbox_dispatch(UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION sp_prepare_outbox_dispatch(UUID) TO CURRENT_USER;
 
 -- Procedure 4: sp_worker_delivery_preflight
 CREATE OR REPLACE FUNCTION sp_worker_delivery_preflight(
@@ -597,14 +637,50 @@ RETURNS TABLE (
     event_type TEXT
 )
 LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, sse_internal, pg_temp
 AS $$
 DECLARE
+    v_consumer_state "ConsumerState";
+    v_max_in_flight INTEGER;
+    v_consumer_lease_sec INTEGER;
+    v_current_in_flight INTEGER := 0;
+    v_effective_lease_seconds INTEGER;
     v_intent RECORD;
     v_ledger RECORD;
     v_new_token UUID;
     v_expires TIMESTAMP(3);
 BEGIN
-    -- Check head-of-line: find candidate intent
+    -- Rank 1: Verify consumer exists, is ACTIVE, and has not exceeded maxInFlight
+    SELECT rc."state", rc."maxInFlight", rc."leaseDurationSeconds"
+    INTO v_consumer_state, v_max_in_flight, v_consumer_lease_sec
+    FROM "RegisteredConsumer" rc
+    WHERE rc."id" = p_consumer_id;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'RegisteredConsumer % not found', p_consumer_id;
+    END IF;
+
+    -- Active-state enforcement
+    IF v_consumer_state != 'ACTIVE'::"ConsumerState" THEN
+        RETURN;
+    END IF;
+
+    -- Concurrency ceiling (maxInFlight) enforcement
+    SELECT COUNT(*)
+    INTO v_current_in_flight
+    FROM "DeliveryLedger" dl
+    WHERE dl."consumerId" = p_consumer_id
+      AND dl."outcome" IS NULL
+      AND (dl."leaseExpiresAt" IS NOT NULL AND dl."leaseExpiresAt" > CLOCK_TIMESTAMP());
+
+    IF v_current_in_flight >= v_max_in_flight THEN
+        RETURN;
+    END IF;
+
+    v_effective_lease_seconds := COALESCE(p_lease_seconds, v_consumer_lease_sec, 30);
+
+    -- Find candidate intents ordered by sequenceNumber ASC
     FOR v_intent IN
         SELECT di."id" AS intent_id, di."outboxId", di."sequenceNumber", di."status",
                o."payload", o."headers", o."aggregateType", o."aggregateId", o."eventType"
@@ -615,21 +691,20 @@ BEGIN
         ORDER BY di."sequenceNumber" ASC
         LIMIT 50
     LOOP
-        -- Check if there is an in-flight unexpired earlier sequence for the same aggregate
+        -- Strict FIFO / Per-aggregate ordering enforcement:
+        -- If ANY earlier sequence for this aggregate and consumer is NOT in a terminal resolved state (DELIVERED or REVOKED),
+        -- this later intent MUST NOT be dispatched.
         IF EXISTS (
             SELECT 1
             FROM "OutboxConsumerDispatchIntent" prev_di
             JOIN "TransactionalOutbox" prev_o ON prev_o."id" = prev_di."outboxId"
-            JOIN "DeliveryLedger" prev_dl ON prev_dl."intentId" = prev_di."id"
             WHERE prev_di."consumerId" = p_consumer_id
               AND prev_o."aggregateType" = v_intent."aggregateType"
               AND prev_o."aggregateId" = v_intent."aggregateId"
               AND prev_di."sequenceNumber" < v_intent."sequenceNumber"
-              AND prev_di."status" != 'DELIVERED'::"DispatchIntentStatus"
-              AND prev_di."status" != 'REVOKED'::"DispatchIntentStatus"
-              AND prev_dl."leaseExpiresAt" > CLOCK_TIMESTAMP()
+              AND prev_di."status" NOT IN ('DELIVERED'::"DispatchIntentStatus", 'REVOKED'::"DispatchIntentStatus")
         ) THEN
-            -- Head-of-line blocked on this aggregate; try next candidate
+            -- Head-of-line blocked on earlier unresolved event for this aggregate
             CONTINUE;
         END IF;
 
@@ -639,12 +714,12 @@ BEGIN
         FROM "DeliveryLedger" dl
         WHERE dl."intentId" = v_intent.intent_id
           AND (dl."leaseExpiresAt" IS NULL OR dl."leaseExpiresAt" <= CLOCK_TIMESTAMP())
-          AND dl."outcome" IS NULL
+          AND (dl."outcome" IS NULL OR dl."outcome" IN ('RETRIABLE_FAILURE'::"DeliveryOutcome", 'LEASE_EXPIRED'::"DeliveryOutcome"))
         FOR UPDATE SKIP LOCKED;
 
         IF FOUND THEN
             v_new_token := gen_random_uuid();
-            v_expires := CLOCK_TIMESTAMP() + (p_lease_seconds || ' seconds')::INTERVAL;
+            v_expires := CLOCK_TIMESTAMP() + (v_effective_lease_seconds || ' seconds')::INTERVAL;
 
             UPDATE "DeliveryLedger"
             SET "leaseToken" = v_new_token,
@@ -652,6 +727,8 @@ BEGIN
                 "claimCount" = v_ledger."claimCount" + 1,
                 "leaseExpiresAt" = v_expires,
                 "lastWorkerId" = p_worker_id,
+                "outcome" = NULL,
+                "outcomeReason" = NULL,
                 "updatedAt" = CLOCK_TIMESTAMP()
             WHERE "id" = v_ledger."id";
 
@@ -670,6 +747,9 @@ BEGIN
 END;
 $$;
 
+REVOKE ALL ON FUNCTION sp_worker_delivery_preflight(UUID, TEXT, INTEGER) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION sp_worker_delivery_preflight(UUID, TEXT, INTEGER) TO CURRENT_USER;
+
 -- Procedure 5: sp_worker_delivery_completion
 CREATE OR REPLACE FUNCTION sp_worker_delivery_completion(
     p_ledger_id UUID,
@@ -681,6 +761,8 @@ CREATE OR REPLACE FUNCTION sp_worker_delivery_completion(
 )
 RETURNS BOOLEAN
 LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, sse_internal, pg_temp
 AS $$
 DECLARE
     v_intent_id UUID;
@@ -693,16 +775,35 @@ DECLARE
     v_epoch BIGINT;
     v_expires TIMESTAMP(3);
 BEGIN
-    -- Rank 4: Lock DeliveryLedger
-    SELECT "intentId", "outboxId", "consumerId", "leaseToken", "claimEpoch", "leaseExpiresAt"
-    INTO v_intent_id, v_outbox_id, v_consumer_id, v_token, v_epoch, v_expires
-    FROM "DeliveryLedger"
-    WHERE "id" = p_ledger_id
-    FOR UPDATE;
+    -- Read immutable IDs from DeliveryLedger without lock
+    SELECT dl."intentId", dl."outboxId", dl."consumerId"
+    INTO v_intent_id, v_outbox_id, v_consumer_id
+    FROM "DeliveryLedger" dl
+    WHERE dl."id" = p_ledger_id;
 
     IF NOT FOUND THEN
         RAISE EXCEPTION 'DeliveryLedger % not found', p_ledger_id;
     END IF;
+
+    -- Strict ascending lock acquisition:
+    -- Rank 2: Lock TransactionalOutbox
+    PERFORM 1
+    FROM "TransactionalOutbox"
+    WHERE "id" = v_outbox_id
+    FOR UPDATE;
+
+    -- Rank 3: Lock OutboxConsumerDispatchIntent
+    PERFORM 1
+    FROM "OutboxConsumerDispatchIntent"
+    WHERE "id" = v_intent_id
+    FOR UPDATE;
+
+    -- Rank 4: Lock DeliveryLedger
+    SELECT dl."leaseToken", dl."claimEpoch", dl."leaseExpiresAt"
+    INTO v_token, v_epoch, v_expires
+    FROM "DeliveryLedger" dl
+    WHERE dl."id" = p_ledger_id
+    FOR UPDATE;
 
     -- Strict lease fencing verification
     IF v_token IS NULL OR v_token != p_lease_token OR v_epoch != p_claim_epoch THEN
@@ -722,7 +823,7 @@ BEGIN
         "updatedAt" = CLOCK_TIMESTAMP()
     WHERE "id" = p_ledger_id;
 
-    -- Rank 3: Update OutboxConsumerDispatchIntent
+    -- Rank 3 / Rank 5 / Rank 6 updates based on outcome:
     IF p_outcome = 'DELIVERED'::"DeliveryOutcome" THEN
         UPDATE "OutboxConsumerDispatchIntent"
         SET "status" = 'DELIVERED'::"DispatchIntentStatus",
@@ -764,7 +865,7 @@ BEGIN
         WHERE "id" = v_intent_id;
 
     ELSIF p_outcome = 'UNCERTAIN'::"DeliveryOutcome" THEN
-        -- Retain ASSIGNED, create resolution record
+        -- Retain ASSIGNED, create resolution record (Rank 6)
         SELECT "aggregateType", "aggregateId"
         INTO v_agg_type, v_agg_id
         FROM "TransactionalOutbox"
@@ -787,12 +888,15 @@ BEGIN
             "updatedAt" = CLOCK_TIMESTAMP();
     END IF;
 
-    -- Synthesize parent status
+    -- Synthesize parent status (TransactionalOutbox is already locked at Rank 2)
     PERFORM sp_synthesize_parent_outbox_status(v_outbox_id);
 
     RETURN TRUE;
 END;
 $$;
+
+REVOKE ALL ON FUNCTION sp_worker_delivery_completion(UUID, UUID, BIGINT, "DeliveryOutcome", TEXT, INTEGER) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION sp_worker_delivery_completion(UUID, UUID, BIGINT, "DeliveryOutcome", TEXT, INTEGER) TO CURRENT_USER;
 
 -- Procedure 6: sp_watchdog_reconcile_cursor
 CREATE OR REPLACE FUNCTION sp_watchdog_reconcile_cursor(
@@ -802,74 +906,199 @@ CREATE OR REPLACE FUNCTION sp_watchdog_reconcile_cursor(
 )
 RETURNS BIGINT
 LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, sse_internal, pg_temp
 AS $$
 DECLARE
-    v_max_seq BIGINT := 0;
+    v_outbox_ids UUID[];
+    v_intent_ids UUID[];
+    v_outbox_id UUID;
+    v_expired RECORD;
+    v_current_cursor BIGINT := 0;
+    v_first_gap_seq BIGINT;
+    v_contiguous_seq BIGINT := 0;
     v_last_outbox_id UUID;
-    v_expired_ledgers RECORD;
 BEGIN
-    -- Recover expired leases for this consumer
-    FOR v_expired_ledgers IN
-        SELECT dl."id", dl."claimCount", o."maxRetries"
+    -- Collect expired or UNCERTAIN ledgers for this consumer
+    SELECT ARRAY_AGG(DISTINCT dl."outboxId" ORDER BY dl."outboxId" ASC),
+           ARRAY_AGG(DISTINCT dl."intentId" ORDER BY dl."intentId" ASC)
+    INTO v_outbox_ids, v_intent_ids
+    FROM "DeliveryLedger" dl
+    WHERE dl."consumerId" = p_consumer_id
+      AND (
+        (dl."leaseExpiresAt" < CLOCK_TIMESTAMP() AND dl."outcome" IS NULL)
+        OR (dl."outcome" = 'UNCERTAIN'::"DeliveryOutcome")
+      );
+
+    -- Strict hierarchy:
+    -- Rank 2: Lock affected TransactionalOutbox records in id ASC order
+    IF v_outbox_ids IS NOT NULL AND ARRAY_LENGTH(v_outbox_ids, 1) > 0 THEN
+        PERFORM 1
+        FROM "TransactionalOutbox"
+        WHERE "id" = ANY(v_outbox_ids)
+        ORDER BY "id" ASC
+        FOR UPDATE;
+    END IF;
+
+    -- Rank 3: Lock affected OutboxConsumerDispatchIntent records in id ASC order
+    IF v_intent_ids IS NOT NULL AND ARRAY_LENGTH(v_intent_ids, 1) > 0 THEN
+        PERFORM 1
+        FROM "OutboxConsumerDispatchIntent"
+        WHERE "id" = ANY(v_intent_ids)
+        ORDER BY "id" ASC
+        FOR UPDATE;
+    END IF;
+
+    -- Rank 4: Recover expired and UNCERTAIN ledgers
+    FOR v_expired IN
+        SELECT dl."id", dl."intentId", dl."outboxId", dl."claimCount", dl."outcome", o."maxRetries"
         FROM "DeliveryLedger" dl
         JOIN "TransactionalOutbox" o ON o."id" = dl."outboxId"
         WHERE dl."consumerId" = p_consumer_id
-          AND dl."leaseExpiresAt" < CLOCK_TIMESTAMP()
-          AND dl."outcome" IS NULL
-        FOR UPDATE OF dl SKIP LOCKED
+          AND (
+            (dl."leaseExpiresAt" < CLOCK_TIMESTAMP() AND dl."outcome" IS NULL)
+            OR (dl."outcome" = 'UNCERTAIN'::"DeliveryOutcome")
+          )
+        ORDER BY dl."id" ASC
+        FOR UPDATE OF dl
     LOOP
-        IF v_expired_ledgers."claimCount" >= v_expired_ledgers."maxRetries" THEN
+        IF v_expired."claimCount" >= v_expired."maxRetries" THEN
+            -- Max retries reached: terminal failure
             UPDATE "DeliveryLedger"
             SET "outcome" = 'TERMINAL_FAILURE'::"DeliveryOutcome",
-                "outcomeReason" = 'Watchdog: lease expired and max retries exceeded',
+                "outcomeReason" = CASE
+                    WHEN v_expired."outcome" = 'UNCERTAIN'::"DeliveryOutcome" THEN 'Watchdog: UNCERTAIN delivery reached maxRetries limit'
+                    ELSE 'Watchdog: lease expired and maxRetries reached'
+                END,
                 "leaseToken" = NULL,
                 "updatedAt" = CLOCK_TIMESTAMP()
-            WHERE "id" = v_expired_ledgers."id";
+            WHERE "id" = v_expired."id";
 
             UPDATE "OutboxConsumerDispatchIntent"
             SET "status" = 'REVOKED'::"DispatchIntentStatus",
                 "updatedAt" = CLOCK_TIMESTAMP()
-            WHERE "id" = (SELECT "intentId" FROM "DeliveryLedger" WHERE "id" = v_expired_ledgers."id");
-        ELSE
-            UPDATE "DeliveryLedger"
-            SET "outcome" = 'LEASE_EXPIRED'::"DeliveryOutcome",
-                "outcomeReason" = 'Watchdog: lease expired, resetting to retriable',
-                "leaseToken" = NULL,
+            WHERE "id" = v_expired."intentId";
+
+            -- Rank 6: Update resolution record if exists
+            UPDATE "SequenceResolutionRecord"
+            SET "status" = 'DEAD_LETTERED'::"ResolutionStatus",
+                "resolutionNotes" = 'Watchdog: max retries exceeded',
                 "updatedAt" = CLOCK_TIMESTAMP()
-            WHERE "id" = v_expired_ledgers."id";
+            WHERE "consumerId" = p_consumer_id AND "outboxId" = v_expired."outboxId";
+        ELSE
+            -- Retriable: reset to PLANNED for worker retry
+            UPDATE "DeliveryLedger"
+            SET "outcome" = CASE
+                    WHEN v_expired."outcome" = 'UNCERTAIN'::"DeliveryOutcome" THEN 'RETRIABLE_FAILURE'::"DeliveryOutcome"
+                    ELSE 'LEASE_EXPIRED'::"DeliveryOutcome"
+                END,
+                "outcomeReason" = CASE
+                    WHEN v_expired."outcome" = 'UNCERTAIN'::"DeliveryOutcome" THEN 'Watchdog: recovered UNCERTAIN delivery for retry'
+                    ELSE 'Watchdog: lease expired, resetting to retriable'
+                END,
+                "leaseToken" = NULL,
+                "leaseExpiresAt" = CLOCK_TIMESTAMP(),
+                "updatedAt" = CLOCK_TIMESTAMP()
+            WHERE "id" = v_expired."id";
 
             UPDATE "OutboxConsumerDispatchIntent"
             SET "status" = 'PLANNED'::"DispatchIntentStatus",
                 "updatedAt" = CLOCK_TIMESTAMP()
-            WHERE "id" = (SELECT "intentId" FROM "DeliveryLedger" WHERE "id" = v_expired_ledgers."id");
+            WHERE "id" = v_expired."intentId";
+
+            -- Rank 6: Update resolution record if exists
+            UPDATE "SequenceResolutionRecord"
+            SET "status" = 'ROLLED_BACK'::"ResolutionStatus",
+                "resolutionNotes" = 'Watchdog: recovered for retry',
+                "updatedAt" = CLOCK_TIMESTAMP()
+            WHERE "consumerId" = p_consumer_id AND "outboxId" = v_expired."outboxId";
         END IF;
     END LOOP;
 
-    -- Reconcile cursor: find contiguous delivered sequence
-    SELECT COALESCE(MAX(di."sequenceNumber"), 0), (ARRAY_AGG(di."outboxId" ORDER BY di."sequenceNumber" DESC))[1]
-    INTO v_max_seq, v_last_outbox_id
+    -- Synthesize parent status for all affected outboxes
+    IF v_outbox_ids IS NOT NULL THEN
+        FOREACH v_outbox_id IN ARRAY v_outbox_ids
+        LOOP
+            PERFORM sp_synthesize_parent_outbox_status(v_outbox_id);
+        END LOOP;
+    END IF;
+
+    -- Rank 5: Contiguous Cursor Reconciliation
+    SELECT COALESCE(c."lastDeliveredSequence", 0)
+    INTO v_current_cursor
+    FROM "ConsumerAggregateCursor" c
+    WHERE c."consumerId" = p_consumer_id
+      AND c."aggregateType" = p_aggregate_type
+      AND c."aggregateId" = p_aggregate_id;
+
+    IF v_current_cursor IS NULL THEN
+        v_current_cursor := 0;
+    END IF;
+
+    -- Find the earliest sequence greater than v_current_cursor that is NOT DELIVERED
+    SELECT MIN(di."sequenceNumber")
+    INTO v_first_gap_seq
     FROM "OutboxConsumerDispatchIntent" di
     JOIN "TransactionalOutbox" o ON o."id" = di."outboxId"
     WHERE di."consumerId" = p_consumer_id
       AND o."aggregateType" = p_aggregate_type
       AND o."aggregateId" = p_aggregate_id
-      AND di."status" = 'DELIVERED'::"DispatchIntentStatus";
+      AND di."sequenceNumber" > v_current_cursor
+      AND di."status" != 'DELIVERED'::"DispatchIntentStatus";
 
-    -- Rank 5: Update cursor
+    IF v_first_gap_seq IS NOT NULL THEN
+        -- Contiguous delivered sequence is the highest sequence before the gap
+        SELECT COALESCE(MAX(di."sequenceNumber"), v_current_cursor)
+        INTO v_contiguous_seq
+        FROM "OutboxConsumerDispatchIntent" di
+        JOIN "TransactionalOutbox" o ON o."id" = di."outboxId"
+        WHERE di."consumerId" = p_consumer_id
+          AND o."aggregateType" = p_aggregate_type
+          AND o."aggregateId" = p_aggregate_id
+          AND di."sequenceNumber" > v_current_cursor
+          AND di."sequenceNumber" < v_first_gap_seq
+          AND di."status" = 'DELIVERED'::"DispatchIntentStatus";
+    ELSE
+        -- No gap: all sequences above current cursor are DELIVERED
+        SELECT COALESCE(MAX(di."sequenceNumber"), v_current_cursor)
+        INTO v_contiguous_seq
+        FROM "OutboxConsumerDispatchIntent" di
+        JOIN "TransactionalOutbox" o ON o."id" = di."outboxId"
+        WHERE di."consumerId" = p_consumer_id
+          AND o."aggregateType" = p_aggregate_type
+          AND o."aggregateId" = p_aggregate_id
+          AND di."sequenceNumber" > v_current_cursor
+          AND di."status" = 'DELIVERED'::"DispatchIntentStatus";
+    END IF;
+
+    IF v_contiguous_seq > 0 THEN
+        SELECT di."outboxId"
+        INTO v_last_outbox_id
+        FROM "OutboxConsumerDispatchIntent" di
+        WHERE di."consumerId" = p_consumer_id
+          AND di."sequenceNumber" = v_contiguous_seq;
+    END IF;
+
     INSERT INTO "ConsumerAggregateCursor" (
         "id", "consumerId", "aggregateType", "aggregateId", "lastDeliveredSequence", "lastDeliveredOutboxId", "updatedAt"
     )
     VALUES (
-        gen_random_uuid(), p_consumer_id, p_aggregate_type, p_aggregate_id, v_max_seq, v_last_outbox_id, CLOCK_TIMESTAMP()
+        gen_random_uuid(), p_consumer_id, p_aggregate_type, p_aggregate_id, v_contiguous_seq, v_last_outbox_id, CLOCK_TIMESTAMP()
     )
     ON CONFLICT ("consumerId", "aggregateType", "aggregateId") DO UPDATE
     SET "lastDeliveredSequence" = GREATEST("ConsumerAggregateCursor"."lastDeliveredSequence", EXCLUDED."lastDeliveredSequence"),
-        "lastDeliveredOutboxId" = COALESCE(EXCLUDED."lastDeliveredOutboxId", "ConsumerAggregateCursor"."lastDeliveredOutboxId"),
+        "lastDeliveredOutboxId" = CASE
+            WHEN EXCLUDED."lastDeliveredSequence" >= "ConsumerAggregateCursor"."lastDeliveredSequence" THEN EXCLUDED."lastDeliveredOutboxId"
+            ELSE "ConsumerAggregateCursor"."lastDeliveredOutboxId"
+        END,
         "updatedAt" = CLOCK_TIMESTAMP();
 
-    RETURN v_max_seq;
+    RETURN v_contiguous_seq;
 END;
 $$;
+
+REVOKE ALL ON FUNCTION sp_watchdog_reconcile_cursor(UUID, TEXT, TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION sp_watchdog_reconcile_cursor(UUID, TEXT, TEXT) TO CURRENT_USER;
 
 -- Procedure 8: sse_internal.sp_execute_enterprise_archival
 CREATE OR REPLACE FUNCTION sse_internal.sp_execute_enterprise_archival(

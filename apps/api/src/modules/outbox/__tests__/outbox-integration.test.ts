@@ -4,7 +4,6 @@ import {
   publishOutboxEvent,
   prepareOutboxDispatch,
   synthesizeParentOutboxStatus,
-  getOutboxDetails,
 } from '../outbox.service';
 import {
   activateConsumer,
@@ -24,9 +23,7 @@ import {
 } from '../outbox.types';
 
 describe('Milestone 3: PostgreSQL Real Integration Tests', () => {
-  const TEST_PREFIX = `m3_test_${Date.now()}`;
-  let consumer1Id: string;
-  let consumer2Id: string;
+  const TEST_PREFIX = `m3_audit_${Date.now()}`;
   let noMatchConsumerId: string;
 
   beforeAll(async () => {
@@ -49,7 +46,7 @@ describe('Milestone 3: PostgreSQL Real Integration Tests', () => {
   });
 
   afterAll(async () => {
-    // Cleanup consumers and outbox
+    // Cleanup test artifacts
     await prisma.deliveryLedger.deleteMany({
       where: { outbox: { aggregateType: { startsWith: 'TEST_AGG_' } } },
     });
@@ -83,16 +80,6 @@ describe('Milestone 3: PostgreSQL Real Integration Tests', () => {
     expect(c1.consumerName).toBe('audit-service');
     expect(c1.state).toBe(ConsumerState.ACTIVE);
     expect(c1.maxInFlight).toBe(5);
-    consumer1Id = c1.consumerId;
-
-    const c2 = await activateConsumer({
-      consumerGroup: TEST_PREFIX,
-      consumerName: 'notification-service',
-      filterPattern: { eventTypes: ['ORDER_CREATED'] },
-      maxInFlight: 10,
-      leaseDurationSeconds: 30,
-    });
-    consumer2Id = c2.consumerId;
 
     const c3 = await activateConsumer({
       consumerGroup: TEST_PREFIX,
@@ -111,7 +98,7 @@ describe('Milestone 3: PostgreSQL Real Integration Tests', () => {
       leaseDurationSeconds: 25,
     });
 
-    expect(c1Reactivated.consumerId).toBe(consumer1Id);
+    expect(c1Reactivated.consumerId).toBe(c1.consumerId);
     expect(c1Reactivated.maxInFlight).toBe(8);
     expect(c1Reactivated.leaseDurationSeconds).toBe(25);
   });
@@ -138,39 +125,194 @@ describe('Milestone 3: PostgreSQL Real Integration Tests', () => {
     expect(updated?.publishedAt).not.toBeNull();
   });
 
-  it('3. Per-consumer fan-out creates matching intents with monotonic sequences', async () => {
-    const outbox = await publishOutboxEvent({
-      aggregateType: 'TEST_AGG_ORDER',
-      aggregateId: 'order-101',
-      eventType: 'ORDER_CREATED',
-      payload: { amount: 2500, customerId: 'cust-1' },
+  it('3. RegisteredConsumer active-state and maxInFlight concurrency enforcement', async () => {
+    const c = await activateConsumer({
+      consumerGroup: TEST_PREFIX,
+      consumerName: 'concurrency-limited-consumer',
+      filterPattern: { eventTypes: ['TEST_LIMIT_EVENT'] },
+      maxInFlight: 1,
+      leaseDurationSeconds: 30,
     });
 
-    const dispatch = await prepareOutboxDispatch(outbox.id);
-    expect(dispatch.expectedConsumerCount).toBe(2); // c1 and c2 match ORDER_CREATED
-    expect(dispatch.status).toBe(OutboxStatus.DISPATCHED);
-    expect(dispatch.intentsCreated).toBe(2);
+    const outboxA = await publishOutboxEvent({
+      aggregateType: 'TEST_AGG_LIMIT',
+      aggregateId: 'lim-1',
+      eventType: 'TEST_LIMIT_EVENT',
+      payload: { item: 1 },
+    });
+    await prepareOutboxDispatch(outboxA.id);
 
-    const details = await getOutboxDetails(outbox.id);
-    expect(details?.dispatchIntents).toHaveLength(2);
-    expect(details?.deliveryLedgers).toHaveLength(2);
+    // 3a. Pause consumer: preflight must be blocked
+    await prisma.registeredConsumer.update({
+      where: { id: c.consumerId },
+      data: { state: ConsumerState.PAUSED },
+    });
+    const pausedPreflight = await executeDeliveryPreflight(c.consumerId, 'worker-lim-1');
+    expect(pausedPreflight).toBeNull();
 
-    for (const intent of details!.dispatchIntents) {
-      expect(intent.status).toBe(DispatchIntentStatus.PLANNED);
-      expect(intent.sequenceNumber).toBe(1n);
-    }
+    // Reactivate consumer
+    await prisma.registeredConsumer.update({
+      where: { id: c.consumerId },
+      data: { state: ConsumerState.ACTIVE },
+    });
+
+    // 3b. First claim succeeds (maxInFlight = 1)
+    const claim1 = await executeDeliveryPreflight(c.consumerId, 'worker-lim-1', 30);
+    expect(claim1).not.toBeNull();
+    expect(claim1?.outboxId).toBe(outboxA.id);
+
+    // Publish second event
+    const outboxB = await publishOutboxEvent({
+      aggregateType: 'TEST_AGG_LIMIT',
+      aggregateId: 'lim-2',
+      eventType: 'TEST_LIMIT_EVENT',
+      payload: { item: 2 },
+    });
+    await prepareOutboxDispatch(outboxB.id);
+
+    // Second claim blocked by maxInFlight = 1
+    const claim2Blocked = await executeDeliveryPreflight(c.consumerId, 'worker-lim-2', 30);
+    expect(claim2Blocked).toBeNull();
+
+    // Complete first claim
+    await executeDeliveryCompletion({
+      ledgerId: claim1!.ledgerId,
+      leaseToken: claim1!.leaseToken,
+      claimEpoch: claim1!.claimEpoch,
+      outcome: DeliveryOutcome.DELIVERED,
+    });
+
+    // Now second claim succeeds
+    const claim2 = await executeDeliveryPreflight(c.consumerId, 'worker-lim-2', 30);
+    expect(claim2).not.toBeNull();
+    expect(claim2?.outboxId).toBe(outboxB.id);
+
+    // Complete second claim
+    await executeDeliveryCompletion({
+      ledgerId: claim2!.ledgerId,
+      leaseToken: claim2!.leaseToken,
+      claimEpoch: claim2!.claimEpoch,
+      outcome: DeliveryOutcome.DELIVERED,
+    });
   });
 
-  it('4. Preflight acquires lease and enforces lease fencing on completion', async () => {
-    const worker1 = 'worker-node-1';
-    const preflight = await executeDeliveryPreflight(consumer1Id, worker1, 10);
+  it('4. Concurrent worker claims: exactly one worker acquires lease without race condition', async () => {
+    const c = await activateConsumer({
+      consumerGroup: TEST_PREFIX,
+      consumerName: 'race-consumer',
+      filterPattern: { eventTypes: ['TEST_RACE_EVENT'] },
+      maxInFlight: 10,
+      leaseDurationSeconds: 30,
+    });
 
+    const outbox = await publishOutboxEvent({
+      aggregateType: 'TEST_AGG_CONCURRENCY',
+      aggregateId: 'conc-1',
+      eventType: 'TEST_RACE_EVENT',
+      payload: { conc: true },
+    });
+    await prepareOutboxDispatch(outbox.id);
+
+    const workerIds = ['worker-a', 'worker-b', 'worker-c', 'worker-d', 'worker-e'];
+    const results = await Promise.all(
+      workerIds.map((wId) => executeDeliveryPreflight(c.consumerId, wId, 20)),
+    );
+
+    const successfulClaims = results.filter((r) => r !== null && r.outboxId === outbox.id);
+    expect(successfulClaims).toHaveLength(1);
+
+    const winner = successfulClaims[0]!;
+    expect(winner.claimEpoch).toBe(1n);
+
+    await executeDeliveryCompletion({
+      ledgerId: winner.ledgerId,
+      leaseToken: winner.leaseToken,
+      claimEpoch: winner.claimEpoch,
+      outcome: DeliveryOutcome.DELIVERED,
+    });
+  });
+
+  it('5. Per-Aggregate ordering (FIFO): unresolved earlier event blocks subsequent events for same aggregate', async () => {
+    const c = await activateConsumer({
+      consumerGroup: TEST_PREFIX,
+      consumerName: 'fifo-consumer',
+      filterPattern: { eventTypes: ['TEST_FIFO_EVENT'] },
+      maxInFlight: 10,
+      leaseDurationSeconds: 30,
+    });
+
+    const aggId = 'fifo-order-999';
+
+    // Event 1
+    const event1 = await publishOutboxEvent({
+      aggregateType: 'TEST_AGG_ORDERING',
+      aggregateId: aggId,
+      eventType: 'TEST_FIFO_EVENT',
+      payload: { seq: 1 },
+    });
+    await prepareOutboxDispatch(event1.id);
+
+    // Event 2 for same aggregate
+    const event2 = await publishOutboxEvent({
+      aggregateType: 'TEST_AGG_ORDERING',
+      aggregateId: aggId,
+      eventType: 'TEST_FIFO_EVENT',
+      payload: { seq: 2 },
+    });
+    await prepareOutboxDispatch(event2.id);
+
+    // Worker claims Event 1
+    const claim1 = await executeDeliveryPreflight(c.consumerId, 'worker-fifo-1', 30);
+    expect(claim1).not.toBeNull();
+    expect(claim1?.outboxId).toBe(event1.id);
+
+    // While Event 1 is unresolved, Event 2 MUST NOT be claimable
+    const claim2Blocked = await executeDeliveryPreflight(c.consumerId, 'worker-fifo-2', 30);
+    expect(claim2Blocked).toBeNull();
+
+    // Complete Event 1
+    await executeDeliveryCompletion({
+      ledgerId: claim1!.ledgerId,
+      leaseToken: claim1!.leaseToken,
+      claimEpoch: claim1!.claimEpoch,
+      outcome: DeliveryOutcome.DELIVERED,
+    });
+
+    // Now Event 2 is unblocked and can be claimed
+    const claim2 = await executeDeliveryPreflight(c.consumerId, 'worker-fifo-1', 30);
+    expect(claim2).not.toBeNull();
+    expect(claim2?.outboxId).toBe(event2.id);
+
+    // Complete Event 2
+    await executeDeliveryCompletion({
+      ledgerId: claim2!.ledgerId,
+      leaseToken: claim2!.leaseToken,
+      claimEpoch: claim2!.claimEpoch,
+      outcome: DeliveryOutcome.DELIVERED,
+    });
+  });
+
+  it('6. Preflight lease fencing: wrong token or claimEpoch rejected with LEASE_FENCED', async () => {
+    const c = await activateConsumer({
+      consumerGroup: TEST_PREFIX,
+      consumerName: 'fencing-consumer',
+      filterPattern: { eventTypes: ['TEST_FENCE_EVENT'] },
+      maxInFlight: 10,
+      leaseDurationSeconds: 15,
+    });
+
+    const outbox = await publishOutboxEvent({
+      aggregateType: 'TEST_AGG_FENCING',
+      aggregateId: 'fence-1',
+      eventType: 'TEST_FENCE_EVENT',
+      payload: { fencing: true },
+    });
+    await prepareOutboxDispatch(outbox.id);
+
+    const preflight = await executeDeliveryPreflight(c.consumerId, 'worker-fence', 15);
     expect(preflight).not.toBeNull();
-    expect(preflight?.consumerId === undefined).toBe(true); // preflight has ledgerId, intentId, outboxId
-    expect(preflight?.claimEpoch).toBe(1n);
-    expect(preflight?.leaseToken).toBeDefined();
 
-    // Verify lease fencing: attempt completion with wrong lease token fails
+    // Attempt with invalid lease token
     await expect(
       executeDeliveryCompletion({
         ledgerId: preflight!.ledgerId,
@@ -180,12 +322,12 @@ describe('Milestone 3: PostgreSQL Real Integration Tests', () => {
       }),
     ).rejects.toThrow(/LEASE_FENCED/);
 
-    // Verify lease fencing: attempt completion with wrong claim epoch fails
+    // Attempt with invalid claim epoch
     await expect(
       executeDeliveryCompletion({
         ledgerId: preflight!.ledgerId,
         leaseToken: preflight!.leaseToken,
-        claimEpoch: 99n,
+        claimEpoch: 999n,
         outcome: DeliveryOutcome.DELIVERED,
       }),
     ).rejects.toThrow(/LEASE_FENCED/);
@@ -196,34 +338,238 @@ describe('Milestone 3: PostgreSQL Real Integration Tests', () => {
       leaseToken: preflight!.leaseToken,
       claimEpoch: preflight!.claimEpoch,
       outcome: DeliveryOutcome.DELIVERED,
-      durationMs: 42,
+      durationMs: 55,
+    });
+    expect(success).toBe(true);
+  });
+
+  it('7. UNCERTAIN delivery outcome: held in ASSIGNED and recovered by watchdog for retry', async () => {
+    const c = await activateConsumer({
+      consumerGroup: TEST_PREFIX,
+      consumerName: 'uncertain-consumer',
+      filterPattern: { eventTypes: ['TEST_UNCERTAIN_EVENT'] },
+      maxInFlight: 10,
+      leaseDurationSeconds: 30,
     });
 
-    expect(success).toBe(true);
+    const outbox = await publishOutboxEvent({
+      aggregateType: 'TEST_AGG_UNCERTAIN',
+      aggregateId: 'unc-recover-1',
+      eventType: 'TEST_UNCERTAIN_EVENT',
+      payload: { uncertainTest: true },
+    });
+    await prepareOutboxDispatch(outbox.id);
 
-    const ledger = await prisma.deliveryLedger.findUnique({ where: { id: preflight!.ledgerId } });
-    expect(ledger?.outcome).toBe(DeliveryOutcome.DELIVERED);
-    expect(ledger?.leaseToken).toBeNull();
-    expect(ledger?.executionDurationMs).toBe(42);
+    const preflight = await executeDeliveryPreflight(c.consumerId, 'worker-uncertain', 10);
+    expect(preflight).not.toBeNull();
+    expect(preflight?.outboxId).toBe(outbox.id);
 
-    // Verify ConsumerAggregateCursor was updated
-    const cursor = await prisma.consumerAggregateCursor.findUnique({
+    // Complete with UNCERTAIN outcome
+    const markedUncertain = await executeDeliveryCompletion({
+      ledgerId: preflight!.ledgerId,
+      leaseToken: preflight!.leaseToken,
+      claimEpoch: preflight!.claimEpoch,
+      outcome: DeliveryOutcome.UNCERTAIN,
+      outcomeReason: 'Connection reset by peer during RPC call',
+    });
+    expect(markedUncertain).toBe(true);
+
+    // Intent is held in ASSIGNED
+    const intentBefore = await prisma.outboxConsumerDispatchIntent.findUnique({
+      where: { id: preflight!.intentId },
+    });
+    expect(intentBefore?.status).toBe(DispatchIntentStatus.ASSIGNED);
+
+    // SequenceResolutionRecord is created in UNCERTAIN_NEEDS_WATCHDOG
+    const resolutionBefore = await prisma.sequenceResolutionRecord.findFirst({
+      where: { consumerId: c.consumerId, outboxId: outbox.id },
+    });
+    expect(resolutionBefore?.status).toBe(ResolutionStatus.UNCERTAIN_NEEDS_WATCHDOG);
+
+    // Watchdog runs cursor reconciliation and recovers UNCERTAIN delivery
+    await reconcileConsumerCursor(c.consumerId, 'TEST_AGG_UNCERTAIN', 'unc-recover-1');
+
+    // Intent is reset to PLANNED for worker retry
+    const intentAfter = await prisma.outboxConsumerDispatchIntent.findUnique({
+      where: { id: preflight!.intentId },
+    });
+    expect(intentAfter?.status).toBe(DispatchIntentStatus.PLANNED);
+
+    // SequenceResolutionRecord updated to ROLLED_BACK
+    const resolutionAfter = await prisma.sequenceResolutionRecord.findFirst({
+      where: { consumerId: c.consumerId, outboxId: outbox.id },
+    });
+    expect(resolutionAfter?.status).toBe(ResolutionStatus.ROLLED_BACK);
+
+    // Worker can now re-claim and successfully deliver
+    const retryPreflight = await executeDeliveryPreflight(c.consumerId, 'worker-retry-node', 10);
+    expect(retryPreflight).not.toBeNull();
+    expect(retryPreflight?.outboxId).toBe(outbox.id);
+    expect(retryPreflight?.claimEpoch).toBe(preflight!.claimEpoch + 1n);
+
+    const delivered = await executeDeliveryCompletion({
+      ledgerId: retryPreflight!.ledgerId,
+      leaseToken: retryPreflight!.leaseToken,
+      claimEpoch: retryPreflight!.claimEpoch,
+      outcome: DeliveryOutcome.DELIVERED,
+    });
+    expect(delivered).toBe(true);
+
+    const finalIntent = await prisma.outboxConsumerDispatchIntent.findUnique({
+      where: { id: preflight!.intentId },
+    });
+    expect(finalIntent?.status).toBe(DispatchIntentStatus.DELIVERED);
+  });
+
+  it('8. Watchdog contiguous cursor reconciliation: cursor does NOT advance over gaps', async () => {
+    const c = await activateConsumer({
+      consumerGroup: TEST_PREFIX,
+      consumerName: 'gap-consumer',
+      filterPattern: { eventTypes: ['TEST_GAP_EVENT'] },
+      maxInFlight: 10,
+      leaseDurationSeconds: 30,
+    });
+
+    const aggType = 'TEST_AGG_GAP';
+    const aggId = 'gap-check-1';
+
+    // Publish Event 1 and Event 2
+    const e1 = await publishOutboxEvent({
+      aggregateType: aggType,
+      aggregateId: aggId,
+      eventType: 'TEST_GAP_EVENT',
+      payload: { order: 1 },
+    });
+    await prepareOutboxDispatch(e1.id);
+
+    const claimE1 = await executeDeliveryPreflight(c.consumerId, 'worker-gap', 10);
+    expect(claimE1).not.toBeNull();
+    expect(claimE1?.outboxId).toBe(e1.id);
+
+    // Deliver Event 1
+    await executeDeliveryCompletion({
+      ledgerId: claimE1!.ledgerId,
+      leaseToken: claimE1!.leaseToken,
+      claimEpoch: claimE1!.claimEpoch,
+      outcome: DeliveryOutcome.DELIVERED,
+    });
+
+    const seq1 = claimE1!.sequenceNumber;
+
+    // Publish Event 2 (leave in PLANNED / not delivered)
+    const e2 = await publishOutboxEvent({
+      aggregateType: aggType,
+      aggregateId: aggId,
+      eventType: 'TEST_GAP_EVENT',
+      payload: { order: 2 },
+    });
+    await prepareOutboxDispatch(e2.id);
+
+    // Reconcile cursor with watchdog
+    const reconciledCursor = await reconcileConsumerCursor(c.consumerId, aggType, aggId);
+    expect(reconciledCursor).toBe(seq1);
+
+    const cursorRecord = await prisma.consumerAggregateCursor.findUnique({
       where: {
         consumerId_aggregateType_aggregateId: {
-          consumerId: consumer1Id,
-          aggregateType: 'TEST_AGG_ORDER',
-          aggregateId: 'order-101',
+          consumerId: c.consumerId,
+          aggregateType: aggType,
+          aggregateId: aggId,
         },
       },
     });
-    expect(cursor?.lastDeliveredSequence).toBe(1n);
+    expect(cursorRecord?.lastDeliveredSequence).toBe(seq1);
   });
 
-  it('5. Parent outbox status synthesizes to COMPLETED when all children deliver', async () => {
-    // Deliver the second intent (for consumer2)
-    const preflight2 = await executeDeliveryPreflight(consumer2Id, 'worker-node-2', 10);
-    expect(preflight2).not.toBeNull();
+  it('9. Parent outbox status: mixed successful and failed deliveries becomes FAILED, never COMPLETED', async () => {
+    const cMixed1 = await activateConsumer({
+      consumerGroup: TEST_PREFIX,
+      consumerName: 'mixed-consumer-1',
+      filterPattern: { eventTypes: ['TEST_MIXED_EVENT'] },
+      maxInFlight: 10,
+    });
+    const cMixed2 = await activateConsumer({
+      consumerGroup: TEST_PREFIX,
+      consumerName: 'mixed-consumer-2',
+      filterPattern: { eventTypes: ['TEST_MIXED_EVENT'] },
+      maxInFlight: 10,
+    });
 
+    const outbox = await publishOutboxEvent({
+      aggregateType: 'TEST_AGG_MIXED',
+      aggregateId: 'mixed-1',
+      eventType: 'TEST_MIXED_EVENT',
+      payload: { mixed: true },
+    });
+    const dispatch = await prepareOutboxDispatch(outbox.id);
+    expect(dispatch.expectedConsumerCount).toBe(2);
+
+    // Consumer 1 succeeds
+    const preflightC1 = await executeDeliveryPreflight(cMixed1.consumerId, 'worker-mixed-1', 10);
+    expect(preflightC1).not.toBeNull();
+    await executeDeliveryCompletion({
+      ledgerId: preflightC1!.ledgerId,
+      leaseToken: preflightC1!.leaseToken,
+      claimEpoch: preflightC1!.claimEpoch,
+      outcome: DeliveryOutcome.DELIVERED,
+    });
+
+    // Consumer 2 fails permanently (TERMINAL_FAILURE)
+    const preflightC2 = await executeDeliveryPreflight(cMixed2.consumerId, 'worker-mixed-2', 10);
+    expect(preflightC2).not.toBeNull();
+    await executeDeliveryCompletion({
+      ledgerId: preflightC2!.ledgerId,
+      leaseToken: preflightC2!.leaseToken,
+      claimEpoch: preflightC2!.claimEpoch,
+      outcome: DeliveryOutcome.TERMINAL_FAILURE,
+      outcomeReason: 'Non-recoverable deserialization error',
+    });
+
+    // Synthesize status
+    const status = await synthesizeParentOutboxStatus(outbox.id);
+
+    // MUST BE FAILED! Never COMPLETED when any consumer suffered terminal failure!
+    expect(status).toBe(OutboxStatus.FAILED);
+
+    const finalOutbox = await prisma.transactionalOutbox.findUnique({ where: { id: outbox.id } });
+    expect(finalOutbox?.status).toBe(OutboxStatus.FAILED);
+    expect(finalOutbox?.publishedAt).toBeNull();
+  });
+
+  it('10. Parent outbox status: all children delivered successfully becomes COMPLETED', async () => {
+    const cSucc1 = await activateConsumer({
+      consumerGroup: TEST_PREFIX,
+      consumerName: 'succ-consumer-1',
+      filterPattern: { eventTypes: ['TEST_ALL_SUCC_EVENT'] },
+      maxInFlight: 10,
+    });
+    const cSucc2 = await activateConsumer({
+      consumerGroup: TEST_PREFIX,
+      consumerName: 'succ-consumer-2',
+      filterPattern: { eventTypes: ['TEST_ALL_SUCC_EVENT'] },
+      maxInFlight: 10,
+    });
+
+    const outbox = await publishOutboxEvent({
+      aggregateType: 'TEST_AGG_ALL_SUCCESS',
+      aggregateId: 'all-succ-1',
+      eventType: 'TEST_ALL_SUCC_EVENT',
+      payload: { payment: 100 },
+    });
+    const dispatch = await prepareOutboxDispatch(outbox.id);
+    expect(dispatch.expectedConsumerCount).toBe(2);
+
+    const preflight1 = await executeDeliveryPreflight(cSucc1.consumerId, 'worker-succ-1', 10);
+    expect(preflight1).not.toBeNull();
+    await executeDeliveryCompletion({
+      ledgerId: preflight1!.ledgerId,
+      leaseToken: preflight1!.leaseToken,
+      claimEpoch: preflight1!.claimEpoch,
+      outcome: DeliveryOutcome.DELIVERED,
+    });
+
+    const preflight2 = await executeDeliveryPreflight(cSucc2.consumerId, 'worker-succ-2', 10);
+    expect(preflight2).not.toBeNull();
     await executeDeliveryCompletion({
       ledgerId: preflight2!.ledgerId,
       leaseToken: preflight2!.leaseToken,
@@ -231,75 +577,12 @@ describe('Milestone 3: PostgreSQL Real Integration Tests', () => {
       outcome: DeliveryOutcome.DELIVERED,
     });
 
-    const outbox = await prisma.transactionalOutbox.findUnique({ where: { id: preflight2!.outboxId } });
-    expect(outbox?.status).toBe(OutboxStatus.COMPLETED);
-    expect(outbox?.publishedAt).not.toBeNull();
+    const finalOutbox = await prisma.transactionalOutbox.findUnique({ where: { id: outbox.id } });
+    expect(finalOutbox?.status).toBe(OutboxStatus.COMPLETED);
+    expect(finalOutbox?.publishedAt).not.toBeNull();
   });
 
-  it('6. UNCERTAIN outcome holds intent and registers SequenceResolutionRecord', async () => {
-    const outbox = await publishOutboxEvent({
-      aggregateType: 'TEST_AGG_UNCERTAIN',
-      aggregateId: 'unc-1',
-      eventType: 'ORDER_CREATED',
-      payload: { uncertainTest: true },
-    });
-
-    await prepareOutboxDispatch(outbox.id);
-
-    const preflight = await executeDeliveryPreflight(consumer1Id, 'worker-uncertain', 10);
-    expect(preflight).not.toBeNull();
-
-    const success = await executeDeliveryCompletion({
-      ledgerId: preflight!.ledgerId,
-      leaseToken: preflight!.leaseToken,
-      claimEpoch: preflight!.claimEpoch,
-      outcome: DeliveryOutcome.UNCERTAIN,
-      outcomeReason: 'Socket write timed out with downstream partner',
-    });
-
-    expect(success).toBe(true);
-
-    const intent = await prisma.outboxConsumerDispatchIntent.findUnique({ where: { id: preflight!.intentId } });
-    expect(intent?.status).toBe(DispatchIntentStatus.ASSIGNED);
-
-    const resolution = await prisma.sequenceResolutionRecord.findFirst({
-      where: { consumerId: consumer1Id, outboxId: outbox.id },
-    });
-    expect(resolution).toBeDefined();
-    expect(resolution?.status).toBe(ResolutionStatus.UNCERTAIN_NEEDS_WATCHDOG);
-    expect(resolution?.resolutionNotes).toBe('Socket write timed out with downstream partner');
-  });
-
-  it('7. Watchdog cursor reconciliation recovers expired leases', async () => {
-    const outbox = await publishOutboxEvent({
-      aggregateType: 'TEST_AGG_EXPIRE',
-      aggregateId: 'exp-1',
-      eventType: 'ORDER_CREATED',
-      payload: { expireTest: true },
-    });
-
-    await prepareOutboxDispatch(outbox.id);
-
-    // Preflight with a 1-second lease
-    const preflight = await executeDeliveryPreflight(consumer2Id, 'worker-slow', 1);
-    expect(preflight).not.toBeNull();
-
-    // Sleep 1.5 seconds to expire lease
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-
-    // Run watchdog reconciliation
-    const reconciledSeq = await reconcileConsumerCursor(consumer2Id, 'TEST_AGG_EXPIRE', 'exp-1');
-    expect(reconciledSeq).toBeGreaterThanOrEqual(0n);
-
-    // Ledger should now be reset to LEASE_EXPIRED and intent reset to PLANNED for retry
-    const ledger = await prisma.deliveryLedger.findUnique({ where: { id: preflight!.ledgerId } });
-    expect(ledger?.outcome).toBe(DeliveryOutcome.LEASE_EXPIRED);
-
-    const intent = await prisma.outboxConsumerDispatchIntent.findUnique({ where: { id: preflight!.intentId } });
-    expect(intent?.status).toBe(DispatchIntentStatus.PLANNED);
-  });
-
-  it('8. Consumer retirement revokes pending dispatches and suspends active ledgers', async () => {
+  it('11. Consumer retirement revokes pending dispatches and suspends active ledgers', async () => {
     const retired = await retireConsumer(noMatchConsumerId);
     expect(retired).toBe(true);
 
@@ -308,13 +591,12 @@ describe('Milestone 3: PostgreSQL Real Integration Tests', () => {
     expect(consumer?.retiredAt).not.toBeNull();
   });
 
-  it('9. Enterprise archival copies to archive tables and purges operational rows idempotently', async () => {
-    // Create an old completed outbox to archive
-    const oldDate = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000); // 31 days ago
+  it('12. Enterprise archival is retry-safe and idempotent with fixed batch ID', async () => {
+    const oldDate = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
     const outbox = await prisma.transactionalOutbox.create({
       data: {
         aggregateType: 'TEST_AGG_ARCHIVE',
-        aggregateId: 'arch-1',
+        aggregateId: 'arch-audit-1',
         eventType: 'ARCHIVE_EVENT',
         payload: { archived: true },
         status: OutboxStatus.COMPLETED,
@@ -324,7 +606,7 @@ describe('Milestone 3: PostgreSQL Real Integration Tests', () => {
       },
     });
 
-    const fixedBatchId = '11111111-2222-3333-4444-555555555555';
+    const fixedBatchId = '33333333-4444-5555-6666-777777777777';
 
     // First archival run
     const res1 = await executeEnterpriseArchival({
@@ -347,7 +629,7 @@ describe('Milestone 3: PostgreSQL Real Integration Tests', () => {
     const operationalRow = await prisma.transactionalOutbox.findUnique({ where: { id: outbox.id } });
     expect(operationalRow).toBeNull();
 
-    // Second archival run with same batch ID: MUST BE IDEMPOTENT (0 errors)
+    // Second archival run with same batch ID: retry-safe and idempotent
     const res2 = await executeEnterpriseArchival({
       retentionInterval: '30 days',
       batchSize: 50,

@@ -9,7 +9,7 @@ import { OutboxStatus, DeliveryOutcome } from '../outbox.types';
 describe('Milestone 3: Outbox Worker & Lifecycle Tests', () => {
   const TEST_GROUP = `worker_grp_${Date.now()}`;
   let consumerId: string;
-  let receivedPayloads: unknown[] = [];
+  const receivedPayloads: unknown[] = [];
 
   beforeAll(async () => {
     // Clean up any stale consumers from previous runs
