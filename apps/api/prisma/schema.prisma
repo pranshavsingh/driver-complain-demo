@@ -615,6 +615,266 @@ model AdminCategoryAssignment {
   @@index([category])
 }
 
+// ──────────────────────────────────────────────────────────────
+// Milestone 3: Durable Outbox & Reliable Fan-out Architecture
+// ──────────────────────────────────────────────────────────────
+
+enum OutboxStatus {
+  PENDING
+  DISPATCHED
+  COMPLETED
+  FAILED
+  DEAD_LETTER
+  SUPERSEDED
+  CANCELLED
+}
+
+enum ConsumerState {
+  ACTIVE
+  PAUSED
+  DRAINING
+  RETIRED
+  BLOCKED
+  COMPROMISED
+}
+
+enum DispatchIntentStatus {
+  PLANNED
+  ASSIGNED
+  DELIVERED
+  EXPIRED
+  REVOKED
+}
+
+enum DeliveryOutcome {
+  DELIVERED
+  RETRIABLE_FAILURE
+  TERMINAL_FAILURE
+  LEASE_EXPIRED
+  SUSPENDED_BY_RETIREMENT
+  REVOKED
+  UNCERTAIN
+}
+
+enum ResolutionStatus {
+  IN_FLIGHT
+  COMMITTED
+  ROLLED_BACK
+  UNCERTAIN_NEEDS_WATCHDOG
+  DEAD_LETTERED
+}
+
+enum ArchivalReason {
+  TTL_EXPIRED
+  RETIREMENT_SWEEP
+  REGULATORY_HOLD
+  MANUAL_PURGE
+  DLQ_DRAIN
+}
+
+model RegisteredConsumer {
+  id                   String                         @id @default(uuid(7)) @db.Uuid
+  consumerGroup        String
+  consumerName         String
+  state                ConsumerState                  @default(ACTIVE)
+  filterPattern        Json?
+  maxInFlight          Int                            @default(10)
+  leaseDurationSeconds Int                            @default(30)
+  retiredAt            DateTime?
+  metadata             Json?
+  createdAt            DateTime                       @default(now())
+  updatedAt            DateTime                       @updatedAt
+
+  dispatchIntents      OutboxConsumerDispatchIntent[]
+  deliveryLedgers      DeliveryLedger[]
+  aggregateCursors     ConsumerAggregateCursor[]
+  resolutionRecords    SequenceResolutionRecord[]
+
+  @@unique([consumerGroup, consumerName])
+  @@index([state])
+  @@index([consumerGroup])
+}
+
+model TransactionalOutbox {
+  id                    String                         @id @default(uuid(7)) @db.Uuid
+  aggregateType         String
+  aggregateId           String
+  eventType             String
+  payload               Json
+  headers               Json?
+  status                OutboxStatus                   @default(PENDING)
+  isFanoutSealed        Boolean                        @default(false)
+  expectedConsumerCount Int                            @default(0)
+  retryCount            Int                            @default(0)
+  maxRetries            Int                            @default(5)
+  scheduledAt           DateTime                       @default(now())
+  lockedAt              DateTime?
+  lockedBy              String?
+  publishedAt           DateTime?
+  archivedAt            DateTime?
+  createdAt             DateTime                       @default(now())
+  updatedAt             DateTime                       @updatedAt
+
+  dispatchIntents       OutboxConsumerDispatchIntent[]
+  deliveryLedgers       DeliveryLedger[]
+  resolutionRecords     SequenceResolutionRecord[]
+
+  @@index([status, scheduledAt])
+  @@index([aggregateType, aggregateId])
+  @@index([createdAt])
+}
+
+model OutboxConsumerDispatchIntent {
+  id             String               @id @default(uuid(7)) @db.Uuid
+  outboxId       String               @db.Uuid
+  outbox         TransactionalOutbox @relation(fields: [outboxId], references: [id], onDelete: Cascade)
+  consumerId     String               @db.Uuid
+  consumer       RegisteredConsumer   @relation(fields: [consumerId], references: [id], onDelete: Restrict)
+  sequenceNumber BigInt
+  status         DispatchIntentStatus @default(PLANNED)
+  deliveredAt    DateTime?
+  archivedAt     DateTime?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  deliveryLedgers DeliveryLedger[]
+
+  @@unique([outboxId, consumerId])
+  @@unique([consumerId, sequenceNumber])
+  @@index([consumerId, status])
+  @@index([status])
+}
+
+model DeliveryLedger {
+  id                  String                       @id @default(uuid(7)) @db.Uuid
+  intentId            String                       @db.Uuid
+  intent              OutboxConsumerDispatchIntent @relation(fields: [intentId], references: [id], onDelete: Cascade)
+  consumerId          String                       @db.Uuid
+  consumer            RegisteredConsumer           @relation(fields: [consumerId], references: [id], onDelete: Restrict)
+  outboxId            String                       @db.Uuid
+  outbox              TransactionalOutbox          @relation(fields: [outboxId], references: [id], onDelete: Cascade)
+  claimEpoch          BigInt                       @default(0)
+  claimCount          Int                          @default(0)
+  leaseToken          String?                      @db.Uuid
+  leaseExpiresAt      DateTime?
+  lastWorkerId        String?
+  outcome             DeliveryOutcome?
+  outcomeReason       String?
+  executionDurationMs Int?
+  createdAt           DateTime                     @default(now())
+  updatedAt           DateTime                     @updatedAt
+
+  @@index([consumerId, leaseExpiresAt])
+  @@index([outboxId])
+  @@index([intentId])
+  @@index([outcome])
+}
+
+model ConsumerAggregateCursor {
+  id                    String             @id @default(uuid(7)) @db.Uuid
+  consumerId            String             @db.Uuid
+  consumer              RegisteredConsumer @relation(fields: [consumerId], references: [id], onDelete: Restrict)
+  aggregateType         String
+  aggregateId           String
+  lastDeliveredSequence BigInt             @default(0)
+  lastDeliveredOutboxId String?            @db.Uuid
+  updatedAt             DateTime           @updatedAt
+
+  @@unique([consumerId, aggregateType, aggregateId])
+  @@index([consumerId])
+}
+
+model SequenceResolutionRecord {
+  id              String              @id @default(uuid(7)) @db.Uuid
+  consumerId      String              @db.Uuid
+  consumer        RegisteredConsumer  @relation(fields: [consumerId], references: [id], onDelete: Restrict)
+  aggregateType   String
+  aggregateId     String
+  sequenceNumber  BigInt
+  outboxId        String              @db.Uuid
+  outbox          TransactionalOutbox @relation(fields: [outboxId], references: [id], onDelete: Cascade)
+  status          ResolutionStatus    @default(IN_FLIGHT)
+  resolutionNotes String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  @@unique([consumerId, sequenceNumber])
+  @@index([consumerId, status])
+  @@index([outboxId])
+}
+
+model TransactionalOutboxArchive {
+  id                    String          @id @db.Uuid
+  aggregateType         String
+  aggregateId           String
+  eventType             String
+  payload               Json
+  headers               Json?
+  status                OutboxStatus
+  isFanoutSealed        Boolean
+  expectedConsumerCount Int
+  retryCount            Int
+  maxRetries            Int
+  scheduledAt           DateTime
+  lockedAt              DateTime?
+  lockedBy              String?
+  publishedAt           DateTime?
+  archivedAt            DateTime
+  createdAt             DateTime
+  updatedAt             DateTime
+  archiveBatchId        String          @db.Uuid
+  archivedReason        ArchivalReason
+  archivedTimestamp     DateTime        @default(now())
+
+  @@index([archiveBatchId])
+  @@index([archivedTimestamp])
+  @@index([aggregateType, aggregateId])
+}
+
+model OutboxConsumerDispatchIntentArchive {
+  id                String               @id @db.Uuid
+  outboxId          String               @db.Uuid
+  consumerId        String               @db.Uuid
+  sequenceNumber    BigInt
+  status            DispatchIntentStatus
+  deliveredAt       DateTime?
+  archivedAt        DateTime
+  createdAt         DateTime
+  updatedAt         DateTime
+  archiveBatchId    String               @db.Uuid
+  archivedReason    ArchivalReason
+  archivedTimestamp DateTime             @default(now())
+
+  @@index([archiveBatchId])
+  @@index([outboxId])
+  @@index([consumerId])
+}
+
+model DeliveryLedgerArchive {
+  id                  String           @id @db.Uuid
+  intentId            String           @db.Uuid
+  consumerId          String           @db.Uuid
+  outboxId            String           @db.Uuid
+  claimEpoch          BigInt
+  claimCount          Int
+  leaseToken          String?          @db.Uuid
+  leaseExpiresAt      DateTime?
+  lastWorkerId        String?
+  outcome             DeliveryOutcome?
+  outcomeReason       String?
+  executionDurationMs Int?
+  createdAt           DateTime
+  updatedAt           DateTime
+  archiveBatchId      String           @db.Uuid
+  archivedReason      ArchivalReason
+  archivedTimestamp   DateTime         @default(now())
+
+  @@index([archiveBatchId])
+  @@index([intentId])
+  @@index([consumerId])
+  @@index([outboxId])
+}
+
 
 
 

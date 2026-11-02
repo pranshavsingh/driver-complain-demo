@@ -15,6 +15,7 @@
     "prisma:generate": "prisma generate",
     "migrate:dev": "prisma migrate dev",
     "migrate:deploy": "prisma migrate resolve --rolled-back 20260829_scalability_indexes || true && prisma migrate deploy",
+    "migrate:diff": "prisma migrate diff --from-schema-datasource ./prisma/schema.prisma --to-schema-datamodel ./prisma/schema.prisma --exit-code",
     "seed": "prisma db seed"
   },
   "prisma": {
@@ -26,6 +27,7 @@
     "@sentry/node": "^10",
     "@socket.io/redis-adapter": "^8.3.0",
     "bcryptjs": "^3",
+    "bullmq": "^6.5.3",
     "cloudinary": "^2",
     "cors": "^2",
     "exceljs": "^4.4.0",
