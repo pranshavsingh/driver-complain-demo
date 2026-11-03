@@ -1,5 +1,12 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalPassThroughEnv": [
+    "DATABASE_URL",
+    "M4_ALLOW_DESTRUCTIVE_TEST_DB",
+    "M4_EXPECTED_TEST_SYSTEM_IDENTIFIER",
+    "M4_TEST_DISPOSABLE_DB_URL",
+    "GITHUB_ENV"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
@@ -10,7 +17,13 @@
     },
     "lint": {},
     "test": {
-      "dependsOn": ["^build"]
+      "dependsOn": ["^build"],
+      "env": [
+        "DATABASE_URL",
+        "M4_ALLOW_DESTRUCTIVE_TEST_DB",
+        "M4_EXPECTED_TEST_SYSTEM_IDENTIFIER",
+        "M4_TEST_DISPOSABLE_DB_URL"
+      ]
     },
     "dev": {
       "cache": false,

@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import * as fs from 'fs';
+import * as path from 'path';
 
 async function main(): Promise<void> {
   const maintUrl =
@@ -35,14 +36,24 @@ async function main(): Promise<void> {
 
     console.log(`PostgreSQL cluster system_identifier discovered: ${sysId}`);
 
-    // 3. Export environment variables to GITHUB_ENV if running in GitHub Actions
+    // 3. Write .env.test for apps/api so vitest receives dynamic cluster ID
+    const disposableUrl =
+      'postgresql://app:app@127.0.0.1:5432/driver_complaint_m4_disposable?schema=public';
+    const envLines =
+      [
+        `M4_ALLOW_DESTRUCTIVE_TEST_DB=true`,
+        `M4_EXPECTED_TEST_SYSTEM_IDENTIFIER=${sysId}`,
+        `M4_TEST_DISPOSABLE_DB_URL=${disposableUrl}`,
+        `DATABASE_URL=${disposableUrl}`,
+      ].join('\n') + '\n';
+
+    const testEnvPath = path.resolve(__dirname, '../apps/api/.env.test');
+    fs.writeFileSync(testEnvPath, envLines);
+    console.log(`Wrote test configuration to ${testEnvPath}`);
+
+    // 4. Export environment variables to GITHUB_ENV if running in GitHub Actions
     if (process.env.GITHUB_ENV) {
-      const disposableUrl =
-        'postgresql://app:app@127.0.0.1:5432/driver_complaint_m4_disposable?schema=public';
-      fs.appendFileSync(process.env.GITHUB_ENV, `M4_ALLOW_DESTRUCTIVE_TEST_DB=true\n`);
-      fs.appendFileSync(process.env.GITHUB_ENV, `M4_EXPECTED_TEST_SYSTEM_IDENTIFIER=${sysId}\n`);
-      fs.appendFileSync(process.env.GITHUB_ENV, `M4_TEST_DISPOSABLE_DB_URL=${disposableUrl}\n`);
-      fs.appendFileSync(process.env.GITHUB_ENV, `DATABASE_URL=${disposableUrl}\n`);
+      fs.appendFileSync(process.env.GITHUB_ENV, envLines);
       console.log('Exported M4 environment variables to GITHUB_ENV:');
       console.log(`  M4_ALLOW_DESTRUCTIVE_TEST_DB=true`);
       console.log(`  M4_EXPECTED_TEST_SYSTEM_IDENTIFIER=${sysId}`);
