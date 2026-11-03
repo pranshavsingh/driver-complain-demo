@@ -59,7 +59,7 @@ export function validateUrlPreflight(urlString: string, expectedRole: 'maintenan
   let parsed: URL;
   try {
     parsed = new URL(urlString);
-  } catch (err) {
+  } catch (_err) {
     throw new Error(`SAFETY ABORT: Malformed URL for role "${expectedRole}": ${sanitized}`);
   }
 
