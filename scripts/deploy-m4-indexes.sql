@@ -66,7 +66,7 @@ actual_indexes AS (
     string_agg(
       CASE 
         WHEN i.indkey[s.pos] = 0 THEN '<expression>'
-        ELSE quote_ident(a.attname)
+        ELSE '"' || a.attname || '"'
       END || ' ' ||
       CASE WHEN (i.indoption[s.pos] & 1) = 1 THEN 'DESC' ELSE 'ASC' END || ' ' ||
       CASE WHEN (i.indoption[s.pos] & 2) = 2 THEN 'NULLS FIRST' ELSE 'NULLS LAST' END,
@@ -123,7 +123,10 @@ current_valid_indexes AS (
     (i.indexprs IS NOT NULL) AS has_expressions,
     (i.indpred IS NOT NULL) AS is_partial,
     string_agg(
-      quote_ident(a.attname) || ' ' ||
+      (CASE 
+        WHEN i.indkey[s.pos] = 0 THEN '<expression>'
+        ELSE '"' || a.attname || '"'
+      END) || ' ' ||
       CASE WHEN (i.indoption[s.pos] & 1) = 1 THEN 'DESC' ELSE 'ASC' END || ' ' ||
       CASE WHEN (i.indoption[s.pos] & 2) = 2 THEN 'NULLS FIRST' ELSE 'NULLS LAST' END,
       ', ' ORDER BY s.pos
@@ -187,7 +190,10 @@ BEGIN
         (i.indexprs IS NOT NULL) AS has_expressions,
         (i.indpred IS NOT NULL) AS is_partial,
         string_agg(
-          quote_ident(a.attname) || ' ' ||
+          (CASE 
+            WHEN i.indkey[s.pos] = 0 THEN '<expression>'
+            ELSE '"' || a.attname || '"'
+          END) || ' ' ||
           CASE WHEN (i.indoption[s.pos] & 1) = 1 THEN 'DESC' ELSE 'ASC' END || ' ' ||
           CASE WHEN (i.indoption[s.pos] & 2) = 2 THEN 'NULLS FIRST' ELSE 'NULLS LAST' END,
           ', ' ORDER BY s.pos

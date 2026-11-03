@@ -119,8 +119,9 @@ function validateSessionProperties(meta: any, sanitizedUrl: string): void {
     );
   }
 
-  const isLoopback = serverAddr === '127.0.0.1' || serverAddr === '::1';
-  const isDocker = serverAddr.startsWith('172.17.') || serverAddr.startsWith('172.18.');
+  const cleanAddr = (serverAddr || '').split('/')[0] ?? '';
+  const isLoopback = cleanAddr === '127.0.0.1' || cleanAddr === '::1';
+  const isDocker = /^172\.(1[6-9]|2\d|3[01])\./.test(cleanAddr) || cleanAddr.startsWith('10.');
   if (!isLoopback && !isDocker) {
     throw new Error(`SAFETY ABORT: Non-local server IP "${serverAddr}". Remote host or tunnel detected for ${sanitizedUrl}`);
   }
@@ -159,7 +160,7 @@ export async function executeGuardedDatabaseReset(config: PreflightConfig): Prom
       SELECT 
         current_database() AS db,
         current_user AS usr,
-        inet_server_addr()::text AS addr,
+        host(inet_server_addr()) AS addr,
         inet_server_port() AS port,
         version() AS ver
     `);
@@ -211,7 +212,7 @@ export async function executeGuardedDatabaseReset(config: PreflightConfig): Prom
       SELECT 
         current_database() AS db,
         current_user AS usr,
-        inet_server_addr()::text AS addr,
+        host(inet_server_addr()) AS addr,
         inet_server_port() AS port,
         version() AS ver
     `);

@@ -70,7 +70,7 @@ BEGIN
   END IF;
 
   IF v_server_addr NOT IN ('127.0.0.1'::inet, '::1'::inet)
-     AND NOT (v_server_addr <<= '172.17.0.0/16'::cidr OR v_server_addr <<= '172.18.0.0/16'::cidr) THEN
+     AND NOT (v_server_addr <<= '172.16.0.0/12'::cidr OR v_server_addr <<= '10.0.0.0/8'::cidr) THEN
     RAISE EXCEPTION 'SAFETY ABORT: Server address % indicates remote connection or tunnel forward', v_server_addr;
   END IF;
 
