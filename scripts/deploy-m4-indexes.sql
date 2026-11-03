@@ -260,3 +260,4 @@ BEGIN
 
   RAISE NOTICE 'SUCCESS: All 5 M4 performance indexes verified valid, ready, btree, non-unique, zero-include, and exact.';
 END $$;
+

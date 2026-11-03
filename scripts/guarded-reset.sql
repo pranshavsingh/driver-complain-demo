@@ -88,3 +88,4 @@ END $$;
 -- ============================================================================
 DROP DATABASE IF EXISTS driver_complaint_m4_disposable WITH (FORCE);
 CREATE DATABASE driver_complaint_m4_disposable;
+

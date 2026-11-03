@@ -75,3 +75,4 @@ export function setPaginationHeaders(
   res.setHeader('X-Total-Pages', meta.totalPages.toString());
   res.setHeader('X-Has-Next-Page', meta.hasNextPage.toString());
 }
+

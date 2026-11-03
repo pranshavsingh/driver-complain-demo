@@ -78,3 +78,4 @@ describe('M4 — Pagination Engine & Metadata Headers', () => {
     expect(headers['X-Has-Next-Page']).toBe('true');
   });
 });
+

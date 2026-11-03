@@ -16,3 +16,4 @@ CREATE INDEX IF NOT EXISTS "User_createdByAdminId_idx"
 
 CREATE INDEX IF NOT EXISTS "User_createdAt_id_idx" 
   ON "User"("createdAt", "id");
+
