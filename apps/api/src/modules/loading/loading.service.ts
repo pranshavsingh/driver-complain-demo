@@ -3,6 +3,7 @@ import { prisma } from '../../lib/prisma';
 import { uploadBuffer, cloudinaryFolder } from '../../lib/cloudinary';
 import { emitToUsers } from '../../realtime/socket';
 import { getActiveAdminUserIds } from '../../lib/admin-cache';
+import { buildPaginationMetadata } from '../../lib/pagination';
 import { REALTIME_EVENTS, type LoadingRecord, type LoadingStatus } from '@driver-complaint/shared-types';
 import { ApiError } from '../../errors/api-error';
 
@@ -661,7 +662,7 @@ export async function listTripRecords(opts: TripFilters & { page: number; pageSi
   if (rows.length === 0) {
     return {
       data: [],
-      meta: { page: opts.page, pageSize: opts.pageSize, total, totalPages: Math.ceil(total / opts.pageSize) },
+      meta: buildPaginationMetadata(total, opts.page, opts.pageSize),
     };
   }
 
@@ -704,7 +705,7 @@ export async function listTripRecords(opts: TripFilters & { page: number; pageSi
 
   return {
     data,
-    meta: { page: opts.page, pageSize: opts.pageSize, total, totalPages: Math.ceil(total / opts.pageSize) },
+    meta: buildPaginationMetadata(total, opts.page, opts.pageSize),
   };
 }
 

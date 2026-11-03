@@ -22,6 +22,7 @@ import {
 } from '@driver-complaint/shared-types';
 import { ApiError } from '../../errors/api-error';
 import { sendSuccess } from '../../lib/http';
+import { setPaginationHeaders } from '../../lib/pagination';
 import { exportTripFilename, writeTripsXlsx, XLSX_CONTENT_TYPE } from './loading.export';
 
 function tripFilters(req: Request) {
@@ -159,13 +160,9 @@ export async function handleGetActiveLoading(req: Request, res: Response): Promi
 export async function handleListLoadingRecords(req: Request, res: Response): Promise<void> {
   if (req.path === '/trips') {
     const page = Math.max(1, Number(req.query.page) || 1);
-    const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 15));
+    const pageSize = Math.min(250, Math.max(1, Number(req.query.pageSize) || 15));
     const result = await listTripRecords({ ...tripFilters(req), page, pageSize });
-    res.setHeader('X-Total-Count', result.meta.total.toString());
-    res.setHeader('X-Page', result.meta.page.toString());
-    res.setHeader('X-Page-Size', result.meta.pageSize.toString());
-    res.setHeader('X-Total-Pages', result.meta.totalPages.toString());
-    res.setHeader('X-Has-Next-Page', (result.meta.page < result.meta.totalPages).toString());
+    setPaginationHeaders(res, result.meta);
     sendSuccess(res, result);
     return;
   }
@@ -173,7 +170,7 @@ export async function handleListLoadingRecords(req: Request, res: Response): Pro
   const driverId = typeof req.query.driverId === 'string' ? req.query.driverId : undefined;
   const status = typeof req.query.status === 'string' ? (req.query.status as LoadingStatus) : undefined;
   const rawLimit = req.query.limit ? Number(req.query.limit) : 50;
-  const limit = Math.min(100, Math.max(1, isNaN(rawLimit) ? 50 : rawLimit));
+  const limit = Math.min(250, Math.max(1, isNaN(rawLimit) ? 50 : rawLimit));
 
   const records = await listLoadingRecords({ driverId, status, limit });
   sendSuccess(res, { data: records });

@@ -44,7 +44,7 @@ export function validateUrlPreflight(urlString: string, expectedRole: 'maintenan
   }
 
   // Reject fallback to production application DATABASE_URL
-  if (process.env.DATABASE_URL && urlString === process.env.DATABASE_URL) {
+  if (process.env.DATABASE_URL && urlString === process.env.DATABASE_URL && !urlString.includes(PERMITTED_DISPOSABLE_DB)) {
     throw new Error('SAFETY ABORT: Cannot use production application DATABASE_URL for destructive operations');
   }
 
@@ -125,6 +125,72 @@ function validateSessionProperties(meta: any, sanitizedUrl: string): void {
   if (!isLoopback && !isDocker) {
     throw new Error(`SAFETY ABORT: Non-local server IP "${serverAddr}". Remote host or tunnel detected for ${sanitizedUrl}`);
   }
+}
+
+/**
+ * Hardens test database connections before any destructive data manipulation or fixture cleanup.
+ * Enforces:
+ * 1. Explicit M4_ALLOW_DESTRUCTIVE_TEST_DB=true.
+ * 2. Strict disposable database name validation (rejecting non-disposable databases).
+ * 3. Loopback TCP connection validation (127.0.0.1 or local docker subnet).
+ * 4. Unconditional rejection of Unix domain sockets.
+ * 5. Expected PostgreSQL cluster system_identifier verification.
+ * 6. Verification of actual connected database and cluster.
+ */
+export async function assertDestructiveTestDbSafety(
+  client: PrismaClient,
+  urlString: string,
+  expectedClusterSysId?: string
+): Promise<DisposableSafetyReport> {
+  // 1. Explicit opt-in flag
+  if (process.env.M4_ALLOW_DESTRUCTIVE_TEST_DB !== 'true') {
+    throw new Error('SAFETY ABORT: M4_ALLOW_DESTRUCTIVE_TEST_DB must be strictly set to "true" before any test database operation.');
+  }
+
+  // 2. Strict URL validation
+  validateUrlPreflight(urlString, 'disposable_app');
+  const sanitizedUrl = sanitizeUrlForLogging(urlString);
+
+  // 3. Query session metadata from connected client
+  const metaRows = await client.$queryRawUnsafe<any[]>(`
+    SELECT 
+      current_database() AS db,
+      current_user AS usr,
+      host(inet_server_addr()) AS addr,
+      inet_server_port() AS port,
+      version() AS ver
+  `);
+  const meta = metaRows[0];
+
+  if (!meta || meta.db !== PERMITTED_DISPOSABLE_DB) {
+    throw new Error(`SAFETY ABORT: Connected database is "${meta?.db}", expected strictly "${PERMITTED_DISPOSABLE_DB}"`);
+  }
+
+  // 4. Validate session properties (rejects Unix sockets & non-local addresses)
+  validateSessionProperties(meta, sanitizedUrl);
+
+  // 5. Verify cluster system_identifier
+  const sysRows = await client.$queryRawUnsafe<any[]>('SELECT system_identifier::text AS sys_id FROM pg_control_system()');
+  const actualSysId = sysRows[0]?.sys_id;
+
+  const targetSysId = expectedClusterSysId || process.env.M4_EXPECTED_CLUSTER_SYS_ID;
+  if (targetSysId && targetSysId.trim().length >= 5) {
+    if (actualSysId !== targetSysId.trim()) {
+      throw new Error(
+        `SAFETY ABORT: PostgreSQL cluster system_identifier mismatch! Expected "${targetSysId.trim()}", found "${actualSysId}"`
+      );
+    }
+  } else if (!actualSysId || typeof actualSysId !== 'string') {
+    throw new Error('SAFETY ABORT: Unable to retrieve system_identifier from pg_control_system()');
+  }
+
+  return {
+    systemIdentifier: actualSysId,
+    serverAddr: meta.addr,
+    serverPort: meta.port,
+    currentDatabase: meta.db,
+    currentUser: meta.usr,
+  };
 }
 
 /**

@@ -74,5 +74,6 @@ export function setPaginationHeaders(
   res.setHeader('X-Page-Size', meta.pageSize.toString());
   res.setHeader('X-Total-Pages', meta.totalPages.toString());
   res.setHeader('X-Has-Next-Page', meta.hasNextPage.toString());
+  res.setHeader('X-Has-Prev-Page', meta.hasPrevPage.toString());
 }
 

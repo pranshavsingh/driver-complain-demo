@@ -47,6 +47,7 @@ export function createApp(): Express {
         'X-Page-Size',
         'X-Total-Pages',
         'X-Has-Next-Page',
+        'X-Has-Prev-Page',
       ],
     }),
   );
