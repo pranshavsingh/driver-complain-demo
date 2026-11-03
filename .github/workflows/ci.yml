@@ -88,16 +88,8 @@ jobs:
       # Setup M4 disposable test database with full migrations and cluster identity
       - name: Setup M4 disposable test database
         run: |
-          if ! command -v psql &> /dev/null; then
-            sudo apt-get update && sudo apt-get install -y postgresql-client
-          fi
-          PGPASSWORD=app psql -h 127.0.0.1 -U app -d postgres -c "CREATE DATABASE driver_complaint_m4_disposable;" || true
+          pnpm --filter @driver-complaint/api exec tsx ../../scripts/setup-test-db.ts
           DATABASE_URL="postgresql://app:app@127.0.0.1:5432/driver_complaint_m4_disposable?schema=public" pnpm --filter @driver-complaint/api migrate:deploy
-          SYS_ID=$(PGPASSWORD=app psql -h 127.0.0.1 -U app -d postgres -tAc "SELECT system_identifier FROM pg_control_system();")
-          echo "M4_ALLOW_DESTRUCTIVE_TEST_DB=true" >> $GITHUB_ENV
-          echo "M4_EXPECTED_TEST_SYSTEM_IDENTIFIER=$SYS_ID" >> $GITHUB_ENV
-          echo "M4_TEST_DISPOSABLE_DB_URL=postgresql://app:app@127.0.0.1:5432/driver_complaint_m4_disposable?schema=public" >> $GITHUB_ENV
-          echo "DATABASE_URL=postgresql://app:app@127.0.0.1:5432/driver_complaint_m4_disposable?schema=public" >> $GITHUB_ENV
 
       - name: Test
         run: pnpm test
