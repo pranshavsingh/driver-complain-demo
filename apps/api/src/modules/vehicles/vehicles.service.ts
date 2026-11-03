@@ -5,8 +5,14 @@ import { ApiError } from '../../errors/api-error';
 import { pushToUsers } from '../../lib/fcm';
 import { emitToUsers, emitToAll } from '../../realtime/socket';
 import { logger } from '../../lib/logger';
+import {
+  parsePagination,
+  buildPaginationMetadata,
+  type PaginationParams,
+  type PaginatedResult,
+} from '../../lib/pagination';
 
-export interface VehicleFilterQuery {
+export interface VehicleFilterQuery extends PaginationParams {
   search?: string;
   agreementStatus?: string;
   wheels?: string;
@@ -17,7 +23,7 @@ export interface VehicleFilterQuery {
 export async function list(
   query?: VehicleFilterQuery,
   actor?: { id: string; role: string },
-): Promise<VehiclePublic[]> {
+): Promise<PaginatedResult<VehiclePublic>> {
   const where: any = {};
 
   // For EXECUTIVE role, only return vehicles assigned to them
@@ -51,20 +57,32 @@ export async function list(
     where.driverId = query.driverId;
   }
 
-  const vehicles = await prisma.vehicle.findMany({
-    where,
-    include: {
-      driver: {
-        include: {
-          user: true,
-        },
-      },
-      siteIncharge: true,
-    },
-    orderBy: { createdAt: 'desc' },
-  });
+  const { page, pageSize, skip } = parsePagination(query);
 
-  return vehicles.map(toVehiclePublic);
+  const [vehicles, total] = await Promise.all([
+    prisma.vehicle.findMany({
+      where,
+      include: {
+        driver: {
+          include: {
+            user: true,
+          },
+        },
+        siteIncharge: true,
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      skip,
+      take: pageSize,
+    }),
+    prisma.vehicle.count({ where }),
+  ]);
+
+  const meta = buildPaginationMetadata(total, page, pageSize);
+
+  return {
+    data: vehicles.map(toVehiclePublic),
+    meta,
+  };
 }
 
 /** Vehicles assigned to the calling user's driver profile ("my vehicles"). */

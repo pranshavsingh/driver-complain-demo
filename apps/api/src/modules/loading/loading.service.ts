@@ -1,4 +1,4 @@
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { uploadBuffer, cloudinaryFolder } from '../../lib/cloudinary';
 import { emitToUsers } from '../../realtime/socket';
@@ -651,15 +651,59 @@ export async function listTripRecords(opts: TripFilters & { page: number; pageSi
     prisma.loadingRecord.findMany({
       where,
       include: tripInclude,
-      orderBy: { reachedAt: 'desc' },
+      orderBy: [{ reachedAt: 'desc' }, { id: 'desc' }],
       skip: (opts.page - 1) * opts.pageSize,
       take: opts.pageSize,
     }),
     prisma.loadingRecord.count({ where }),
   ]);
 
+  if (rows.length === 0) {
+    return {
+      data: [],
+      meta: { page: opts.page, pageSize: opts.pageSize, total, totalPages: Math.ceil(total / opts.pageSize) },
+    };
+  }
+
+  // Batch query completed and monthly trip counts for all distinct driverIds in current page to eliminate N+1 queries
+  const driverIds = Array.from(new Set(rows.map((r) => r.driverId).filter(Boolean)));
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  const [totalCounts, monthlyCounts] = await Promise.all([
+    prisma.loadingRecord.groupBy({
+      by: ['driverId'],
+      where: {
+        driverId: { in: driverIds },
+        status: { in: ['TRIP_COMPLETED', 'COMPLETED', 'UNLOADING'] },
+      },
+      _count: { _all: true },
+    }),
+    prisma.loadingRecord.groupBy({
+      by: ['driverId'],
+      where: {
+        driverId: { in: driverIds },
+        status: { in: ['TRIP_COMPLETED', 'COMPLETED', 'UNLOADING'] },
+        createdAt: { gte: startOfMonth },
+      },
+      _count: { _all: true },
+    }),
+  ]);
+
+  const totalMap = new Map<string, number>(totalCounts.map((c) => [c.driverId, c._count._all]));
+  const monthlyMap = new Map<string, number>(monthlyCounts.map((c) => [c.driverId, c._count._all]));
+
+  const data = await Promise.all(
+    rows.map((row) =>
+      serializeLoadingRecord(row, {
+        completedTripsCount: totalMap.get(row.driverId) ?? 0,
+        monthlyTripsCount: monthlyMap.get(row.driverId) ?? 0,
+      }),
+    ),
+  );
+
   return {
-    data: await Promise.all(rows.map((row) => serializeLoadingRecord(row))),
+    data,
     meta: { page: opts.page, pageSize: opts.pageSize, total, totalPages: Math.ceil(total / opts.pageSize) },
   };
 }
@@ -708,99 +752,115 @@ export async function getDriverMonthlyTripSummaries(opts: {
 
   const search = opts.search?.trim();
 
-  const records = await prisma.loadingRecord.findMany({
-    where: {
-      ...(fromDate && toDate ? { reachedAt: { gte: fromDate, lte: toDate } } : {}),
-      ...(opts.driverId ? { driverId: opts.driverId } : {}),
-      ...(opts.status ? { status: opts.status as any } : {}),
-      ...(search
-        ? {
-            OR: [
-              { driver: { user: { firstName: { contains: search, mode: 'insensitive' } } } },
-              { driver: { user: { lastName: { contains: search, mode: 'insensitive' } } } },
-              { driver: { user: { employeeId: { contains: search, mode: 'insensitive' } } } },
-              { driver: { licenseNumber: { contains: search, mode: 'insensitive' } } },
-              { driver: { vehicles: { some: { plateNumber: { contains: search, mode: 'insensitive' } } } } },
-            ],
-          }
-        : {}),
-    },
-    include: {
-      driver: {
-        include: {
-          user: true,
-          vehicles: true,
-        },
-      },
-    },
-    orderBy: { reachedAt: 'desc' },
-  });
+  // Build parameterized conditions safely using Prisma.sql
+  const conditions: Prisma.Sql[] = [Prisma.sql`1=1`];
 
-  const groupMap = new Map<
-    string,
-    {
-      driverId: string;
-      driverName: string;
-      licenseNumber: string;
-      vehiclePlate: string;
+  if (fromDate && toDate) {
+    conditions.push(Prisma.sql`lr."reachedAt" >= ${fromDate} AND lr."reachedAt" <= ${toDate}`);
+  }
+
+  if (opts.driverId) {
+    conditions.push(Prisma.sql`lr."driverId" = ${opts.driverId}::uuid`);
+  }
+
+  if (opts.status) {
+    conditions.push(Prisma.sql`lr."status"::text = ${opts.status}`);
+  }
+
+  if (search) {
+    const searchPattern = `%${search}%`;
+    conditions.push(Prisma.sql`(
+      u."firstName" ILIKE ${searchPattern} OR
+      u."lastName" ILIKE ${searchPattern} OR
+      u."employeeId" ILIKE ${searchPattern} OR
+      d."licenseNumber" ILIKE ${searchPattern} OR
+      EXISTS (
+        SELECT 1 FROM "Vehicle" v 
+        WHERE v."driverId" = d."id" AND v."plateNumber" ILIKE ${searchPattern}
+      )
+    )`);
+  }
+
+  const whereClause = Prisma.join(conditions, ' AND ');
+
+  const rows = await prisma.$queryRaw<
+    Array<{
+      driver_id: string;
       year: number;
       month: number;
-      completedTripsCount: number;
-      totalTripDurationMinutes: number;
-      totalWaitingTimeMinutes: number;
-      totalUnloadingTimeMinutes: number;
-    }
-  >();
-
-  for (const rec of records) {
-    const d = rec.reachedAt;
-    const recYear = d.getFullYear();
-    const recMonth = d.getMonth() + 1;
-    const key = `${rec.driverId}_${recYear}_${recMonth}`;
-
-    const driverUser = rec.driver?.user;
-    const driverName = driverUser ? `${driverUser.firstName} ${driverUser.lastName}` : 'Unknown Driver';
-    const licenseNumber = rec.driver?.licenseNumber ?? 'N/A';
-    const vehiclePlate = rec.driver?.vehicles?.[0]?.plateNumber ?? 'N/A';
-
-    if (!groupMap.has(key)) {
-      groupMap.set(key, {
-        driverId: rec.driverId,
-        driverName,
-        licenseNumber,
-        vehiclePlate,
-        year: recYear,
-        month: recMonth,
-        completedTripsCount: 0,
-        totalTripDurationMinutes: 0,
-        totalWaitingTimeMinutes: 0,
-        totalUnloadingTimeMinutes: 0,
-      });
-    }
-
-    const group = groupMap.get(key)!;
-    group.completedTripsCount += 1;
-    group.totalTripDurationMinutes += rec.tripDurationMinutes ?? 0;
-    group.totalWaitingTimeMinutes += rec.waitingTimeMinutes ?? 0;
-    group.totalUnloadingTimeMinutes += rec.unloadingDurationMinutes ?? 0;
-  }
+      completed_trips_count: number;
+      total_trip_duration_minutes: number;
+      total_waiting_time_minutes: number;
+      total_unloading_time_minutes: number;
+      driver_name: string;
+      license_number: string;
+      vehicle_plate: string;
+    }>
+  >(Prisma.sql`
+    SELECT
+      lr."driverId"::text AS driver_id,
+      EXTRACT(YEAR FROM lr."reachedAt")::int AS year,
+      EXTRACT(MONTH FROM lr."reachedAt")::int AS month,
+      COUNT(*)::int AS completed_trips_count,
+      COALESCE(SUM(lr."tripDurationMinutes"), 0)::int AS total_trip_duration_minutes,
+      COALESCE(SUM(lr."waitingTimeMinutes"), 0)::int AS total_waiting_time_minutes,
+      COALESCE(SUM(lr."unloadingDurationMinutes"), 0)::int AS total_unloading_time_minutes,
+      COALESCE(
+        NULLIF(TRIM(CONCAT(COALESCE(u."firstName", ''), ' ', COALESCE(u."lastName", ''))), ''),
+        'Unknown Driver'
+      ) AS driver_name,
+      COALESCE(d."licenseNumber", 'N/A') AS license_number,
+      COALESCE(
+        (SELECT v."plateNumber" FROM "Vehicle" v WHERE v."driverId" = d."id" ORDER BY v."createdAt" DESC, v."id" DESC LIMIT 1),
+        'N/A'
+      ) AS vehicle_plate
+    FROM "LoadingRecord" lr
+    JOIN "Driver" d ON d."id" = lr."driverId"
+    LEFT JOIN "User" u ON u."id" = d."userId"
+    WHERE ${whereClause}
+    GROUP BY
+      lr."driverId",
+      EXTRACT(YEAR FROM lr."reachedAt"),
+      EXTRACT(MONTH FROM lr."reachedAt"),
+      u."firstName",
+      u."lastName",
+      d."licenseNumber",
+      d."id"
+    ORDER BY
+      year DESC,
+      month DESC,
+      completed_trips_count DESC
+  `);
 
   const MONTH_NAMES = [
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December',
   ];
 
-  const result = Array.from(groupMap.values()).map((g) => ({
-    ...g,
-    monthLabel: `${MONTH_NAMES[g.month - 1]} ${g.year}`,
-    avgTripDurationMinutes: g.completedTripsCount > 0 ? Math.round(g.totalTripDurationMinutes / g.completedTripsCount) : 0,
-    avgUnloadingTimeMinutes:
-      g.completedTripsCount > 0 ? Math.round(g.totalUnloadingTimeMinutes / g.completedTripsCount) : 0,
-  }));
+  return rows.map((r) => {
+    const completedTripsCount = Number(r.completed_trips_count ?? 0);
+    const totalTripDurationMinutes = Number(r.total_trip_duration_minutes ?? 0);
+    const totalUnloadingTimeMinutes = Number(r.total_unloading_time_minutes ?? 0);
+    const totalWaitingTimeMinutes = Number(r.total_waiting_time_minutes ?? 0);
+    const year = Number(r.year);
+    const month = Number(r.month);
 
-  result.sort((a, b) => b.year - a.year || b.month - a.month || b.completedTripsCount - a.completedTripsCount);
-
-  return result;
+    return {
+      driverId: r.driver_id,
+      driverName: r.driver_name,
+      licenseNumber: r.license_number,
+      vehiclePlate: r.vehicle_plate,
+      year,
+      month,
+      completedTripsCount,
+      totalTripDurationMinutes,
+      totalWaitingTimeMinutes,
+      totalUnloadingTimeMinutes,
+      monthLabel: `${MONTH_NAMES[month - 1]} ${year}`,
+      avgTripDurationMinutes: completedTripsCount > 0 ? Math.round(totalTripDurationMinutes / completedTripsCount) : 0,
+      avgUnloadingTimeMinutes: completedTripsCount > 0 ? Math.round(totalUnloadingTimeMinutes / completedTripsCount) : 0,
+    };
+  });
 }
 
 export async function exportTripsToCsv(filters: TripFilters): Promise<string> {

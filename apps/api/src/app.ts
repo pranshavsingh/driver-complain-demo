@@ -40,7 +40,14 @@ export function createApp(): Express {
         return callback(null, origin);
       },
       credentials: true,
-      exposedHeaders: ['Content-Disposition'],
+      exposedHeaders: [
+        'Content-Disposition',
+        'X-Total-Count',
+        'X-Page',
+        'X-Page-Size',
+        'X-Total-Pages',
+        'X-Has-Next-Page',
+      ],
     }),
   );
   app.use(express.json({ limit: '1mb' }));

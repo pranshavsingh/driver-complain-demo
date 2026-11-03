@@ -8,7 +8,9 @@ import type {
   VehicleReportFuelItem,
   VehicleReportMaintenanceItem,
   FleetVehicleSummaryItem,
+  LoadingStatus,
 } from '@driver-complaint/shared-types';
+import { Prisma } from '@prisma/client';
 import { prisma } from '../../lib/prisma';
 import { toVehiclePublic } from '../../lib/serializers';
 import { ApiError } from '../../errors/api-error';
@@ -433,50 +435,111 @@ export async function getVehicleReport(query: VehicleReportQuery): Promise<Vehic
 
 /** Lists all fleet vehicles with high-level operational counts & stats for the master table view. */
 export async function listFleetVehiclesSummary(): Promise<FleetVehicleSummaryItem[]> {
-  const vehicles = await prisma.vehicle.findMany({
-    orderBy: { plateNumber: 'asc' },
-    include: {
-      driver: {
-        include: {
-          user: true,
-          loadingRecords: {
-            orderBy: { reachedAt: 'desc' },
-          },
-        },
-      },
-      complaints: true,
-      fuelRecords: true,
-      maintenanceRecords: true,
-    },
-  });
+  const rows = await prisma.$queryRaw<
+    Array<{
+      id: string;
+      plate_number: string;
+      make: string | null;
+      model: string | null;
+      year: number | null;
+      vin: string | null;
+      created_at: Date | string;
+      driver_name_raw: string | null;
+      driver_employee_id: string | null;
+      driver_license_number: string | null;
+      total_trips: number;
+      completed_trips: number;
+      active_trip_status: string | null;
+      total_complaints: number;
+      breakdown_count: number;
+      total_fuel_cost: number;
+      total_maintenance_cost: number;
+    }>
+  >(Prisma.sql`
+    SELECT
+      v."id",
+      v."plateNumber" AS plate_number,
+      v."make",
+      v."model",
+      v."year",
+      v."vin",
+      v."createdAt" AS created_at,
+      TRIM(CONCAT(COALESCE(u."firstName", ''), ' ', COALESCE(u."lastName", ''))) AS driver_name_raw,
+      u."employeeId" AS driver_employee_id,
+      d."licenseNumber" AS driver_license_number,
+      COALESCE(lr_agg.total_trips, 0)::int AS total_trips,
+      COALESCE(lr_agg.completed_trips, 0)::int AS completed_trips,
+      act.active_status::text AS active_trip_status,
+      COALESCE(c_agg.total_complaints, 0)::int AS total_complaints,
+      COALESCE(c_agg.breakdown_count, 0)::int AS breakdown_count,
+      COALESCE(f_agg.total_fuel_cost, 0)::float8 AS total_fuel_cost,
+      COALESCE(m_agg.total_maintenance_cost, 0)::float8 AS total_maintenance_cost
+    FROM "Vehicle" v
+    LEFT JOIN "Driver" d ON d."id" = v."driverId"
+    LEFT JOIN "User" u ON u."id" = d."userId"
+    LEFT JOIN LATERAL (
+      SELECT
+        COUNT(*)::int AS total_trips,
+        COUNT(*) FILTER (WHERE lr."status" = 'TRIP_COMPLETED')::int AS completed_trips
+      FROM "LoadingRecord" lr
+      WHERE lr."driverId" = v."driverId"
+    ) lr_agg ON v."driverId" IS NOT NULL
+    LEFT JOIN LATERAL (
+      SELECT lr."status"::text AS active_status
+      FROM "LoadingRecord" lr
+      WHERE lr."driverId" = v."driverId"
+        AND lr."status" <> 'TRIP_COMPLETED'
+      ORDER BY lr."reachedAt" DESC, lr."id" DESC
+      LIMIT 1
+    ) act ON v."driverId" IS NOT NULL
+    LEFT JOIN LATERAL (
+      SELECT
+        COUNT(*)::int AS total_complaints,
+        COUNT(*) FILTER (WHERE c."category" = 'BREAKDOWN')::int AS breakdown_count
+      FROM "Complaint" c
+      WHERE c."vehicleId" = v."id"
+    ) c_agg ON true
+    LEFT JOIN LATERAL (
+      SELECT
+        COALESCE(SUM(fr."totalPrice"), 0)::float8 AS total_fuel_cost
+      FROM "FuelRecord" fr
+      WHERE fr."vehicleId" = v."id"
+    ) f_agg ON true
+    LEFT JOIN LATERAL (
+      SELECT
+        COALESCE(SUM(mr."cost"), 0)::float8 AS total_maintenance_cost
+      FROM "MaintenanceRecord" mr
+      WHERE mr."vehicleId" = v."id"
+    ) m_agg ON true
+    ORDER BY v."plateNumber" ASC
+  `);
 
-  return vehicles.map((v) => {
-    const driverUser = v.driver?.user;
-    const loadingRecords = v.driver?.loadingRecords ?? [];
-    const completedTrips = loadingRecords.filter((r) => r.status === 'TRIP_COMPLETED').length;
-    const activeTrip = loadingRecords.find((r) => r.status !== 'TRIP_COMPLETED');
-    const breakdownCount = v.complaints.filter((c) => c.category === 'BREAKDOWN').length;
-    const totalFuelCost = v.fuelRecords.reduce((sum, f) => sum + f.totalPrice, 0);
-    const totalMaintenanceCost = v.maintenanceRecords.reduce((sum, m) => sum + (m.cost ?? 0), 0);
+  return rows.map((r) => {
+    const driverName =
+      r.driver_name_raw && r.driver_name_raw.trim().length > 0
+        ? r.driver_name_raw.trim()
+        : 'Unassigned';
+
+    const createdAt = r.created_at instanceof Date ? r.created_at.toISOString() : new Date(r.created_at).toISOString();
 
     return {
-      id: v.id,
-      plateNumber: v.plateNumber,
-      make: v.make ?? null,
-      model: v.model ?? null,
-      year: v.year ?? null,
-      vin: v.vin ?? null,
-      driverName: driverUser ? `${driverUser.firstName} ${driverUser.lastName}`.trim() : 'Unassigned',
-      driverEmployeeId: driverUser?.employeeId ?? 'N/A',
-      driverLicenseNumber: v.driver?.licenseNumber ?? 'N/A',
-      totalTrips: loadingRecords.length,
-      completedTrips,
-      activeTripStatus: activeTrip?.status ?? null,
-      totalComplaints: v.complaints.length,
-      breakdownCount,
-      totalFuelCost,
-      totalMaintenanceCost,
-      createdAt: v.createdAt.toISOString(),
+      id: r.id,
+      plateNumber: r.plate_number,
+      make: r.make ?? null,
+      model: r.model ?? null,
+      year: r.year !== null && r.year !== undefined ? Number(r.year) : null,
+      vin: r.vin ?? null,
+      driverName,
+      driverEmployeeId: r.driver_employee_id ?? 'N/A',
+      driverLicenseNumber: r.driver_license_number ?? 'N/A',
+      totalTrips: Number(r.total_trips ?? 0),
+      completedTrips: Number(r.completed_trips ?? 0),
+      activeTripStatus: (r.active_trip_status as LoadingStatus) ?? null,
+      totalComplaints: Number(r.total_complaints ?? 0),
+      breakdownCount: Number(r.breakdown_count ?? 0),
+      totalFuelCost: Number(r.total_fuel_cost ?? 0),
+      totalMaintenanceCost: Number(r.total_maintenance_cost ?? 0),
+      createdAt,
     };
   });
 }

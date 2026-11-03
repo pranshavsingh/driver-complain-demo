@@ -1,4 +1,4 @@
-import { Client } from 'pg';
+import { PrismaClient } from '@prisma/client';
 import { URL } from 'url';
 
 export interface PreflightConfig {
@@ -149,13 +149,13 @@ export async function executeGuardedDatabaseReset(config: PreflightConfig): Prom
   const sanitizedMaintUrl = sanitizeUrlForLogging(config.maintenanceUrl);
   const sanitizedAppUrl = sanitizeUrlForLogging(config.disposableAppUrl);
 
-  // Step 4: Connect to Maintenance DB and verify cluster identity BEFORE DROP
-  const maintClient = new Client({ connectionString: config.maintenanceUrl });
-  await maintClient.connect();
+  // Step 4: Connect to Maintenance DB via PrismaClient and verify cluster identity BEFORE DROP
+  const maintClient = new PrismaClient({ datasourceUrl: config.maintenanceUrl });
+  await maintClient.$connect();
 
   let maintReport: DisposableSafetyReport;
   try {
-    const { rows: metaRows } = await maintClient.query(`
+    const metaRows = await maintClient.$queryRawUnsafe<any[]>(`
       SELECT 
         current_database() AS db,
         current_user AS usr,
@@ -171,7 +171,7 @@ export async function executeGuardedDatabaseReset(config: PreflightConfig): Prom
 
     validateSessionProperties(meta, sanitizedMaintUrl);
 
-    const { rows: sysRows } = await maintClient.query('SELECT system_identifier::text AS sys_id FROM pg_control_system()');
+    const sysRows = await maintClient.$queryRawUnsafe<any[]>('SELECT system_identifier::text AS sys_id FROM pg_control_system()');
     const maintSysId = sysRows[0]?.sys_id;
 
     if (!maintSysId || maintSysId !== expectedSysId) {
@@ -189,25 +189,25 @@ export async function executeGuardedDatabaseReset(config: PreflightConfig): Prom
     };
 
     // Step 5: ONLY NOW execute DROP and CREATE
-    await maintClient.query(`
+    await maintClient.$executeRawUnsafe(`
       SELECT pg_terminate_backend(pid) 
       FROM pg_stat_activity 
       WHERE datname = '${PERMITTED_DISPOSABLE_DB}' 
         AND pid <> pg_backend_pid();
     `);
-    await maintClient.query(`DROP DATABASE IF EXISTS ${PERMITTED_DISPOSABLE_DB} WITH (FORCE);`);
-    await maintClient.query(`CREATE DATABASE ${PERMITTED_DISPOSABLE_DB};`);
+    await maintClient.$executeRawUnsafe(`DROP DATABASE IF EXISTS ${PERMITTED_DISPOSABLE_DB} WITH (FORCE);`);
+    await maintClient.$executeRawUnsafe(`CREATE DATABASE ${PERMITTED_DISPOSABLE_DB};`);
   } finally {
-    await maintClient.end();
+    await maintClient.$disconnect();
   }
 
   // Step 6: Connect to recreated Application DB and verify identity
-  const appClient = new Client({ connectionString: config.disposableAppUrl });
-  await appClient.connect();
+  const appClient = new PrismaClient({ datasourceUrl: config.disposableAppUrl });
+  await appClient.$connect();
 
   let appReport: DisposableSafetyReport;
   try {
-    const { rows: appMetaRows } = await appClient.query(`
+    const appMetaRows = await appClient.$queryRawUnsafe<any[]>(`
       SELECT 
         current_database() AS db,
         current_user AS usr,
@@ -223,7 +223,7 @@ export async function executeGuardedDatabaseReset(config: PreflightConfig): Prom
 
     validateSessionProperties(appMeta, sanitizedAppUrl);
 
-    const { rows: appSysRows } = await appClient.query('SELECT system_identifier::text AS sys_id FROM pg_control_system()');
+    const appSysRows = await appClient.$queryRawUnsafe<any[]>('SELECT system_identifier::text AS sys_id FROM pg_control_system()');
     const appSysId = appSysRows[0]?.sys_id;
 
     if (appSysId !== expectedSysId || appSysId !== maintReport.systemIdentifier) {
@@ -240,7 +240,7 @@ export async function executeGuardedDatabaseReset(config: PreflightConfig): Prom
       currentUser: appMeta.usr,
     };
   } finally {
-    await appClient.end();
+    await appClient.$disconnect();
   }
 
   return { maintReport, appReport };

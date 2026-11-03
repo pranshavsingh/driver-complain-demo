@@ -160,7 +160,13 @@ export async function handleListLoadingRecords(req: Request, res: Response): Pro
   if (req.path === '/trips') {
     const page = Math.max(1, Number(req.query.page) || 1);
     const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 15));
-    sendSuccess(res, await listTripRecords({ ...tripFilters(req), page, pageSize }));
+    const result = await listTripRecords({ ...tripFilters(req), page, pageSize });
+    res.setHeader('X-Total-Count', result.meta.total.toString());
+    res.setHeader('X-Page', result.meta.page.toString());
+    res.setHeader('X-Page-Size', result.meta.pageSize.toString());
+    res.setHeader('X-Total-Pages', result.meta.totalPages.toString());
+    res.setHeader('X-Has-Next-Page', (result.meta.page < result.meta.totalPages).toString());
+    sendSuccess(res, result);
     return;
   }
 
