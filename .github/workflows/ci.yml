@@ -85,6 +85,12 @@ jobs:
       - name: Migration drift guard
         run: pnpm --filter @driver-complaint/api migrate:diff
 
+      # Setup M4 disposable test database with full migrations and cluster identity
+      - name: Setup M4 disposable test database
+        run: |
+          pnpm --filter @driver-complaint/api exec tsx ../../scripts/setup-test-db.ts
+          DATABASE_URL="postgresql://app:app@127.0.0.1:5432/driver_complaint_m4_disposable?schema=public" pnpm --filter @driver-complaint/api migrate:deploy
+
       - name: Test
         run: pnpm test
 

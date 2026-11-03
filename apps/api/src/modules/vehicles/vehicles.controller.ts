@@ -3,11 +3,17 @@ import { CreateVehicleSchema, UpdateVehicleSchema } from '@driver-complaint/shar
 import * as vehiclesService from './vehicles.service';
 import { ApiError } from '../../errors/api-error';
 import { sendSuccess } from '../../lib/http';
+import { setPaginationHeaders } from '../../lib/pagination';
 
 /** Admin: list all vehicles with search/filter. */
 export async function list(req: Request, res: Response): Promise<void> {
   const result = await vehiclesService.list(req.query as any, req.user);
-  sendSuccess(res, result);
+  setPaginationHeaders(res, result.meta);
+  if (req.query.paginate === 'true') {
+    sendSuccess(res, { data: result.data, pagination: result.meta });
+  } else {
+    sendSuccess(res, result.data);
+  }
 }
 
 /** Driver: the vehicles assigned to me. */

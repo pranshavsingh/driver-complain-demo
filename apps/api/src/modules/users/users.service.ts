@@ -14,6 +14,19 @@ import { ApiError } from '../../errors/api-error';
 import { hashPin } from '../../lib/password';
 import { emitToRoles, emitEventToUsers, emitToAll } from '../../realtime/socket';
 import { logger } from '../../lib/logger';
+import {
+  parsePagination,
+  buildPaginationMetadata,
+  type PaginationParams,
+  type PaginatedResult,
+} from '../../lib/pagination';
+
+export interface UserFilterQuery extends PaginationParams {
+  role?: Role;
+  approvalStatus?: ApprovalStatus;
+  isActive?: boolean;
+  search?: string;
+}
 
 export interface Actor {
   id: string;
@@ -222,13 +235,8 @@ export async function createUser(actor: Actor, input: CreateUser): Promise<UserP
 
 export async function listUsers(
   actor: Actor,
-  filters?: {
-    role?: Role;
-    approvalStatus?: ApprovalStatus;
-    isActive?: boolean;
-    search?: string;
-  },
-): Promise<UserPublic[]> {
+  filters?: UserFilterQuery,
+): Promise<PaginatedResult<UserPublic>> {
   const where: Prisma.UserWhereInput = {};
   const andConditions: Prisma.UserWhereInput[] = [];
 
@@ -262,12 +270,25 @@ export async function listUsers(
     where.AND = andConditions;
   }
 
-  const users = await prisma.user.findMany({
-    where,
-    include: { driver: true },
-    orderBy: { createdAt: 'desc' },
-  });
-  return users.map(toUserPublic);
+  const { page, pageSize, skip } = parsePagination(filters);
+
+  const [users, total] = await Promise.all([
+    prisma.user.findMany({
+      where,
+      include: { driver: true },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      skip,
+      take: pageSize,
+    }),
+    prisma.user.count({ where }),
+  ]);
+
+  const meta = buildPaginationMetadata(total, page, pageSize);
+
+  return {
+    data: users.map(toUserPublic),
+    meta,
+  };
 }
 
 export async function getPendingCount(): Promise<{ pendingCount: number }> {

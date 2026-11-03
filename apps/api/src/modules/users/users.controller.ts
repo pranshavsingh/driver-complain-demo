@@ -3,6 +3,7 @@ import { CreateUserSchema, UpdateUserSchema, type Role, type ApprovalStatus } fr
 import * as usersService from './users.service';
 import { ApiError } from '../../errors/api-error';
 import { sendSuccess } from '../../lib/http';
+import { setPaginationHeaders } from '../../lib/pagination';
 
 export async function getMe(req: Request, res: Response): Promise<void> {
   if (!req.user) throw ApiError.unauthorized();
@@ -28,16 +29,24 @@ export async function createUser(req: Request, res: Response): Promise<void> {
 
 export async function listUsers(req: Request, res: Response): Promise<void> {
   if (!req.user) throw ApiError.unauthorized();
-  const { role, approvalStatus, isActive, search } = req.query;
+  const { role, approvalStatus, isActive, search, page, pageSize, paginate } = req.query;
   const filters = {
     ...(typeof role === 'string' ? { role: role as Role } : {}),
     ...(typeof approvalStatus === 'string' ? { approvalStatus: approvalStatus as ApprovalStatus } : {}),
     ...(typeof isActive === 'string' ? { isActive: isActive === 'true' } : {}),
     ...(typeof search === 'string' ? { search } : {}),
+    page: page as any,
+    pageSize: pageSize as any,
+    paginate: paginate as any,
   };
 
-  const users = await usersService.listUsers(req.user, filters);
-  sendSuccess(res, users);
+  const result = await usersService.listUsers(req.user, filters);
+  setPaginationHeaders(res, result.meta);
+  if (req.query.paginate === 'true') {
+    sendSuccess(res, { data: result.data, pagination: result.meta });
+  } else {
+    sendSuccess(res, result.data);
+  }
 }
 
 export async function getPendingCount(_req: Request, res: Response): Promise<void> {
