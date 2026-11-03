@@ -137,6 +137,8 @@ model User {
 
   @@index([role])
   @@index([approvalStatus])
+  @@index([createdByAdminId])
+  @@index([createdAt, id])
 }
 
 model Driver {
@@ -182,6 +184,7 @@ model Vehicle {
 
   @@index([driverId])
   @@index([siteInchargeId])
+  @@index([createdAt, id])
 }
 
 model Complaint {
@@ -223,6 +226,7 @@ model Complaint {
   @@index([createdAt])
   @@index([status, createdAt])
   @@index([driverId, status])
+  @@index([vehicleId])
 }
 
 model ComplaintAttachment {
@@ -391,6 +395,7 @@ model LoadingRecord {
   @@index([complaintId])
   @@index([status])
   @@index([reachedAt])
+  @@index([driverId, status, createdAt])
 }
 
 enum FuelType {
