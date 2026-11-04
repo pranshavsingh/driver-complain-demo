@@ -32,6 +32,44 @@ vi.mock('../../../lib/transcribe', () => ({
   translateText: vi.fn(async (text: string) => text),
 }));
 
+class ConcurrencyBarrier {
+  private count = 0;
+  private readonly target: number;
+  private releaseBarrier!: () => void;
+  private readonly barrierPromise: Promise<void>;
+  private timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+  constructor(target = 2, timeoutMs = 15000) {
+    this.target = target;
+    this.barrierPromise = new Promise<void>((resolve) => {
+      this.releaseBarrier = resolve;
+      this.timeoutId = setTimeout(() => {
+        resolve(); // Never hang test suite
+      }, timeoutMs);
+    });
+  }
+
+  async arriveAndAwait(): Promise<void> {
+    this.count++;
+    if (this.count >= this.target) {
+      if (this.timeoutId) {
+        clearTimeout(this.timeoutId);
+        this.timeoutId = null;
+      }
+      this.releaseBarrier();
+    }
+    return this.barrierPromise;
+  }
+
+  release(): void {
+    if (this.timeoutId) {
+      clearTimeout(this.timeoutId);
+      this.timeoutId = null;
+    }
+    this.releaseBarrier();
+  }
+}
+
 const IDEM_D1 = 'IDEM_DRIVER_1';
 const IDEM_D2 = 'IDEM_DRIVER_2';
 
@@ -39,6 +77,7 @@ let driver1UserId: string;
 let driver1Id: string;
 let driver2UserId: string;
 let driver2Id: string;
+let adminUserId: string;
 
 async function cleanup(): Promise<void> {
   const driverIds = [driver1Id, driver2Id].filter(Boolean);
@@ -82,6 +121,13 @@ beforeAll(async () => {
     create: { userId: u2.id, licenseNumber: 'IDEM-LIC-2' },
   });
   driver2Id = d2.id;
+
+  const adminU = await prisma.user.upsert({
+    where: { employeeId: 'IDEM_ADMIN' },
+    update: { pinHash, isActive: true, role: 'ADMIN', approvalStatus: 'APPROVED' },
+    create: { employeeId: 'IDEM_ADMIN', pinHash, role: 'ADMIN', approvalStatus: 'APPROVED', firstName: 'Admin', lastName: 'Idem' },
+  });
+  adminUserId = adminU.id;
 });
 
 beforeEach(cleanup);
@@ -89,7 +135,7 @@ beforeEach(cleanup);
 afterAll(async () => {
   await cleanup();
   await prisma.driver.deleteMany({ where: { userId: { in: [driver1UserId, driver2UserId].filter(Boolean) } } });
-  await prisma.user.deleteMany({ where: { id: { in: [driver1UserId, driver2UserId].filter(Boolean) } } });
+  await prisma.user.deleteMany({ where: { id: { in: [driver1UserId, driver2UserId, adminUserId].filter(Boolean) } } });
 });
 
 describe('M6 Server Idempotency Integration Tests', () => {
@@ -291,70 +337,263 @@ describe('M6 Server Idempotency Integration Tests', () => {
     }
   });
 
-  it('handles true concurrent create with evidence: persists 1 complaint, returns same ID, compensates loser assets without deleting winner assets', async () => {
+  it('deterministically handles concurrent create requests with evidence via upload barrier: both pass initial lookup, both finish uploads, race resolves at unique constraint, loser assets compensated, winning assets protected', async () => {
     vi.mocked(deleteAsset).mockClear();
     vi.mocked(uploadBuffer).mockClear();
 
-    const key = `idem-concurrent-evidence-${Date.now()}`;
+    const key = `idem-barrier-race-${Date.now()}`;
     const evidence = {
       PHOTO: {
-        buffer: Buffer.from('concurrent-evidence-bytes'),
-        originalName: 'concurrent.jpg',
+        buffer: Buffer.from('deterministic-evidence-bytes'),
+        originalName: 'deterministic.jpg',
       },
     };
 
-    // Run two create requests concurrently with the same driver, idempotency key, and evidence payload
-    const [res1, res2] = await Promise.all([
-      create(
-        driver1UserId,
-        {
-          title: 'Concurrent tyre blowout',
-          description: 'Left rear tyre blowout on ring road',
-          category: 'TYRE_ISSUE',
-          priority: 'URGENT',
-          idempotencyKey: key,
-        },
-        evidence,
-      ),
-      create(
-        driver1UserId,
-        {
-          title: 'Concurrent tyre blowout',
-          description: 'Left rear tyre blowout on ring road',
-          category: 'TYRE_ISSUE',
-          priority: 'URGENT',
-          idempotencyKey: key,
-        },
-        evidence,
-      ),
-    ]);
+    // Synchronization barrier: holds each request in uploadBuffer until both requests
+    // have completed their Cloudinary upload phase.
+    const uploadBarrier = new ConcurrencyBarrier(2);
+    const uploadedAssets: string[] = [];
 
-    // 1. Both requests return the same complaint ID and complaint number
-    expect(res1.id).toBe(res2.id);
-    expect(res1.complaintNo).toBe(res2.complaintNo);
+    // Intercept uploadBuffer to record uploaded assets and synchronize at the barrier
+    const originalUploadBuffer = vi.mocked(uploadBuffer).getMockImplementation();
+    vi.mocked(uploadBuffer).mockImplementation(async (buffer, options) => {
+      // Execute the upload to generate a unique asset
+      const result = await (originalUploadBuffer ? originalUploadBuffer(buffer, options) : {
+        url: `https://cdn.test/barrier_${Date.now()}_${Math.random()}.jpg`,
+        publicId: `test/asset_barrier_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+        resourceType: 'image' as const,
+        format: 'jpg',
+        bytes: 12345,
+        durationSec: null,
+      });
+      uploadedAssets.push(result.publicId);
 
-    // 2. Exactly one complaint is persisted in the database
-    const dbCount = await prisma.complaint.count({
-      where: { driverId: driver1Id, idempotencyKey: key },
+      // Force both requests to finish uploadBuffer before either proceeds to the database transaction!
+      await uploadBarrier.arriveAndAwait();
+      return result;
     });
-    expect(dbCount).toBe(1);
 
-    // 3. Inspect persisted attachments on the winning complaint
-    const winningComplaint = await prisma.complaint.findUnique({
-      where: { id: res1.id },
-      include: { attachments: true },
+    try {
+      const [res1, res2] = await Promise.all([
+        create(
+          driver1UserId,
+          {
+            title: 'Deterministic concurrent tyre blowout',
+            description: 'Left rear tyre blowout on ring road',
+            category: 'TYRE_ISSUE',
+            priority: 'URGENT',
+            idempotencyKey: key,
+          },
+          evidence,
+        ),
+        create(
+          driver1UserId,
+          {
+            title: 'Deterministic concurrent tyre blowout',
+            description: 'Left rear tyre blowout on ring road',
+            category: 'TYRE_ISSUE',
+            priority: 'URGENT',
+            idempotencyKey: key,
+          },
+          evidence,
+        ),
+      ]);
+
+      // Unconditional assertions:
+      // 1. Both requests resolve successfully and return identical complaint identity
+      expect(res1.id).toBe(res2.id);
+      expect(res1.complaintNo).toBe(res2.complaintNo);
+
+      // 2. Exactly two assets were uploaded before the database transaction
+      expect(uploadedAssets.length).toBe(2);
+
+      // 3. Exactly one complaint exists in database for this driver and idempotency key
+      const dbCount = await prisma.complaint.count({
+        where: { driverId: driver1Id, idempotencyKey: key },
+      });
+      expect(dbCount).toBe(1);
+
+      // 4. Exactly one winning attachment is persisted
+      const winningComplaint = await prisma.complaint.findUnique({
+        where: { id: res1.id },
+        include: { attachments: true },
+      });
+      expect(winningComplaint?.attachments.length).toBe(1);
+      const winningAssetPublicId = winningComplaint!.attachments[0]!.publicId;
+      expect(uploadedAssets).toContain(winningAssetPublicId);
+
+      // Identify the losing asset that was uploaded but could not be linked due to unique constraint race
+      const losingAssetPublicId = uploadedAssets.find((id) => id !== winningAssetPublicId)!;
+      expect(losingAssetPublicId).toBeDefined();
+
+      // 5. The winning Cloudinary public ID is NEVER passed to deleteAsset
+      const deletedPublicIds = vi.mocked(deleteAsset).mock.calls.map((call) => call[0]);
+      expect(deletedPublicIds).not.toContain(winningAssetPublicId);
+
+      // 6. The losing request's Cloudinary public ID IS passed to deleteAsset
+      expect(deletedPublicIds).toContain(losingAssetPublicId);
+
+      // 7. No orphaned assets remain: every uploaded asset is either persisted or deleted
+      const allAccountedAssets = [winningAssetPublicId, ...deletedPublicIds];
+      for (const assetId of uploadedAssets) {
+        expect(allAccountedAssets).toContain(assetId);
+      }
+
+      // 8. No duplicate updates or duplicate notifications are created
+      const updateCount = await prisma.complaintUpdate.count({
+        where: { complaintId: res1.id },
+      });
+      expect(updateCount).toBe(1);
+
+      const notifCount = await prisma.notification.count({
+        where: { complaintId: res1.id },
+      });
+      expect(notifCount).toBeGreaterThan(0);
+      const uniqueNotifRecipients = await prisma.notification.findMany({
+        where: { complaintId: res1.id },
+        select: { userId: true },
+      });
+      const recipientIds = uniqueNotifRecipients.map((n) => n.userId);
+      const uniqueRecipientIds = new Set(recipientIds);
+      expect(recipientIds.length).toBe(uniqueRecipientIds.size);
+    } finally {
+      uploadBarrier.release();
+      if (originalUploadBuffer) {
+        vi.mocked(uploadBuffer).mockImplementation(originalUploadBuffer);
+      }
+    }
+  });
+
+  it('winning asset protection: winning transaction persists attachment, concurrent loser compensates only its own asset, and subsequent transaction failure cleans up only its own asset', async () => {
+    vi.mocked(deleteAsset).mockClear();
+    vi.mocked(uploadBuffer).mockClear();
+
+    const sharedKey = `idem-winning-protect-${Date.now()}`;
+    const evidenceA = {
+      PHOTO: { buffer: Buffer.from('photo-payload-A'), originalName: 'evidence_A.jpg' },
+    };
+    const evidenceB = {
+      PHOTO: { buffer: Buffer.from('photo-payload-B'), originalName: 'evidence_B.jpg' },
+    };
+
+    const uploadBarrier = new ConcurrencyBarrier(2);
+    const originalUploadBuffer = vi.mocked(uploadBuffer).getMockImplementation();
+    let uploadIndex = 0;
+    vi.mocked(uploadBuffer).mockImplementation(async (_buffer, _options) => {
+      uploadIndex++;
+      const id = `test/protect_asset_${uploadIndex}_${Date.now()}`;
+      const asset = {
+        url: `https://cdn.test/${id}.jpg`,
+        publicId: id,
+        resourceType: 'image' as const,
+        format: 'jpg',
+        bytes: 10000 + uploadIndex,
+        durationSec: null,
+      };
+      await uploadBarrier.arriveAndAwait();
+      return asset;
     });
-    expect(winningComplaint?.attachments.length).toBe(1);
-    const winningAssetPublicId = winningComplaint!.attachments[0]!.publicId;
 
-    // 4. The winning complaint's asset is NEVER deleted
-    const deletedPublicIds = vi.mocked(deleteAsset).mock.calls.map((call) => call[0]);
-    expect(deletedPublicIds).not.toContain(winningAssetPublicId);
+    try {
+      const [resA, resB] = await Promise.all([
+        create(
+          driver1UserId,
+          {
+            title: 'Protected asset race A',
+            description: 'Payload A from device',
+            category: 'BREAKDOWN',
+            priority: 'HIGH',
+            idempotencyKey: sharedKey,
+          },
+          evidenceA,
+        ),
+        create(
+          driver1UserId,
+          {
+            title: 'Protected asset race B',
+            description: 'Payload B from device',
+            category: 'BREAKDOWN',
+            priority: 'HIGH',
+            idempotencyKey: sharedKey,
+          },
+          evidenceB,
+        ),
+      ]);
 
-    // If both requests uploaded assets before the race was resolved at the DB layer,
-    // the loser's uploaded asset was compensated
-    if (vi.mocked(uploadBuffer).mock.calls.length > 1) {
-      expect(deleteAsset).toHaveBeenCalled();
+      expect(resA.id).toBe(resB.id);
+
+      // Verify winning attachment in DB
+      const complaintInDb = await prisma.complaint.findUniqueOrThrow({
+        where: { id: resA.id },
+        include: { attachments: true },
+      });
+      expect(complaintInDb.attachments.length).toBe(1);
+      const winningAssetId = complaintInDb.attachments[0]!.publicId;
+
+      // Verify that the winning asset was NEVER sent to deleteAsset
+      const deletedAfterRace = vi.mocked(deleteAsset).mock.calls.map((c) => c[0]);
+      expect(deletedAfterRace).not.toContain(winningAssetId);
+      expect(deletedAfterRace.length).toBe(1); // exactly 1 losing asset was compensated
+      const losingAssetId = deletedAfterRace[0];
+      expect(losingAssetId).not.toBe(winningAssetId);
+
+      // Now verify transaction failure on an append update or new complaint:
+      // Ensure that a failed transaction cleans up ONLY its own uploaded asset,
+      // and never touches the winning asset!
+      vi.mocked(deleteAsset).mockClear();
+
+      // Mock transaction failure specifically for the next create
+      const failedAssetPublicId = `test/protect_asset_failed_${Date.now()}`;
+      vi.mocked(uploadBuffer).mockImplementationOnce(async () => ({
+        url: `https://cdn.test/${failedAssetPublicId}.jpg`,
+        publicId: failedAssetPublicId,
+        resourceType: 'image' as const,
+        format: 'jpg',
+        bytes: 9999,
+        durationSec: null,
+      }));
+
+      // Simulate append update failure
+      const failTxSpy = vi.spyOn(prisma, '$transaction').mockRejectedValueOnce(
+        new Error('Simulated atomic failure during append'),
+      );
+
+      try {
+        await expect(
+          create(
+            driver1UserId,
+            {
+              title: 'Append update to winning complaint',
+              description: 'Additional notes on broken part',
+              category: 'BREAKDOWN',
+              priority: 'HIGH',
+              vehicleId: complaintInDb.vehicleId ?? undefined,
+            },
+            {
+              PHOTO: { buffer: Buffer.from('failed-part-data'), originalName: 'broken_gear.jpg' },
+            },
+          ),
+        ).rejects.toThrow(/Simulated atomic failure during append/);
+
+        // Assert that deleteAsset was called for the failed asset ONLY
+        expect(deleteAsset).toHaveBeenCalledWith(failedAssetPublicId, 'image');
+        expect(deleteAsset).not.toHaveBeenCalledWith(winningAssetId, expect.anything());
+
+        // Assert winning complaint and its asset are STILL intact in the database!
+        const recheckedComplaint = await prisma.complaint.findUniqueOrThrow({
+          where: { id: resA.id },
+          include: { attachments: true },
+        });
+        expect(recheckedComplaint.attachments.length).toBe(1);
+        expect(recheckedComplaint.attachments[0]!.publicId).toBe(winningAssetId);
+      } finally {
+        failTxSpy.mockRestore();
+      }
+    } finally {
+      uploadBarrier.release();
+      if (originalUploadBuffer) {
+        vi.mocked(uploadBuffer).mockImplementation(originalUploadBuffer);
+      }
     }
   });
 

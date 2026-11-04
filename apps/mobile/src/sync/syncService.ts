@@ -27,6 +27,7 @@ class SyncService {
   private sessionGeneration = 0;
   private isSyncing = false;
   private syncScheduled = false;
+  private followUpTimeout: ReturnType<typeof setTimeout> | null = null;
   private activeAbortController: AbortController | null = null;
   private listeners = new Set<SyncListener>();
   private netInfoUnsubscribe: (() => void) | null = null;
@@ -62,6 +63,10 @@ class SyncService {
   }
 
   public destroy(): void {
+    if (this.followUpTimeout) {
+      clearTimeout(this.followUpTimeout);
+      this.followUpTimeout = null;
+    }
     if (this.netInfoUnsubscribe) {
       this.netInfoUnsubscribe();
       this.netInfoUnsubscribe = null;
@@ -71,6 +76,25 @@ class SyncService {
       this.appStateSubscription = null;
     }
     this.listeners.clear();
+  }
+
+  public resetForTesting(): void {
+    if (this.followUpTimeout) {
+      clearTimeout(this.followUpTimeout);
+      this.followUpTimeout = null;
+    }
+    this.isSyncing = false;
+    this.syncScheduled = false;
+    this.activeUserId = null;
+    this.sessionGeneration = 0;
+    if (this.activeAbortController) {
+      try {
+        this.activeAbortController.abort();
+      } catch {
+        // Ignore abort errors
+      }
+      this.activeAbortController = null;
+    }
   }
 
   /**
@@ -204,9 +228,11 @@ class SyncService {
       this.isSyncing = false;
       if (this.syncScheduled) {
         this.syncScheduled = false;
-        setTimeout(() => {
+        if (this.followUpTimeout) clearTimeout(this.followUpTimeout);
+        this.followUpTimeout = setTimeout(() => {
+          this.followUpTimeout = null;
           void this.triggerSync();
-        }, 1000);
+        }, 50);
       }
     }
   }

@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useState, type ReactElement } from 'react';
-import { ActivityIndicator, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
@@ -19,7 +29,7 @@ import {
   complaintsRepository,
   type PendingComplaintRecord,
 } from '../../../src/db/complaintsRepository';
-import { isFileAccessible } from '../../../src/media/attachmentStorage';
+import { recoverMissingAttachmentsAndRetry } from '../../../src/sync/recoveryService';
 import { syncService } from '../../../src/sync/syncService';
 import { colors, fontSize, radius, spacing } from '../../../src/theme';
 import { Ionicons } from '@expo/vector-icons';
@@ -68,18 +78,55 @@ export default function ComplaintDetailScreen(): ReactElement {
       });
   };
 
-  const handleRemoveMissingAttachmentsAndRetry = async (): Promise<void> => {
-    if (!user || !localRecord) return;
+  const handleRemoveMissingAttachmentsAndRetry = (): void => {
+    if (!user || !localRecord || isRetrying) return;
+
+    Alert.alert(
+      'Remove Missing Evidence?',
+      'The missing evidence file cannot be found in device storage and cannot be uploaded.\n\nRemoving it will submit the complaint without this missing evidence. Any accessible evidence, the original complaint ID, and the idempotency key will be retained.\n\nDo you want to proceed?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove & Retry',
+          style: 'destructive',
+          onPress: () => {
+            void executeRecovery();
+          },
+        },
+      ],
+    );
+  };
+
+  const executeRecovery = async (): Promise<void> => {
+    if (!user || !localRecord || isRetrying) return;
     setIsRetrying(true);
     try {
-      for (const att of localRecord.attachments) {
-        const exists = await isFileAccessible(att.localUri);
-        if (!exists) {
-          await complaintsRepository.removeAttachment(localRecord.id, att.id);
+      const res = await recoverMissingAttachmentsAndRetry(localRecord.id, user.id);
+      loadLocalRecord();
+      if (res.success) {
+        if (res.removedAttachments.length > 0) {
+          Alert.alert(
+            'Evidence Removed & Retrying',
+            `Removed ${res.removedAttachments.length} missing attachment(s). The complaint is now syncing with its original ID and idempotency key.`,
+          );
+        } else {
+          Alert.alert(
+            'All Evidence Found',
+            'All attachments are accessible on device storage. Retrying sync with all evidence intact.',
+          );
         }
+      } else {
+        Alert.alert(
+          'Recovery Incomplete',
+          res.error ?? 'Could not complete recovery. The complaint remains recoverable.',
+        );
       }
-      await complaintsRepository.retryComplaint(localRecord.id);
-      await syncService.triggerSync(user.id);
+    } catch (err: unknown) {
+      console.error('[complaintDetail] Recovery error:', err);
+      Alert.alert(
+        'Recovery Error',
+        err instanceof Error ? err.message : 'An unexpected error occurred. The complaint remains recoverable.',
+      );
       loadLocalRecord();
     } finally {
       setIsRetrying(false);
@@ -266,14 +313,20 @@ export default function ComplaintDetailScreen(): ReactElement {
                   An attachment file is missing from device storage. You can remove the missing attachment to proceed with text details, or retry if you restored the file.
                 </Text>
                 <Pressable
-                  style={styles.removeMissingButton}
+                  style={[styles.removeMissingButton, isRetrying && { opacity: 0.6 }]}
                   onPress={handleRemoveMissingAttachmentsAndRetry}
                   disabled={isRetrying}
                   accessibilityLabel="Remove missing attachment and retry"
                   accessibilityRole="button"
                 >
-                  <Ionicons name="trash-outline" size={16} color="#B91C1C" style={{ marginRight: 6 }} />
-                  <Text style={styles.removeMissingButtonText}>Remove Missing Attachment & Retry</Text>
+                  {isRetrying ? (
+                    <ActivityIndicator size="small" color="#B91C1C" style={{ marginRight: 6 }} />
+                  ) : (
+                    <Ionicons name="trash-outline" size={16} color="#B91C1C" style={{ marginRight: 6 }} />
+                  )}
+                  <Text style={styles.removeMissingButtonText}>
+                    {isRetrying ? 'Recovering…' : 'Remove Missing Attachment & Retry'}
+                  </Text>
                 </Pressable>
               </View>
             ) : null}
