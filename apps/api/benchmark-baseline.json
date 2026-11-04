@@ -1,0 +1,111 @@
+{
+  "timestamp": "2026-11-04T05:52:01.003Z",
+  "environment": {
+    "node": "v24.11.1",
+    "platform": "win32",
+    "arch": "x64",
+    "uvThreadpoolSize": "default"
+  },
+  "single": {
+    "hash": {
+      "count": 10,
+      "min": 302.65,
+      "max": 441.32,
+      "mean": 360.05,
+      "p50": 348.99,
+      "p95": 441.32,
+      "p99": 441.32
+    },
+    "verify": {
+      "count": 10,
+      "min": 306.18,
+      "max": 496.01,
+      "mean": 354.81,
+      "p50": 345.35,
+      "p95": 496.01,
+      "p99": 496.01
+    }
+  },
+  "concurrency": {
+    "c10": {
+      "concurrency": 10,
+      "totalBatchTime": 3405.39,
+      "stats": {
+        "count": 10,
+        "min": 2496.78,
+        "max": 3404.04,
+        "mean": 2950.58,
+        "p50": 3000.7,
+        "p95": 3404.04,
+        "p99": 3404.04
+      }
+    },
+    "c25": {
+      "concurrency": 25,
+      "totalBatchTime": 8427.66,
+      "stats": {
+        "count": 25,
+        "min": 6002.73,
+        "max": 8426.76,
+        "mean": 7214.97,
+        "p50": 7215.35,
+        "p95": 8325.94,
+        "p99": 8426.76
+      }
+    },
+    "c50": {
+      "concurrency": 50,
+      "totalBatchTime": 17061.51,
+      "stats": {
+        "count": 50,
+        "min": 12094.22,
+        "max": 17028.19,
+        "mean": 14546.74,
+        "p50": 14586.88,
+        "p95": 16809.27,
+        "p99": 17028.19
+      }
+    }
+  },
+  "healthUnderLoad": {
+    "testDuration": 17105.1,
+    "authBatchDuration": 17103.38,
+    "healthStats": {
+      "count": 4,
+      "min": 5.93,
+      "max": 10156.41,
+      "mean": 4733.54,
+      "p50": 6907.15,
+      "p95": 10156.41,
+      "p99": 10156.41
+    },
+    "authStats": {
+      "count": 50,
+      "min": 12108.24,
+      "max": 17076.56,
+      "mean": 14586.75,
+      "p50": 14653.57,
+      "p95": 16856.15,
+      "p99": 17076.56
+    },
+    "eventLoopStats": {
+      "min": 27.41,
+      "max": 5079.3,
+      "mean": 3001.98,
+      "p50": 1835.01,
+      "p95": 5079.3,
+      "p99": 5079.3
+    },
+    "cpuStats": {
+      "userMs": 13828,
+      "systemMs": 953,
+      "totalMs": 14781
+    },
+    "memStats": {
+      "heapUsedBeforeMb": 12.98,
+      "heapUsedAfterMb": 14.18,
+      "heapDeltaMb": 1.2,
+      "rssMb": 95.09
+    }
+  }
+}

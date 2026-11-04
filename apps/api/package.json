@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@driver-complaint/shared-types": "workspace:*",
+    "@node-rs/bcrypt": "^2.0.0",
     "@prisma/client": "^6",
     "@sentry/node": "^10",
     "@socket.io/redis-adapter": "^8.3.0",

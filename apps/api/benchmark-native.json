@@ -1,0 +1,111 @@
+{
+  "timestamp": "2026-11-04T06:15:41.002Z",
+  "environment": {
+    "node": "v24.11.1",
+    "platform": "win32",
+    "arch": "x64",
+    "uvThreadpoolSize": "default"
+  },
+  "single": {
+    "hash": {
+      "count": 10,
+      "min": 211.07,
+      "max": 225.93,
+      "mean": 214.28,
+      "p50": 213.41,
+      "p95": 225.93,
+      "p99": 225.93
+    },
+    "verify": {
+      "count": 10,
+      "min": 203.75,
+      "max": 255.18,
+      "mean": 217.38,
+      "p50": 215.42,
+      "p95": 255.18,
+      "p99": 255.18
+    }
+  },
+  "concurrency": {
+    "c10": {
+      "concurrency": 10,
+      "totalBatchTime": 739.05,
+      "stats": {
+        "count": 10,
+        "min": 251.91,
+        "max": 733.05,
+        "mean": 447.36,
+        "p50": 497.33,
+        "p95": 733.05,
+        "p99": 733.05
+      }
+    },
+    "c25": {
+      "concurrency": 25,
+      "totalBatchTime": 2233.68,
+      "stats": {
+        "count": 25,
+        "min": 364.42,
+        "max": 2200.06,
+        "mean": 1204.93,
+        "p50": 1331.97,
+        "p95": 1989.29,
+        "p99": 2200.06
+      }
+    },
+    "c50": {
+      "concurrency": 50,
+      "totalBatchTime": 4172.54,
+      "stats": {
+        "count": 50,
+        "min": 568.55,
+        "max": 4152,
+        "mean": 2253.98,
+        "p50": 2369.53,
+        "p95": 3955.15,
+        "p99": 4152
+      }
+    }
+  },
+  "healthUnderLoad": {
+    "testDuration": 4591.27,
+    "authBatchDuration": 4582.02,
+    "healthStats": {
+      "count": 178,
+      "min": 0.7,
+      "max": 74.26,
+      "mean": 2.36,
+      "p50": 0.94,
+      "p95": 11.65,
+      "p99": 28.18
+    },
+    "authStats": {
+      "count": 50,
+      "min": 402.71,
+      "max": 4562.95,
+      "mean": 2517.44,
+      "p50": 2529.82,
+      "p95": 4416.86,
+      "p99": 4562.95
+    },
+    "eventLoopStats": {
+      "min": 9.69,
+      "max": 75.1,
+      "mean": 24.26,
+      "p50": 21.81,
+      "p95": 40.99,
+      "p99": 54.33
+    },
+    "cpuStats": {
+      "userMs": 9828,
+      "systemMs": 281,
+      "totalMs": 10109
+    },
+    "memStats": {
+      "heapUsedBeforeMb": 12.44,
+      "heapUsedAfterMb": 13.68,
+      "heapDeltaMb": 1.24,
+      "rssMb": 86.49
+    }
+  }
+}
