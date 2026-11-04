@@ -1,4 +1,6 @@
 import http from 'node:http';
+import os from 'node:os';
+import fs from 'node:fs';
 import { monitorEventLoopDelay, performance } from 'node:perf_hooks';
 import express from 'express';
 import { hashPin, verifyPin } from '../src/lib/password';
@@ -37,14 +39,15 @@ function calculateStats(latencies: number[]): Stats {
 }
 
 async function benchmarkSingleOperations() {
-  console.log('\n--- 1. Single-Operation Latency (10 iterations) ---');
   const PIN = '2468';
 
-  // Warmup
-  const warmHash = await hashPin(PIN);
-  await verifyPin(PIN, warmHash);
+  // Warmup (10 operations)
+  for (let i = 0; i < 10; i++) {
+    const h = await hashPin(PIN);
+    await verifyPin(PIN, h);
+  }
 
-  // Measure hashPin
+  // Measure hashPin (10 iterations)
   const hashLatencies: number[] = [];
   let sampleHash = '';
   for (let i = 0; i < 10; i++) {
@@ -53,9 +56,8 @@ async function benchmarkSingleOperations() {
     hashLatencies.push(performance.now() - start);
   }
   const hashStats = calculateStats(hashLatencies);
-  console.log(`hashPin:   mean=${hashStats.mean}ms | p50=${hashStats.p50}ms | p95=${hashStats.p95}ms | p99=${hashStats.p99}ms | min=${hashStats.min}ms | max=${hashStats.max}ms`);
 
-  // Measure verifyPin
+  // Measure verifyPin (10 iterations)
   const verifyLatencies: number[] = [];
   for (let i = 0; i < 10; i++) {
     const start = performance.now();
@@ -63,7 +65,6 @@ async function benchmarkSingleOperations() {
     verifyLatencies.push(performance.now() - start);
   }
   const verifyStats = calculateStats(verifyLatencies);
-  console.log(`verifyPin: mean=${verifyStats.mean}ms | p50=${verifyStats.p50}ms | p95=${verifyStats.p95}ms | p99=${verifyStats.p99}ms | min=${verifyStats.min}ms | max=${verifyStats.max}ms`);
 
   return { hashStats, verifyStats, sampleHash };
 }
@@ -84,18 +85,10 @@ async function benchmarkConcurrency(sampleHash: string, concurrency: number) {
   const totalBatchTime = performance.now() - startBatch;
   const stats = calculateStats(opLatencies);
 
-  console.log(
-    `Concurrency ${concurrency.toString().padStart(2, ' ')}: batch=${totalBatchTime.toFixed(
-      2,
-    )}ms | per-op mean=${stats.mean}ms | p50=${stats.p50}ms | p95=${stats.p95}ms | p99=${stats.p99}ms | min=${stats.min}ms | max=${stats.max}ms`,
-  );
-
   return { concurrency, totalBatchTime: Number(totalBatchTime.toFixed(2)), stats };
 }
 
 async function benchmarkHealthUnderLoad(sampleHash: string, concurrentOps = 50) {
-  console.log(`\n--- 3. /health Latency During ${concurrentOps} Concurrent Authentication Operations ---`);
-
   // Setup minimal Express app with /health
   const app = express();
   app.get('/health', (_req, res) => {
@@ -120,9 +113,10 @@ async function benchmarkHealthUnderLoad(sampleHash: string, concurrentOps = 50) 
   const healthLatencies: number[] = [];
   let keepPolling = true;
 
-  // Poll /health sequentially in a tight loop with keep-alive agent
+  // Poll /health using 3 concurrent workers in tight keep-alive loops to maximize probe density
   const httpAgent = new http.Agent({ keepAlive: true });
-  const pollerPromise = (async () => {
+  const NUM_POLLERS = 3;
+  const pollerPromises = Array.from({ length: NUM_POLLERS }, async () => {
     while (keepPolling) {
       const reqStart = performance.now();
       await new Promise<void>((resolve) => {
@@ -137,9 +131,9 @@ async function benchmarkHealthUnderLoad(sampleHash: string, concurrentOps = 50) 
         });
         req.on('error', () => resolve());
       });
-      await new Promise((r) => setTimeout(r, 10));
+      await new Promise((r) => setTimeout(r, 2));
     }
-  })();
+  });
 
   // Trigger concurrent authentication operations
   const authOpLatencies: number[] = [];
@@ -154,9 +148,9 @@ async function benchmarkHealthUnderLoad(sampleHash: string, concurrentOps = 50) 
   );
   const authBatchDuration = performance.now() - authBatchStart;
 
-  // Stop poller and wait
+  // Stop pollers and wait
   keepPolling = false;
-  await pollerPromise;
+  await Promise.all(pollerPromises);
 
   const testDuration = performance.now() - testStartTime;
   eld.disable();
@@ -190,27 +184,6 @@ async function benchmarkHealthUnderLoad(sampleHash: string, concurrentOps = 50) 
     rssMb: Number((memAfter.rss / 1024 / 1024).toFixed(2)),
   };
 
-  console.log(`Test Duration:           ${testDuration.toFixed(2)}ms`);
-  console.log(`Auth Batch (50 ops):     ${authBatchDuration.toFixed(2)}ms (per-op mean=${authStats.mean}ms)`);
-  console.log(`Total /health requests:  ${healthStats.count}`);
-  console.log(
-    `/health Latency:         mean=${healthStats.mean}ms | p50=${healthStats.p50}ms | p95=${healthStats.p95}ms | p99=${healthStats.p99}ms | max=${healthStats.max}ms`,
-  );
-  console.log(
-    `Event Loop Delay:        mean=${eventLoopStats.mean}ms | p50=${eventLoopStats.p50}ms | p95=${eventLoopStats.p95}ms | p99=${eventLoopStats.p99}ms | max=${eventLoopStats.max}ms`,
-  );
-  console.log(
-    `CPU Usage:               user=${cpuStats.userMs}ms | system=${cpuStats.systemMs}ms | total=${cpuStats.totalMs}ms`,
-  );
-  console.log(
-    `Memory (Heap):           before=${memStats.heapUsedBeforeMb}MB | after=${memStats.heapUsedAfterMb}MB | delta=${memStats.heapDeltaMb}MB | RSS=${memStats.rssMb}MB`,
-  );
-  console.log(
-    `Acceptance check (health p99 <= 30ms): ${
-      healthStats.p99 <= 30 ? 'PASS (<= 30ms)' : `FAIL (${healthStats.p99}ms > 30ms)`
-    }`,
-  );
-
   return {
     testDuration: Number(testDuration.toFixed(2)),
     authBatchDuration: Number(authBatchDuration.toFixed(2)),
@@ -222,33 +195,23 @@ async function benchmarkHealthUnderLoad(sampleHash: string, concurrentOps = 50) 
   };
 }
 
-async function main() {
-  console.log('================================================================');
-  console.log('SSE CONNECT+ PASSWORD HASHING BENCHMARK');
-  console.log('================================================================');
-  console.log(`Timestamp:        ${new Date().toISOString()}`);
-  console.log(`Node.js Version:  ${process.version}`);
-  console.log(`Platform / Arch:  ${process.platform} / ${process.arch}`);
-  console.log(`Process PID:      ${process.pid}`);
-  console.log(`UV_THREADPOOL:    ${process.env.UV_THREADPOOL_SIZE || '(default)'}`);
-
+async function runSingleBenchmarkIteration(iteration: number) {
+  console.log(`\n>>> RUN ${iteration} STARTING...`);
   const single = await benchmarkSingleOperations();
-
-  console.log('\n--- 2. Concurrent Authentication Operations (10, 25, 50) ---');
   const c10 = await benchmarkConcurrency(single.sampleHash, 10);
   const c25 = await benchmarkConcurrency(single.sampleHash, 25);
   const c50 = await benchmarkConcurrency(single.sampleHash, 50);
-
   const healthUnderLoad = await benchmarkHealthUnderLoad(single.sampleHash, 50);
 
-  const summary = {
-    timestamp: new Date().toISOString(),
-    environment: {
-      node: process.version,
-      platform: process.platform,
-      arch: process.arch,
-      uvThreadpoolSize: process.env.UV_THREADPOOL_SIZE || 'default',
-    },
+  console.log(
+    `Run ${iteration}: single hash p50=${single.hashStats.p50}ms | single verify p50=${single.verifyStats.p50}ms | c10=${c10.totalBatchTime}ms | c25=${c25.totalBatchTime}ms | c50=${c50.totalBatchTime}ms`,
+  );
+  console.log(
+    `Run ${iteration} /health (count=${healthUnderLoad.healthStats.count}): mean=${healthUnderLoad.healthStats.mean}ms | p50=${healthUnderLoad.healthStats.p50}ms | p95=${healthUnderLoad.healthStats.p95}ms | p99=${healthUnderLoad.healthStats.p99}ms | ELD p99=${healthUnderLoad.eventLoopStats.p99}ms`,
+  );
+
+  return {
+    run: iteration,
     single: {
       hash: single.hashStats,
       verify: single.verifyStats,
@@ -260,24 +223,133 @@ async function main() {
     },
     healthUnderLoad,
   };
+}
+
+function median(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  const res = sorted.length % 2 !== 0 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
+  return Number(res.toFixed(2));
+}
+
+function mean(values: number[]): number {
+  if (values.length === 0) return 0;
+  return Number((values.reduce((a, b) => a + b, 0) / values.length).toFixed(2));
+}
+
+async function main() {
+  const isLegacy = process.env.USE_LEGACY_BCRYPT === 'true';
+  const engineName = isLegacy ? 'bcryptjs' : '@node-rs/bcrypt';
+
+  // Parse CLI args
+  const runsArg = process.argv.find((a) => a.startsWith('--runs='));
+  const totalRuns = runsArg ? Math.max(1, parseInt(runsArg.split('=')[1]!, 10)) : 1;
+
+  const saveJsonArg = process.argv.find((a) => a.startsWith('--save-json='));
+  const saveJsonPath = saveJsonArg ? saveJsonArg.split('=')[1] : null;
+
+  console.log('================================================================');
+  console.log(`SSE CONNECT+ PASSWORD HASHING BENCHMARK (${engineName.toUpperCase()})`);
+  console.log('================================================================');
+  console.log(`Timestamp:         ${new Date().toISOString()}`);
+  console.log(`Engine:            ${engineName}`);
+  console.log(`USE_LEGACY_BCRYPT: ${process.env.USE_LEGACY_BCRYPT || 'false'}`);
+  console.log(`Node.js Version:   ${process.version}`);
+  console.log(`Platform / Arch:   ${process.platform} / ${process.arch}`);
+  console.log(`Logical CPUs:      ${os.cpus().length}`);
+  console.log(`System Memory:     ${(os.totalmem() / 1024 / 1024).toFixed(0)}MB`);
+  console.log(`Process PID:       ${process.pid}`);
+  console.log(`Total Runs:        ${totalRuns}`);
+
+  const runResults: Array<Awaited<ReturnType<typeof runSingleBenchmarkIteration>>> = [];
+  for (let r = 1; r <= totalRuns; r++) {
+    const res = await runSingleBenchmarkIteration(r);
+    runResults.push(res);
+  }
+
+  // Aggregate stats across runs
+  const aggregate = {
+    runsCount: totalRuns,
+    singleHash: {
+      meanP50: mean(runResults.map((r) => r.single.hash.p50)),
+      medianP50: median(runResults.map((r) => r.single.hash.p50)),
+      meanP95: mean(runResults.map((r) => r.single.hash.p95)),
+    },
+    singleVerify: {
+      meanP50: mean(runResults.map((r) => r.single.verify.p50)),
+      medianP50: median(runResults.map((r) => r.single.verify.p50)),
+      meanP95: mean(runResults.map((r) => r.single.verify.p95)),
+    },
+    c10BatchTimeMs: {
+      mean: mean(runResults.map((r) => r.concurrency.c10.totalBatchTime)),
+      median: median(runResults.map((r) => r.concurrency.c10.totalBatchTime)),
+    },
+    c25BatchTimeMs: {
+      mean: mean(runResults.map((r) => r.concurrency.c25.totalBatchTime)),
+      median: median(runResults.map((r) => r.concurrency.c25.totalBatchTime)),
+    },
+    c50BatchTimeMs: {
+      mean: mean(runResults.map((r) => r.concurrency.c50.totalBatchTime)),
+      median: median(runResults.map((r) => r.concurrency.c50.totalBatchTime)),
+    },
+    healthLatencyMs: {
+      probesCountMedian: median(runResults.map((r) => r.healthUnderLoad.healthStats.count)),
+      meanP50: mean(runResults.map((r) => r.healthUnderLoad.healthStats.p50)),
+      medianP50: median(runResults.map((r) => r.healthUnderLoad.healthStats.p50)),
+      meanP95: mean(runResults.map((r) => r.healthUnderLoad.healthStats.p95)),
+      medianP95: median(runResults.map((r) => r.healthUnderLoad.healthStats.p95)),
+      meanP99: mean(runResults.map((r) => r.healthUnderLoad.healthStats.p99)),
+      medianP99: median(runResults.map((r) => r.healthUnderLoad.healthStats.p99)),
+    },
+    eventLoopDelayMs: {
+      meanAvg: mean(runResults.map((r) => r.healthUnderLoad.eventLoopStats.mean)),
+      meanP99: mean(runResults.map((r) => r.healthUnderLoad.eventLoopStats.p99)),
+      medianP99: median(runResults.map((r) => r.healthUnderLoad.eventLoopStats.p99)),
+    },
+  };
+
+  const finalPayload = {
+    timestamp: new Date().toISOString(),
+    engine: engineName,
+    isLegacy,
+    environment: {
+      node: process.version,
+      platform: process.platform,
+      arch: process.arch,
+      cpus: os.cpus().length,
+      totalMemoryMb: Number((os.totalmem() / 1024 / 1024).toFixed(0)),
+      uvThreadpoolSize: process.env.UV_THREADPOOL_SIZE || 'default',
+    },
+    aggregate,
+    runs: runResults,
+  };
 
   console.log('\n================================================================');
-  console.log('JSON SUMMARY RESULT:');
-  console.log(JSON.stringify(summary, null, 2));
+  console.log('FINAL AGGREGATED SUMMARY:');
+  console.log(`Runs:                          ${totalRuns}`);
+  console.log(`Single verifyPin (p50 median): ${aggregate.singleVerify.medianP50}ms`);
+  console.log(`Concurrency 10 Batch (median): ${aggregate.c10BatchTimeMs.median}ms`);
+  console.log(`Concurrency 25 Batch (median): ${aggregate.c25BatchTimeMs.median}ms`);
+  console.log(`Concurrency 50 Batch (median): ${aggregate.c50BatchTimeMs.median}ms`);
+  console.log(`Health Probes Handled (median): ${aggregate.healthLatencyMs.probesCountMedian}`);
+  console.log(`Health Latency p95 (median):   ${aggregate.healthLatencyMs.medianP95}ms`);
+  console.log(`Health Latency p99 (median):   ${aggregate.healthLatencyMs.medianP99}ms`);
+  console.log(`Event Loop Delay p99 (median): ${aggregate.eventLoopDelayMs.medianP99}ms`);
+  console.log(`Health p99 <= 30ms SLA Check:  ${aggregate.healthLatencyMs.medianP99 <= 30 ? 'PASS' : 'FAIL'}`);
   console.log('================================================================');
 
-  if (process.argv.includes('--save-baseline')) {
-    const fs = await import('node:fs');
-    fs.writeFileSync('benchmark-baseline.json', JSON.stringify(summary, null, 2));
-    console.log('Saved baseline to benchmark-baseline.json');
-  } else if (process.argv.includes('--save-native')) {
-    const fs = await import('node:fs');
-    fs.writeFileSync('benchmark-native.json', JSON.stringify(summary, null, 2));
-    console.log('Saved native results to benchmark-native.json');
+  console.log('\nRAW_JSON_START');
+  console.log(JSON.stringify(finalPayload, null, 2));
+  console.log('RAW_JSON_END');
+
+  if (saveJsonPath) {
+    fs.writeFileSync(saveJsonPath, JSON.stringify(finalPayload, null, 2));
+    console.log(`Successfully saved benchmark JSON to ${saveJsonPath}`);
   }
 }
 
 main().catch((err) => {
-  console.error('Benchmark failed:', err);
+  console.error('Benchmark execution failed:', err);
   process.exit(1);
 });
