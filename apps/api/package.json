@@ -6,11 +6,13 @@
   "scripts": {
     "build": "prisma generate",
     "prestart": "prisma generate && prisma db push --accept-data-loss",
-    "dev": "node --env-file-if-exists=.env --import tsx --import ./src/instrument.ts --watch-path=src src/index.ts",
-    "start": "node --env-file-if-exists=.env --import tsx --import ./src/instrument.ts src/index.ts",
+    "dev": "node --env-file-if-exists=.env --import tsx --import ./src/bootstrap.ts --import ./src/instrument.ts --watch-path=src src/index.ts",
+    "start": "node --env-file-if-exists=.env --import tsx --import ./src/bootstrap.ts --import ./src/instrument.ts src/index.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:rollback": "vitest run src/lib/password-rollback.test.ts",
+    "test:rollback:manual": "node --import tsx src/lib/password-rollback.runner.ts",
     "test:watch": "vitest",
     "prisma:generate": "prisma generate",
     "migrate:dev": "prisma migrate dev",
@@ -23,6 +25,7 @@
   },
   "dependencies": {
     "@driver-complaint/shared-types": "workspace:*",
+    "@node-rs/bcrypt": "^2.0.0",
     "@prisma/client": "^6",
     "@sentry/node": "^10",
     "@socket.io/redis-adapter": "^8.3.0",

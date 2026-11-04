@@ -33,7 +33,7 @@ spec:
             - name: PORT
               value: '4000'
             - name: UV_THREADPOOL_SIZE
-              value: '16'
+              value: '2'
             - name: REQUIRE_REDIS_READY
               value: 'true'
             - name: DATABASE_URL
@@ -62,12 +62,28 @@ spec:
                   name: api-secrets
                   key: metrics-auth-token
                   optional: true
+          # Resource reservations tuned to match native bcrypt benchmark requirements:
+          # - QoS Class: Guaranteed (requests == limits for both CPU and memory).
+          #   NOTE: Guaranteed QoS prevents CFS share degradation and out-of-memory eviction,
+          #   but does NOT imply exclusive physical CPU pinning (which requires node-level kubelet
+          #   cpuManagerPolicy=static). Hyperthread contention and OS-level jitter remain possible.
+          # - Sidecar Warning: If sidecar containers (e.g. Istio, Fluentbit) are added to this Pod,
+          #   every sidecar must also specify matching CPU and memory requests and limits; otherwise,
+          #   the Pod QoS class drops to Burstable.
+          # - Sizing Decision: Configured at 2 CPU and 1 GiB only because infrastructure cost and
+          #   node capacity have been explicitly accepted by operations.
+          # - Infrastructure Cost & Capacity:
+          #   * Baseline (3 replicas): 6.0 vCPUs, 3 GiB RAM (~$180-$220/mo on cloud compute).
+          #   * Peak (10 replicas via HPA): 20.0 vCPUs, 10 GiB RAM.
+          #   * HPA Scaling: target averageUtilization=70% corresponds to ~1.4 CPU per Pod.
+          #   * Node Capacity: Nodes must have >= 4 vCPUs (e.g., c6i.xlarge hosting 1-2 pods
+          #     or c6i.2xlarge hosting 3 pods alongside daemonsets).
           resources:
             requests:
-              cpu: 250m
-              memory: 512Mi
+              cpu: '2'
+              memory: 1Gi
             limits:
-              cpu: '1'
+              cpu: '2'
               memory: 1Gi
           readinessProbe:
             httpGet:

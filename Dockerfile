@@ -55,6 +55,7 @@ WORKDIR /app
 # Production environment configurations
 ENV NODE_ENV=production
 ENV PORT=4000
+ENV UV_THREADPOOL_SIZE=2
 
 # Copy node_modules and built packages from builder stage
 COPY --from=builder /app/package.json ./package.json
@@ -79,5 +80,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
 WORKDIR /app/apps/api
 
 # Execute Express API using Node.js TypeScript loader
-CMD ["node", "--import", "tsx", "--import", "./src/instrument.ts", "src/index.ts"]
+CMD ["node", "--import", "tsx", "--import", "./src/bootstrap.ts", "--import", "./src/instrument.ts", "src/index.ts"]
 

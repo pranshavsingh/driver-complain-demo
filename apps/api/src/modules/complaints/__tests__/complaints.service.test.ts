@@ -30,6 +30,13 @@ vi.mock('../../../lib/cloudinary', () => {
   };
 });
 
+// Transcribe is mocked so speech-to-text doesn't spawn external Python or download models during unit tests.
+vi.mock('../../../lib/transcribe', () => ({
+  transcribeAudio: vi.fn(async () => null),
+  transcribeAudioFromUrl: vi.fn(async () => null),
+  translateText: vi.fn(async (text: string) => text),
+}));
+
 // Self-contained integration test — requires a migrated database (docker compose up -d db).
 const D1 = 'CTEST_D1'; // driver who owns the complaints under test
 const D2 = 'CTEST_D2'; // a second driver, for cross-driver scoping/authorization

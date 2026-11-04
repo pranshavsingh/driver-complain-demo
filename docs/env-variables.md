@@ -11,7 +11,7 @@ This document provides a comprehensive specification of all environment variable
 | `NODE_ENV` | Enum (`development` \| `test` \| `production`) | `development` | **Yes** | Defines Node runtime mode. When `production`, stack traces are hidden and security headers are enforced. |
 | `PORT` | Integer | `4000` | No | Port on which the HTTP server listens. |
 | `LOG_LEVEL` | Enum (`fatal` \| `error` \| `warn` \| `info` \| `debug` \| `trace` \| `silent`) | `info` | No | Log output verbosity level for Pino logger. |
-| `UV_THREADPOOL_SIZE` | Integer | `16` | No | Libuv worker thread pool size for bcrypt, DNS, and filesystem I/O. |
+| `UV_THREADPOOL_SIZE` | Integer | `2` | No | Libuv worker thread pool size for bcrypt, DNS, and filesystem I/O. Initialized via `src/bootstrap.ts` and tuned to 2 to match container 2-CPU Guaranteed allocation for native `@node-rs/bcrypt`. |
 
 ---
 
@@ -75,4 +75,27 @@ This document provides a comprehensive specification of all environment variable
 | :--- | :---: | :---: | :---: | :--- |
 | `FIREBASE_PROJECT_ID` | String | - | No | Firebase Project ID for FCM push notification delivery to mobile apps. |
 | `FIREBASE_SERVICE_ACCOUNT` | JSON String | - | No | Service account credentials JSON string for Firebase Admin SDK. |
+
+---
+
+## 8. Infrastructure Sizing & Libuv Threadpool Tuning
+
+### CPU Sizing Decision: 2 CPUs (Guaranteed QoS)
+- **Container Allocation:** `requests.cpu: '2'`, `limits.cpu: '2'`, `requests.memory: 1Gi`, `limits.memory: 1Gi`.
+- **Architectural Context & Contention:**
+  - Bcrypt cost factor 12 is a CPU-intensive operation (~230 ms of continuous CPU execution per verification). The native `@node-rs/bcrypt` library offloads hashing to libuv worker threads.
+  - On a 1-CPU container or under CPU contention with a lower request (e.g. 500m), CFS time-slicing starves the V8 main event loop, causing `/health` p99 latency to degrade to 35–50+ ms.
+  - Setting requests equal to limits establishes `Guaranteed` QoS, which shields the pod from CFS share degradation. However, **Kubernetes Guaranteed QoS does not imply exclusive physical CPU pinning**; nodes without `cpuManagerPolicy=static` may still exhibit hyperthread sharing or Linux scheduling jitter.
+  - **Sidecar Requirement:** If sidecars (e.g. Istio, Fluentbit) are introduced to the Pod, every container in the Pod must have matching CPU and memory requests and limits; otherwise, Kubernetes demotes the Pod QoS class to `Burstable`.
+- **Infrastructure Cost & Capacity:**
+  - *Baseline Footprint (3 replicas):* 6.0 vCPUs, 3 GiB RAM (~$180–$220/month on standard cloud compute). Accepted explicitly by operations to support native bcrypt concurrency.
+  - *Peak Autoscaling (10 replicas via HPA):* 20.0 vCPUs, 10 GiB RAM.
+  - *HPA Target:* `averageUtilization: 70%` corresponds to approximately 1.4 CPU per Pod before triggering horizontal scale-out.
+  - *Node Planning:* Nodes must have $\ge 4\text{ vCPUs}$ (e.g. `c6i.xlarge` hosting 1-2 pods or `c6i.2xlarge` hosting 3 pods alongside daemonsets).
+
+### Libuv Threadpool Bootstrap
+- Libuv reads `UV_THREADPOOL_SIZE` only once when the worker pool is first created.
+- In `@driver-complaint/api`, `src/bootstrap.ts` runs at process startup (via `--import ./src/bootstrap.ts` and as the first import in `src/index.ts` and `src/instrument.ts`) to configure `process.env.UV_THREADPOOL_SIZE = '2'` before any application dependencies or Sentry/OpenTelemetry can initialize libuv.
+- Any deployment-level override (via Kubernetes `env` or `docker run -e UV_THREADPOOL_SIZE=...`) takes precedence and is strictly preserved.
+
 

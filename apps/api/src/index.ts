@@ -1,8 +1,4 @@
-// Increase libuv thread pool BEFORE anything else — bcrypt, DNS, and fs all use it.
-// Default is 4; under load, bcrypt verifyPin() calls saturate the pool.
-if (!process.env.UV_THREADPOOL_SIZE) {
-  process.env.UV_THREADPOOL_SIZE = '16';
-}
+import './bootstrap';
 
 import { createServer } from 'node:http';
 import { createApp } from './app';
@@ -54,8 +50,3 @@ async function shutdown(signal: string): Promise<void> {
 
 process.on('SIGTERM', () => void shutdown('SIGTERM'));
 process.on('SIGINT', () => void shutdown('SIGINT'));
-// Dev server watch reload - shared-types pagination update
-
-
-
-
