@@ -80,5 +80,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
 WORKDIR /app/apps/api
 
 # Execute Express API using Node.js TypeScript loader
-CMD ["node", "--import", "tsx", "--import", "./src/instrument.ts", "src/index.ts"]
+CMD ["node", "--import", "tsx", "--import", "./src/bootstrap.ts", "--import", "./src/instrument.ts", "src/index.ts"]
 

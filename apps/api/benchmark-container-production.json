@@ -8,7 +8,13 @@
     "arch": "x64",
     "cpus": 4,
     "totalMemoryMb": 6897,
-    "uvThreadpoolSize": "2"
+    "uvThreadpoolSize": "2",
+    "cgroup": {
+      "cgroupVersion": "v2",
+      "cgroupCpuLimit": 2,
+      "cgroupMemoryLimitBytes": 1073741824,
+      "cgroupMemoryLimitMb": 1024
+    }
   },
   "aggregate": {
     "runsCount": 3,

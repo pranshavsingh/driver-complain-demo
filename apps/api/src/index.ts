@@ -1,8 +1,4 @@
-// Configure libuv thread pool default BEFORE anything else — bcrypt, DNS, and fs use it.
-// Tuned to 2 to match container 2-CPU allocation for native @node-rs/bcrypt operations.
-if (!process.env.UV_THREADPOOL_SIZE) {
-  process.env.UV_THREADPOOL_SIZE = '2';
-}
+import './bootstrap';
 
 import { createServer } from 'node:http';
 import { createApp } from './app';
@@ -54,8 +50,3 @@ async function shutdown(signal: string): Promise<void> {
 
 process.on('SIGTERM', () => void shutdown('SIGTERM'));
 process.on('SIGINT', () => void shutdown('SIGINT'));
-// Dev server watch reload - shared-types pagination update
-
-
-
-

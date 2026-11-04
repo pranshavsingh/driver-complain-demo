@@ -249,6 +249,60 @@ function mean(values: number[]): number {
   return Number((values.reduce((a, b) => a + b, 0) / values.length).toFixed(2));
 }
 
+function getCgroupLimits() {
+  let cgroupCpuLimit: number | null = null;
+  let cgroupMemoryLimitBytes: number | null = null;
+  let cgroupVersion: 'v1' | 'v2' | 'none' = 'none';
+
+  // Check cgroups v2
+  try {
+    if (fs.existsSync('/sys/fs/cgroup/cpu.max')) {
+      cgroupVersion = 'v2';
+      const cpuMax = fs.readFileSync('/sys/fs/cgroup/cpu.max', 'utf8').trim().split(/\s+/);
+      if (cpuMax[0] && cpuMax[0] !== 'max' && cpuMax[1]) {
+        const quota = parseInt(cpuMax[0], 10);
+        const period = parseInt(cpuMax[1], 10);
+        if (period > 0) cgroupCpuLimit = Number((quota / period).toFixed(2));
+      }
+    }
+    if (fs.existsSync('/sys/fs/cgroup/memory.max')) {
+      cgroupVersion = 'v2';
+      const memMax = fs.readFileSync('/sys/fs/cgroup/memory.max', 'utf8').trim();
+      if (memMax !== 'max') {
+        cgroupMemoryLimitBytes = parseInt(memMax, 10);
+      }
+    }
+  } catch {
+    /* ignore cgroup v2 read errors */
+  }
+
+  // Check cgroups v1 if v2 wasn't detected
+  if (cgroupVersion === 'none') {
+    try {
+      if (fs.existsSync('/sys/fs/cgroup/cpu/cpu.cfs_quota_us')) {
+        cgroupVersion = 'v1';
+        const quota = parseInt(fs.readFileSync('/sys/fs/cgroup/cpu/cpu.cfs_quota_us', 'utf8').trim(), 10);
+        const period = parseInt(fs.readFileSync('/sys/fs/cgroup/cpu/cpu.cfs_period_us', 'utf8').trim(), 10);
+        if (quota > 0 && period > 0) cgroupCpuLimit = Number((quota / period).toFixed(2));
+      }
+      if (fs.existsSync('/sys/fs/cgroup/memory/memory.limit_in_bytes')) {
+        cgroupVersion = 'v1';
+        const limit = parseInt(fs.readFileSync('/sys/fs/cgroup/memory/memory.limit_in_bytes', 'utf8').trim(), 10);
+        if (limit < 1e15) cgroupMemoryLimitBytes = limit;
+      }
+    } catch {
+      /* ignore cgroup v1 read errors */
+    }
+  }
+
+  return {
+    cgroupVersion,
+    cgroupCpuLimit,
+    cgroupMemoryLimitBytes,
+    cgroupMemoryLimitMb: cgroupMemoryLimitBytes ? Math.round(cgroupMemoryLimitBytes / 1024 / 1024) : null,
+  };
+}
+
 async function main() {
   const isLegacy = process.env.USE_LEGACY_BCRYPT === 'true';
   const engineName = isLegacy ? 'bcryptjs' : '@node-rs/bcrypt';
@@ -332,6 +386,7 @@ async function main() {
       cpus: os.cpus().length,
       totalMemoryMb: Number((os.totalmem() / 1024 / 1024).toFixed(0)),
       uvThreadpoolSize: process.env.UV_THREADPOOL_SIZE || 'default (4)',
+      cgroup: getCgroupLimits(),
     },
     aggregate,
     runs: runResults,
