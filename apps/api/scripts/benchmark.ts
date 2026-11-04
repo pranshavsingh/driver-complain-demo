@@ -201,13 +201,22 @@ async function runSingleBenchmarkIteration(iteration: number) {
   const c10 = await benchmarkConcurrency(single.sampleHash, 10);
   const c25 = await benchmarkConcurrency(single.sampleHash, 25);
   const c50 = await benchmarkConcurrency(single.sampleHash, 50);
-  const healthUnderLoad = await benchmarkHealthUnderLoad(single.sampleHash, 50);
+
+  const health10 = await benchmarkHealthUnderLoad(single.sampleHash, 10);
+  const health25 = await benchmarkHealthUnderLoad(single.sampleHash, 25);
+  const health50 = await benchmarkHealthUnderLoad(single.sampleHash, 50);
 
   console.log(
-    `Run ${iteration}: single hash p50=${single.hashStats.p50}ms | single verify p50=${single.verifyStats.p50}ms | c10=${c10.totalBatchTime}ms | c25=${c25.totalBatchTime}ms | c50=${c50.totalBatchTime}ms`,
+    `Run ${iteration}: single verify p50=${single.verifyStats.p50}ms | c10=${c10.totalBatchTime}ms | c25=${c25.totalBatchTime}ms | c50=${c50.totalBatchTime}ms`,
   );
   console.log(
-    `Run ${iteration} /health (count=${healthUnderLoad.healthStats.count}): mean=${healthUnderLoad.healthStats.mean}ms | p50=${healthUnderLoad.healthStats.p50}ms | p95=${healthUnderLoad.healthStats.p95}ms | p99=${healthUnderLoad.healthStats.p99}ms | ELD p99=${healthUnderLoad.eventLoopStats.p99}ms`,
+    `Run ${iteration} /health @ c10 (probes=${health10.healthStats.count}): mean=${health10.healthStats.mean}ms | p50=${health10.healthStats.p50}ms | p95=${health10.healthStats.p95}ms | p99=${health10.healthStats.p99}ms | ELD p99=${health10.eventLoopStats.p99}ms`,
+  );
+  console.log(
+    `Run ${iteration} /health @ c25 (probes=${health25.healthStats.count}): mean=${health25.healthStats.mean}ms | p50=${health25.healthStats.p50}ms | p95=${health25.healthStats.p95}ms | p99=${health25.healthStats.p99}ms | ELD p99=${health25.eventLoopStats.p99}ms`,
+  );
+  console.log(
+    `Run ${iteration} /health @ c50 (probes=${health50.healthStats.count}): mean=${health50.healthStats.mean}ms | p50=${health50.healthStats.p50}ms | p95=${health50.healthStats.p95}ms | p99=${health50.healthStats.p99}ms | ELD p99=${health50.eventLoopStats.p99}ms`,
   );
 
   return {
@@ -221,7 +230,9 @@ async function runSingleBenchmarkIteration(iteration: number) {
       c25,
       c50,
     },
-    healthUnderLoad,
+    health10,
+    health25,
+    health50,
   };
 }
 
@@ -269,6 +280,18 @@ async function main() {
   }
 
   // Aggregate stats across runs
+  const aggregateHealthTier = (tier: 'health10' | 'health25' | 'health50') => ({
+    probesCountMedian: median(runResults.map((r) => r[tier].healthStats.count)),
+    meanP50: mean(runResults.map((r) => r[tier].healthStats.p50)),
+    medianP50: median(runResults.map((r) => r[tier].healthStats.p50)),
+    meanP95: mean(runResults.map((r) => r[tier].healthStats.p95)),
+    medianP95: median(runResults.map((r) => r[tier].healthStats.p95)),
+    meanP99: mean(runResults.map((r) => r[tier].healthStats.p99)),
+    medianP99: median(runResults.map((r) => r[tier].healthStats.p99)),
+    eldMeanAvg: mean(runResults.map((r) => r[tier].eventLoopStats.mean)),
+    eldMedianP99: median(runResults.map((r) => r[tier].eventLoopStats.p99)),
+  });
+
   const aggregate = {
     runsCount: totalRuns,
     singleHash: {
@@ -293,20 +316,9 @@ async function main() {
       mean: mean(runResults.map((r) => r.concurrency.c50.totalBatchTime)),
       median: median(runResults.map((r) => r.concurrency.c50.totalBatchTime)),
     },
-    healthLatencyMs: {
-      probesCountMedian: median(runResults.map((r) => r.healthUnderLoad.healthStats.count)),
-      meanP50: mean(runResults.map((r) => r.healthUnderLoad.healthStats.p50)),
-      medianP50: median(runResults.map((r) => r.healthUnderLoad.healthStats.p50)),
-      meanP95: mean(runResults.map((r) => r.healthUnderLoad.healthStats.p95)),
-      medianP95: median(runResults.map((r) => r.healthUnderLoad.healthStats.p95)),
-      meanP99: mean(runResults.map((r) => r.healthUnderLoad.healthStats.p99)),
-      medianP99: median(runResults.map((r) => r.healthUnderLoad.healthStats.p99)),
-    },
-    eventLoopDelayMs: {
-      meanAvg: mean(runResults.map((r) => r.healthUnderLoad.eventLoopStats.mean)),
-      meanP99: mean(runResults.map((r) => r.healthUnderLoad.eventLoopStats.p99)),
-      medianP99: median(runResults.map((r) => r.healthUnderLoad.eventLoopStats.p99)),
-    },
+    health10: aggregateHealthTier('health10'),
+    health25: aggregateHealthTier('health25'),
+    health50: aggregateHealthTier('health50'),
   };
 
   const finalPayload = {
@@ -319,7 +331,7 @@ async function main() {
       arch: process.arch,
       cpus: os.cpus().length,
       totalMemoryMb: Number((os.totalmem() / 1024 / 1024).toFixed(0)),
-      uvThreadpoolSize: process.env.UV_THREADPOOL_SIZE || 'default',
+      uvThreadpoolSize: process.env.UV_THREADPOOL_SIZE || 'default (4)',
     },
     aggregate,
     runs: runResults,
@@ -332,11 +344,27 @@ async function main() {
   console.log(`Concurrency 10 Batch (median): ${aggregate.c10BatchTimeMs.median}ms`);
   console.log(`Concurrency 25 Batch (median): ${aggregate.c25BatchTimeMs.median}ms`);
   console.log(`Concurrency 50 Batch (median): ${aggregate.c50BatchTimeMs.median}ms`);
-  console.log(`Health Probes Handled (median): ${aggregate.healthLatencyMs.probesCountMedian}`);
-  console.log(`Health Latency p95 (median):   ${aggregate.healthLatencyMs.medianP95}ms`);
-  console.log(`Health Latency p99 (median):   ${aggregate.healthLatencyMs.medianP99}ms`);
-  console.log(`Event Loop Delay p99 (median): ${aggregate.eventLoopDelayMs.medianP99}ms`);
-  console.log(`Health p99 <= 30ms SLA Check:  ${aggregate.healthLatencyMs.medianP99 <= 30 ? 'PASS' : 'FAIL'}`);
+  console.log('----------------------------------------------------------------');
+  console.log(`/health under 10 concurrent auth ops:`);
+  console.log(`  Probes Handled (median):     ${aggregate.health10.probesCountMedian}`);
+  console.log(`  Latency p95 (median):        ${aggregate.health10.medianP95}ms`);
+  console.log(`  Latency p99 (median):        ${aggregate.health10.medianP99}ms`);
+  console.log(`  Event Loop Delay p99 (median): ${aggregate.health10.eldMedianP99}ms`);
+  console.log(`  SLA Target (p99 <= 30ms):    ${aggregate.health10.medianP99 <= 30 ? 'PASS' : 'FAIL'}`);
+  console.log('----------------------------------------------------------------');
+  console.log(`/health under 25 concurrent auth ops:`);
+  console.log(`  Probes Handled (median):     ${aggregate.health25.probesCountMedian}`);
+  console.log(`  Latency p95 (median):        ${aggregate.health25.medianP95}ms`);
+  console.log(`  Latency p99 (median):        ${aggregate.health25.medianP99}ms`);
+  console.log(`  Event Loop Delay p99 (median): ${aggregate.health25.eldMedianP99}ms`);
+  console.log(`  SLA Target (p99 <= 30ms):    ${aggregate.health25.medianP99 <= 30 ? 'PASS' : 'FAIL'}`);
+  console.log('----------------------------------------------------------------');
+  console.log(`/health under 50 concurrent auth ops (Stress Test):`);
+  console.log(`  Probes Handled (median):     ${aggregate.health50.probesCountMedian}`);
+  console.log(`  Latency p95 (median):        ${aggregate.health50.medianP95}ms`);
+  console.log(`  Latency p99 (median):        ${aggregate.health50.medianP99}ms`);
+  console.log(`  Event Loop Delay p99 (median): ${aggregate.health50.eldMedianP99}ms`);
+  console.log(`  SLA Target (p99 <= 30ms):    ${aggregate.health50.medianP99 <= 30 ? 'PASS' : 'FAIL (CPU saturation under 2-CPU constraint)'}`);
   console.log('================================================================');
 
   console.log('\nRAW_JSON_START');

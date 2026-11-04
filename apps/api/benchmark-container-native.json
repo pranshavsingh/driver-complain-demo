@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-11-04T06:50:48.689Z",
+  "timestamp": "2026-11-04T07:22:36.889Z",
   "engine": "@node-rs/bcrypt",
   "isLegacy": false,
   "environment": {
@@ -8,45 +8,64 @@
     "arch": "x64",
     "cpus": 4,
     "totalMemoryMb": 6897,
-    "uvThreadpoolSize": "default"
+    "uvThreadpoolSize": "default (4)"
   },
   "aggregate": {
     "runsCount": 3,
     "singleHash": {
-      "meanP50": 225.07,
-      "medianP50": 222.86,
-      "meanP95": 245.35
+      "meanP50": 222.6,
+      "medianP50": 220.95,
+      "meanP95": 308.4
     },
     "singleVerify": {
-      "meanP50": 225.93,
-      "medianP50": 225.54,
-      "meanP95": 243
+      "meanP50": 232.8,
+      "medianP50": 230.19,
+      "meanP95": 311.07
     },
     "c10BatchTimeMs": {
-      "mean": 1221.24,
-      "median": 1211.59
+      "mean": 1496.24,
+      "median": 1451.31
     },
     "c25BatchTimeMs": {
-      "mean": 3735.82,
-      "median": 3658.51
+      "mean": 3897.1,
+      "median": 3877.54
     },
     "c50BatchTimeMs": {
-      "mean": 9160.46,
-      "median": 9577.14
+      "mean": 7681.06,
+      "median": 7647.84
     },
-    "healthLatencyMs": {
-      "probesCountMedian": 1659,
+    "health10": {
+      "probesCountMedian": 421,
+      "meanP50": 1.67,
+      "medianP50": 1.16,
+      "meanP95": 30.21,
+      "medianP95": 27.87,
+      "meanP99": 57.59,
+      "medianP99": 68.09,
+      "eldMeanAvg": 22.32,
+      "eldMedianP99": 77
+    },
+    "health25": {
+      "probesCountMedian": 999,
       "meanP50": 1.18,
-      "medianP50": 1.21,
-      "meanP95": 35.35,
-      "medianP95": 33.1,
-      "meanP99": 75.78,
-      "medianP99": 74.21
+      "medianP50": 1.13,
+      "meanP95": 28.07,
+      "medianP95": 21.29,
+      "meanP99": 67.17,
+      "medianP99": 66.84,
+      "eldMeanAvg": 25.11,
+      "eldMedianP99": 80.41
     },
-    "eventLoopDelayMs": {
-      "meanAvg": 26.94,
-      "meanP99": 85.11,
-      "medianP99": 89.59
+    "health50": {
+      "probesCountMedian": 1902,
+      "meanP50": 1.06,
+      "medianP50": 1.03,
+      "meanP95": 13.42,
+      "medianP95": 13.19,
+      "meanP99": 70.39,
+      "medianP99": 68.34,
+      "eldMeanAvg": 24.81,
+      "eldMedianP99": 90.51
     }
   },
   "runs": [
@@ -55,103 +74,185 @@
       "single": {
         "hash": {
           "count": 10,
-          "min": 215.56,
-          "max": 226.46,
-          "mean": 221.55,
-          "p50": 221.82,
-          "p95": 226.46,
-          "p99": 226.46
+          "min": 213.97,
+          "max": 271.73,
+          "mean": 224.44,
+          "p50": 220.95,
+          "p95": 271.73,
+          "p99": 271.73
         },
         "verify": {
           "count": 10,
-          "min": 215.28,
-          "max": 246.14,
-          "mean": 225.97,
-          "p50": 227.93,
-          "p95": 246.14,
-          "p99": 246.14
+          "min": 213.14,
+          "max": 358.29,
+          "mean": 253.74,
+          "p50": 239.17,
+          "p95": 358.29,
+          "p99": 358.29
         }
       },
       "concurrency": {
         "c10": {
           "concurrency": 10,
-          "totalBatchTime": 1260.6,
+          "totalBatchTime": 1405.77,
           "stats": {
             "count": 10,
-            "min": 447.87,
-            "max": 1260.03,
-            "mean": 824.91,
-            "p50": 944.74,
-            "p95": 1260.03,
-            "p99": 1260.03
+            "min": 541.24,
+            "max": 1405.48,
+            "mean": 962.22,
+            "p50": 1136.8,
+            "p95": 1405.48,
+            "p99": 1405.48
           }
         },
         "c25": {
           "concurrency": 25,
-          "totalBatchTime": 3658.51,
+          "totalBatchTime": 4019.93,
           "stats": {
             "count": 25,
-            "min": 463.49,
-            "max": 3658.21,
-            "mean": 2023.54,
-            "p50": 2272.34,
-            "p95": 3493.49,
-            "p99": 3658.21
+            "min": 541.8,
+            "max": 4019.55,
+            "mean": 2253.16,
+            "p50": 2406.92,
+            "p95": 3889.24,
+            "p99": 4019.55
           }
         },
         "c50": {
           "concurrency": 50,
-          "totalBatchTime": 10774.44,
+          "totalBatchTime": 7901.61,
           "stats": {
             "count": 50,
-            "min": 608.84,
-            "max": 10774.03,
-            "mean": 5432.27,
-            "p50": 5221,
-            "p95": 10406.52,
-            "p99": 10774.03
+            "min": 806.12,
+            "max": 7901.08,
+            "mean": 4402.31,
+            "p50": 4606.03,
+            "p95": 7710.36,
+            "p99": 7901.08
           }
         }
       },
-      "healthUnderLoad": {
-        "testDuration": 10699.33,
-        "authBatchDuration": 10678.87,
+      "health10": {
+        "testDuration": 2016.19,
+        "authBatchDuration": 2005.37,
         "healthStats": {
-          "count": 1608,
-          "min": 0.24,
-          "max": 249.04,
-          "mean": 8.46,
-          "p50": 1.3,
-          "p95": 59.22,
-          "p99": 90.77
+          "count": 290,
+          "min": 0.63,
+          "max": 76.04,
+          "mean": 9.86,
+          "p50": 2.81,
+          "p95": 59.32,
+          "p99": 69.91
+        },
+        "authStats": {
+          "count": 10,
+          "min": 769.64,
+          "max": 2003.67,
+          "mean": 1410.6,
+          "p50": 1452.44,
+          "p95": 2003.67,
+          "p99": 2003.67
+        },
+        "eventLoopStats": {
+          "min": 2.09,
+          "max": 79.69,
+          "mean": 25.53,
+          "p50": 15.17,
+          "p95": 68.68,
+          "p99": 77
+        },
+        "cpuStats": {
+          "userMs": 3868.38,
+          "systemMs": 260.63,
+          "totalMs": 4129.01
+        },
+        "memStats": {
+          "heapUsedBeforeMb": 17.8,
+          "heapUsedAfterMb": 19.53,
+          "heapDeltaMb": 1.74,
+          "rssMb": 119.45
+        }
+      },
+      "health25": {
+        "testDuration": 4546.3,
+        "authBatchDuration": 4543.31,
+        "healthStats": {
+          "count": 828,
+          "min": 0.34,
+          "max": 90.96,
+          "mean": 6.56,
+          "p50": 1.43,
+          "p95": 55.35,
+          "p99": 76.86
+        },
+        "authStats": {
+          "count": 25,
+          "min": 679.95,
+          "max": 4506.23,
+          "mean": 2589.75,
+          "p50": 2643.06,
+          "p95": 4412.94,
+          "p99": 4506.23
+        },
+        "eventLoopStats": {
+          "min": 1.37,
+          "max": 98.7,
+          "mean": 26.12,
+          "p50": 13.56,
+          "p95": 68.81,
+          "p99": 81
+        },
+        "cpuStats": {
+          "userMs": 8646.43,
+          "systemMs": 359.39,
+          "totalMs": 9005.83
+        },
+        "memStats": {
+          "heapUsedBeforeMb": 19.81,
+          "heapUsedAfterMb": 17.64,
+          "heapDeltaMb": -2.17,
+          "rssMb": 121.57
+        }
+      },
+      "health50": {
+        "testDuration": 8485.58,
+        "authBatchDuration": 8484.77,
+        "healthStats": {
+          "count": 1895,
+          "min": 0.35,
+          "max": 94.61,
+          "mean": 3.88,
+          "p50": 1.13,
+          "p95": 13.17,
+          "p99": 68.34
         },
         "authStats": {
           "count": 50,
-          "min": 866.29,
-          "max": 10678.28,
-          "mean": 5934.89,
-          "p50": 6370.61,
-          "p95": 10397.86,
-          "p99": 10678.28
+          "min": 532.92,
+          "max": 8484.34,
+          "mean": 4583.85,
+          "p50": 4604.7,
+          "p95": 8297.81,
+          "p99": 8484.34
         },
         "eventLoopStats": {
-          "min": 0.48,
-          "max": 178.52,
-          "mean": 29.62,
-          "p50": 16.49,
-          "p95": 74.91,
-          "p99": 93.78
+          "min": 0.52,
+          "max": 92.27,
+          "mean": 23.73,
+          "p50": 12.47,
+          "p95": 64.16,
+          "p99": 78.25
         },
         "cpuStats": {
-          "userMs": 20181.98,
-          "systemMs": 1261.41,
-          "totalMs": 21443.4
+          "userMs": 16537.01,
+          "systemMs": 396.51,
+          "totalMs": 16933.52
         },
         "memStats": {
-          "heapUsedBeforeMb": 16.29,
-          "heapUsedAfterMb": 20.41,
-          "heapDeltaMb": 4.12,
-          "rssMb": 123.18
+          "heapUsedBeforeMb": 17.89,
+          "heapUsedAfterMb": 19.45,
+          "heapDeltaMb": 1.56,
+          "rssMb": 121.7
         }
       }
     },
@@ -160,103 +261,185 @@
       "single": {
         "hash": {
           "count": 10,
-          "min": 210.4,
-          "max": 270.96,
-          "mean": 232.59,
-          "p50": 230.52,
-          "p95": 270.96,
-          "p99": 270.96
+          "min": 211.49,
+          "max": 424.58,
+          "mean": 245.72,
+          "p50": 226.04,
+          "p95": 424.58,
+          "p99": 424.58
         },
         "verify": {
           "count": 10,
-          "min": 217.18,
-          "max": 253.13,
-          "mean": 227.18,
-          "p50": 225.54,
-          "p95": 253.13,
-          "p99": 253.13
+          "min": 220.31,
+          "max": 241.08,
+          "mean": 228.99,
+          "p50": 229.03,
+          "p95": 241.08,
+          "p99": 241.08
         }
       },
       "concurrency": {
         "c10": {
           "concurrency": 10,
-          "totalBatchTime": 1191.52,
+          "totalBatchTime": 1631.63,
           "stats": {
             "count": 10,
-            "min": 399.51,
-            "max": 1191.21,
-            "mean": 756.64,
-            "p50": 895.87,
-            "p95": 1191.21,
-            "p99": 1191.21
+            "min": 538.66,
+            "max": 1631.32,
+            "mean": 1060.71,
+            "p50": 1273.96,
+            "p95": 1631.32,
+            "p99": 1631.32
           }
         },
         "c25": {
           "concurrency": 25,
-          "totalBatchTime": 4206.78,
+          "totalBatchTime": 3877.54,
           "stats": {
             "count": 25,
-            "min": 491.87,
-            "max": 4206.42,
-            "mean": 2251.16,
-            "p50": 2406.03,
-            "p95": 4034.9,
-            "p99": 4206.42
+            "min": 511.22,
+            "max": 3877.2,
+            "mean": 2095.13,
+            "p50": 2139.22,
+            "p95": 3704.37,
+            "p99": 3877.2
           }
         },
         "c50": {
           "concurrency": 50,
-          "totalBatchTime": 9577.14,
+          "totalBatchTime": 7647.84,
           "stats": {
             "count": 50,
-            "min": 659.04,
-            "max": 9576.78,
-            "mean": 4938.35,
-            "p50": 4968.77,
-            "p95": 9418.48,
-            "p99": 9576.78
+            "min": 457,
+            "max": 7647.34,
+            "mean": 4205.55,
+            "p50": 4363.69,
+            "p95": 7459.68,
+            "p99": 7647.34
           }
         }
       },
-      "healthUnderLoad": {
-        "testDuration": 9640.74,
-        "authBatchDuration": 9636.31,
+      "health10": {
+        "testDuration": 1715.84,
+        "authBatchDuration": 1713.4,
         "healthStats": {
-          "count": 1659,
-          "min": 0.28,
-          "max": 110.23,
-          "mean": 6.01,
-          "p50": 1.21,
-          "p95": 33.1,
-          "p99": 74.21
+          "count": 421,
+          "min": 0.38,
+          "max": 74.95,
+          "mean": 4.56,
+          "p50": 1.16,
+          "p95": 27.87,
+          "p99": 68.09
+        },
+        "authStats": {
+          "count": 10,
+          "min": 612.74,
+          "max": 1713.18,
+          "mean": 1185.22,
+          "p50": 1284.54,
+          "p95": 1713.18,
+          "p99": 1713.18
+        },
+        "eventLoopStats": {
+          "min": 0.87,
+          "max": 88.93,
+          "mean": 23.36,
+          "p50": 11.19,
+          "p95": 64.55,
+          "p99": 81.2
+        },
+        "cpuStats": {
+          "userMs": 3367.68,
+          "systemMs": 98.04,
+          "totalMs": 3465.72
+        },
+        "memStats": {
+          "heapUsedBeforeMb": 20.32,
+          "heapUsedAfterMb": 18.77,
+          "heapDeltaMb": -1.55,
+          "rssMb": 121.95
+        }
+      },
+      "health25": {
+        "testDuration": 4609.4,
+        "authBatchDuration": 4608.82,
+        "healthStats": {
+          "count": 999,
+          "min": 0.3,
+          "max": 164.74,
+          "mean": 4.75,
+          "p50": 1.13,
+          "p95": 21.29,
+          "p99": 66.84
+        },
+        "authStats": {
+          "count": 25,
+          "min": 479.98,
+          "max": 4608.5,
+          "mean": 2620.38,
+          "p50": 2663.33,
+          "p95": 4581.89,
+          "p99": 4608.5
+        },
+        "eventLoopStats": {
+          "min": 0.61,
+          "max": 165.81,
+          "mean": 25.84,
+          "p50": 13.75,
+          "p95": 65.8,
+          "p99": 80.41
+        },
+        "cpuStats": {
+          "userMs": 8993.84,
+          "systemMs": 238.17,
+          "totalMs": 9232.01
+        },
+        "memStats": {
+          "heapUsedBeforeMb": 18.92,
+          "heapUsedAfterMb": 20.06,
+          "heapDeltaMb": 1.14,
+          "rssMb": 122.55
+        }
+      },
+      "health50": {
+        "testDuration": 8709.52,
+        "authBatchDuration": 8708.96,
+        "healthStats": {
+          "count": 1941,
+          "min": 0.27,
+          "max": 102.63,
+          "mean": 4.13,
+          "p50": 1.02,
+          "p95": 13.89,
+          "p99": 67.94
         },
         "authStats": {
           "count": 50,
-          "min": 625.9,
-          "max": 9635.8,
-          "mean": 5239.23,
-          "p50": 5112.6,
-          "p95": 9405.22,
-          "p99": 9635.8
+          "min": 492,
+          "max": 8698.59,
+          "mean": 4676.18,
+          "p50": 4765.37,
+          "p95": 8653.68,
+          "p99": 8698.59
         },
         "eventLoopStats": {
           "min": 0.56,
-          "max": 107.09,
-          "mean": 27.49,
-          "p50": 14.56,
-          "p95": 70.58,
-          "p99": 89.59
+          "max": 106.82,
+          "mean": 24.92,
+          "p50": 12.57,
+          "p95": 65.47,
+          "p99": 90.51
         },
         "cpuStats": {
-          "userMs": 18619.44,
-          "systemMs": 701.54,
-          "totalMs": 19320.97
+          "userMs": 16718.81,
+          "systemMs": 649.69,
+          "totalMs": 17368.5
         },
         "memStats": {
-          "heapUsedBeforeMb": 21.38,
-          "heapUsedAfterMb": 19.84,
-          "heapDeltaMb": -1.54,
-          "rssMb": 124.37
+          "heapUsedBeforeMb": 20.32,
+          "heapUsedAfterMb": 20.19,
+          "heapDeltaMb": -0.12,
+          "rssMb": 122.85
         }
       }
     },
@@ -265,103 +448,185 @@
       "single": {
         "hash": {
           "count": 10,
-          "min": 215.32,
-          "max": 238.64,
-          "mean": 224.37,
-          "p50": 222.86,
-          "p95": 238.64,
-          "p99": 238.64
+          "min": 211.05,
+          "max": 228.9,
+          "mean": 219.94,
+          "p50": 220.8,
+          "p95": 228.9,
+          "p99": 228.9
         },
         "verify": {
           "count": 10,
-          "min": 214.12,
-          "max": 229.74,
-          "mean": 223.4,
-          "p50": 224.32,
-          "p95": 229.74,
-          "p99": 229.74
+          "min": 211.52,
+          "max": 333.85,
+          "mean": 244.97,
+          "p50": 230.19,
+          "p95": 333.85,
+          "p99": 333.85
         }
       },
       "concurrency": {
         "c10": {
           "concurrency": 10,
-          "totalBatchTime": 1211.59,
+          "totalBatchTime": 1451.31,
           "stats": {
             "count": 10,
-            "min": 446.72,
-            "max": 1211.27,
-            "mean": 789.84,
-            "p50": 893.06,
-            "p95": 1211.27,
-            "p99": 1211.27
+            "min": 505.76,
+            "max": 1450.39,
+            "mean": 968.88,
+            "p50": 1189.77,
+            "p95": 1450.39,
+            "p99": 1450.39
           }
         },
         "c25": {
           "concurrency": 25,
-          "totalBatchTime": 3342.18,
+          "totalBatchTime": 3793.84,
           "stats": {
             "count": 25,
-            "min": 465.35,
-            "max": 3341.71,
-            "mean": 1821.84,
-            "p50": 1973.12,
-            "p95": 3096.49,
-            "p99": 3341.71
+            "min": 566.53,
+            "max": 3793.46,
+            "mean": 2146.52,
+            "p50": 2436.89,
+            "p95": 3589.3,
+            "p99": 3793.46
           }
         },
         "c50": {
           "concurrency": 50,
-          "totalBatchTime": 7129.81,
+          "totalBatchTime": 7493.72,
           "stats": {
             "count": 50,
-            "min": 499.06,
-            "max": 7129.41,
-            "mean": 3835.29,
-            "p50": 3920.53,
-            "p95": 6937.83,
-            "p99": 7129.41
+            "min": 476.46,
+            "max": 7493.15,
+            "mean": 3968.76,
+            "p50": 4149.88,
+            "p95": 7301.29,
+            "p99": 7493.15
           }
         }
       },
-      "healthUnderLoad": {
-        "testDuration": 8147.51,
-        "authBatchDuration": 8144.07,
+      "health10": {
+        "testDuration": 1513.05,
+        "authBatchDuration": 1509.58,
         "healthStats": {
-          "count": 1869,
-          "min": 0.25,
-          "max": 70.63,
-          "mean": 3.94,
+          "count": 541,
+          "min": 0.28,
+          "max": 54.99,
+          "mean": 1.83,
           "p50": 1.03,
-          "p95": 13.72,
-          "p99": 62.36
+          "p95": 3.44,
+          "p99": 34.77
         },
         "authStats": {
-          "count": 50,
-          "min": 501.58,
-          "max": 8143.58,
-          "mean": 4302.08,
-          "p50": 4395.99,
-          "p95": 8011.31,
-          "p99": 8143.58
+          "count": 10,
+          "min": 453.37,
+          "max": 1509.26,
+          "mean": 943.99,
+          "p50": 997.31,
+          "p95": 1509.26,
+          "p99": 1509.26
         },
         "eventLoopStats": {
-          "min": 0.58,
-          "max": 78.91,
-          "mean": 23.7,
-          "p50": 12.47,
-          "p95": 64.98,
+          "min": 7.32,
+          "max": 61.8,
+          "mean": 18.07,
+          "p50": 10.73,
+          "p95": 54.76,
+          "p99": 60
+        },
+        "cpuStats": {
+          "userMs": 3005.73,
+          "systemMs": 62.01,
+          "totalMs": 3067.74
+        },
+        "memStats": {
+          "heapUsedBeforeMb": 19.46,
+          "heapUsedAfterMb": 20.36,
+          "heapDeltaMb": 0.9,
+          "rssMb": 122.85
+        }
+      },
+      "health25": {
+        "testDuration": 4342.45,
+        "authBatchDuration": 4341.77,
+        "healthStats": {
+          "count": 1089,
+          "min": 0.26,
+          "max": 79.18,
+          "mean": 2.62,
+          "p50": 0.99,
+          "p95": 7.57,
+          "p99": 57.81
+        },
+        "authStats": {
+          "count": 25,
+          "min": 738.21,
+          "max": 4341.24,
+          "mean": 2616.35,
+          "p50": 2743.49,
+          "p95": 4300.21,
+          "p99": 4341.24
+        },
+        "eventLoopStats": {
+          "min": 0.69,
+          "max": 83.36,
+          "mean": 23.37,
+          "p50": 12.41,
+          "p95": 64.36,
           "p99": 71.96
         },
         "cpuStats": {
-          "userMs": 15796.87,
-          "systemMs": 500.69,
-          "totalMs": 16297.57
+          "userMs": 8410.59,
+          "systemMs": 233.89,
+          "totalMs": 8644.48
         },
         "memStats": {
-          "heapUsedBeforeMb": 18.86,
-          "heapUsedAfterMb": 19.68,
-          "heapDeltaMb": 0.82,
-          "rssMb": 124.75
+          "heapUsedBeforeMb": 20.52,
+          "heapUsedAfterMb": 19.52,
+          "heapDeltaMb": -1,
+          "rssMb": 123.1
+        }
+      },
+      "health50": {
+        "testDuration": 9030.75,
+        "authBatchDuration": 9029.02,
+        "healthStats": {
+          "count": 1902,
+          "min": 0.25,
+          "max": 357.57,
+          "mean": 4.73,
+          "p50": 1.03,
+          "p95": 13.19,
+          "p99": 74.89
+        },
+        "authStats": {
+          "count": 50,
+          "min": 527.91,
+          "max": 9028.6,
+          "mean": 4999.37,
+          "p50": 5215.81,
+          "p95": 8903.49,
+          "p99": 9028.6
+        },
+        "eventLoopStats": {
+          "min": 0.52,
+          "max": 292.29,
+          "mean": 25.77,
+          "p50": 12.62,
+          "p95": 72.09,
+          "p99": 90.83
+        },
+        "cpuStats": {
+          "userMs": 17355.47,
+          "systemMs": 615.77,
+          "totalMs": 17971.24
+        },
+        "memStats": {
+          "heapUsedBeforeMb": 20.12,
+          "heapUsedAfterMb": 22.31,
+          "heapDeltaMb": 2.2,
+          "rssMb": 123.9
         }
       }
     }

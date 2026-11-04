@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import bcryptjs from 'bcryptjs';
-import { hashPin, verifyPin, SALT_ROUNDS } from './password';
+import { hashPin, verifyPin, isValidBcryptHash, SALT_ROUNDS } from './password';
+import { logger } from './logger';
 
 describe('password library (@node-rs/bcrypt native implementation)', () => {
   const TEST_PIN = '2468';
@@ -119,19 +120,118 @@ describe('password library (@node-rs/bcrypt native implementation)', () => {
 
   // 5. Invalid and malformed hashes
   describe('invalid and malformed hash handling', () => {
-    it('returns false for arbitrary non-bcrypt strings without throwing', async () => {
-      expect(await verifyPin('2468', 'plain-text-not-a-hash')).toBe(false);
-      expect(await verifyPin('2468', '123456')).toBe(false);
-      expect(await verifyPin('2468', '$2b$12$truncated')).toBe(false);
-      expect(await verifyPin('2468', '$99$99$nonexistentprefix')).toBe(false);
+    const VALID_SAMPLE = '$2a$10$fTqExCq3RD7iGKZs0hSGt.9k9GypE0lLivlh0rrBruHGq6Ad3UC1W';
+
+    it('isValidBcryptHash accepts valid $2a$ and $2b$ hashes', () => {
+      expect(isValidBcryptHash(VALID_SAMPLE)).toBe(true);
+      expect(isValidBcryptHash('$2b$12$W/nqb.o3S7BuKx73YGPqNO9xbqO8tDyg0bV6I9JpwHnDD4t3wxb.C')).toBe(true);
     });
 
-    it('returns false for empty string hash', async () => {
-      expect(await verifyPin('2468', '')).toBe(false);
+    it('rejects truncated hashes with false and without error logging', async () => {
+      const errorSpy = vi.spyOn(logger, 'error');
+      const truncatedCases = [
+        '$2a$10$',
+        '$2a$10$short',
+        '$2b$12$truncatedhash',
+        VALID_SAMPLE.slice(0, 59), // 59 chars instead of 60
+        VALID_SAMPLE.slice(0, 30),
+      ];
+
+      for (const h of truncatedCases) {
+        expect(isValidBcryptHash(h)).toBe(false);
+        expect(await verifyPin('2468', h)).toBe(false);
+      }
+      expect(errorSpy).not.toHaveBeenCalled();
+      errorSpy.mockRestore();
     });
 
-    it('returns false for whitespace-only hash', async () => {
-      expect(await verifyPin('2468', '   ')).toBe(false);
+    it('rejects unsupported and invalid prefixes with false and without error logging', async () => {
+      const errorSpy = vi.spyOn(logger, 'error');
+      const prefixCases = [
+        VALID_SAMPLE.replace('$2a$', '$1$'), // MD5 crypt
+        VALID_SAMPLE.replace('$2a$', '$5$'), // SHA-256 crypt
+        VALID_SAMPLE.replace('$2a$', '$6$'), // SHA-512 crypt
+        VALID_SAMPLE.replace('$2a$', '$2x$'), // unsupported $2x$
+        VALID_SAMPLE.replace('$2a$', '$2y$'), // unsupported $2y$
+        VALID_SAMPLE.replace('$2a$', '$2z$'), // invalid $2z$
+        VALID_SAMPLE.replace('$2a$', '$99$'),
+        'plain-text-not-a-hash',
+        '123456',
+        '',
+        '   ',
+      ];
+
+      for (const h of prefixCases) {
+        expect(isValidBcryptHash(h)).toBe(false);
+        expect(await verifyPin('2468', h)).toBe(false);
+      }
+      expect(errorSpy).not.toHaveBeenCalled();
+      errorSpy.mockRestore();
+    });
+
+    it('rejects invalid lengths with false and without error logging', async () => {
+      const errorSpy = vi.spyOn(logger, 'error');
+      const lengthCases = [
+        VALID_SAMPLE.slice(0, 59), // 59 chars (too short)
+        VALID_SAMPLE + 'A',        // 61 chars (too long)
+        VALID_SAMPLE + 'AAAAAAAAAAAA', // 72 chars
+      ];
+
+      for (const h of lengthCases) {
+        expect(isValidBcryptHash(h)).toBe(false);
+        expect(await verifyPin('2468', h)).toBe(false);
+      }
+      expect(errorSpy).not.toHaveBeenCalled();
+      errorSpy.mockRestore();
+    });
+
+    it('rejects malformed cost values with false and without error logging', async () => {
+      const errorSpy = vi.spyOn(logger, 'error');
+      const malformedCostCases = [
+        VALID_SAMPLE.replace('$10$', '$00$'), // below min 04
+        VALID_SAMPLE.replace('$10$', '$01$'),
+        VALID_SAMPLE.replace('$10$', '$03$'),
+        VALID_SAMPLE.replace('$10$', '$32$'), // above max 31
+        VALID_SAMPLE.replace('$10$', '$99$'),
+        VALID_SAMPLE.replace('$10$', '$xx$'), // non-numeric
+        VALID_SAMPLE.replace('$10$', '$1$'),  // single digit (malformed length)
+      ];
+
+      for (const h of malformedCostCases) {
+        expect(isValidBcryptHash(h)).toBe(false);
+        expect(await verifyPin('2468', h)).toBe(false);
+      }
+      expect(errorSpy).not.toHaveBeenCalled();
+      errorSpy.mockRestore();
+    });
+
+    it('rejects invalid characters in salt/checksum with false and without error logging', async () => {
+      const errorSpy = vi.spyOn(logger, 'error');
+      const invalidCharCases = [
+        VALID_SAMPLE.slice(0, -2) + '!@', // contains ! and @
+        VALID_SAMPLE.slice(0, -1) + ' ',  // trailing space
+        VALID_SAMPLE.slice(0, -1) + '\n', // trailing newline
+        VALID_SAMPLE.slice(0, 10) + '#' + VALID_SAMPLE.slice(11), // middle #
+        VALID_SAMPLE.slice(0, 15) + '$' + VALID_SAMPLE.slice(16), // extra $ delimiter
+      ];
+
+      for (const h of invalidCharCases) {
+        expect(isValidBcryptHash(h)).toBe(false);
+        expect(await verifyPin('2468', h)).toBe(false);
+      }
+      expect(errorSpy).not.toHaveBeenCalled();
+      errorSpy.mockRestore();
+    });
+
+    it('returns false for non-string or empty inputs without throwing', async () => {
+      expect(isValidBcryptHash(null)).toBe(false);
+      expect(isValidBcryptHash(undefined)).toBe(false);
+      expect(isValidBcryptHash(12345)).toBe(false);
+      expect(isValidBcryptHash({})).toBe(false);
+
+      expect(await verifyPin('', VALID_SAMPLE)).toBe(false);
+      expect(await verifyPin(null as unknown as string, VALID_SAMPLE)).toBe(false);
+      expect(await verifyPin('2468', null as unknown as string)).toBe(false);
     });
   });
 

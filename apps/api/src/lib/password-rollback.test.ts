@@ -94,3 +94,4 @@ describe('Rollback verification in isolated test process (USE_LEGACY_BCRYPT=true
     expect(result.stderr).toContain('USE_LEGACY_BCRYPT must be set to "true"');
   });
 });
+

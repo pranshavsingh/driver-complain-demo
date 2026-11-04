@@ -32,8 +32,28 @@ export async function hashPin(pin: string): Promise<string> {
   }
 }
 
+/**
+ * Strict regex for valid $2a$ and $2b$ bcrypt hashes:
+ * - Prefix: $2a$ or $2b$
+ * - Cost: 2-digit integer from 04 to 31 (inclusive)
+ * - Salt + checksum: exactly 53 characters from the bcrypt base64 alphabet (./0-9A-Za-z)
+ * - Total length: exactly 60 characters
+ */
+const BCRYPT_HASH_REGEX = /^\$2[ab]\$(0[4-9]|[12][0-9]|3[01])\$[./0-9A-Za-z]{53}$/;
+
+/**
+ * Validates the complete structure of a bcrypt hash string before invoking verifiers.
+ * Returns false for malformed, truncated, invalid length, invalid cost, or unsupported prefixes.
+ */
+export function isValidBcryptHash(hash: unknown): hash is string {
+  return typeof hash === 'string' && hash.length === 60 && BCRYPT_HASH_REGEX.test(hash);
+}
+
 export async function verifyPin(pin: string, hash: string): Promise<boolean> {
-  if (!pin || !hash || typeof pin !== 'string' || typeof hash !== 'string') {
+  if (!pin || typeof pin !== 'string') {
+    return false;
+  }
+  if (!isValidBcryptHash(hash)) {
     return false;
   }
   if (useLegacy) {
