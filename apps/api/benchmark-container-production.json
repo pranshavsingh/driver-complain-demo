@@ -13,8 +13,16 @@
       "cgroupVersion": "v2",
       "cgroupCpuLimit": 2,
       "cgroupMemoryLimitBytes": 1073741824,
-      "cgroupMemoryLimitMb": 1024
+      "cgroupMemoryLimitMb": 1024,
+      "detectionStatus": "detected",
+      "detectionError": null,
+      "detectionNote": "cgroups v2 detected successfully (/sys/fs/cgroup/cpu.max: 200000 100000; /sys/fs/cgroup/memory.max: 1073741824)"
     }
+  },
+  "methodology": {
+    "type": "synthetic-loopback",
+    "scope": "In-container HTTP loopback to minimal Express server under CPU and memory quota",
+    "disclaimer": "Synthetic loopback measurement under container constraints; measures event loop and libuv threadpool contention without network, TLS, proxy, or production middleware overhead. Does not constitute a guaranteed production SLA."
   },
   "aggregate": {
     "runsCount": 3,

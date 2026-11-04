@@ -82,12 +82,16 @@ This document provides a comprehensive specification of all environment variable
 
 ### CPU Sizing Decision: 2 CPUs (Guaranteed QoS)
 - **Container Allocation:** `requests.cpu: '2'`, `limits.cpu: '2'`, `requests.memory: 1Gi`, `limits.memory: 1Gi`.
-- **Architectural Rationale:** Bcrypt cost factor 12 is a CPU-intensive operation (~230 ms of continuous CPU execution per verification). The native `@node-rs/bcrypt` library offloads hashing to libuv worker threads. On a 1-CPU container or under CPU contention with a lower request (e.g. 500m), CFS time-slicing starves the V8 main event loop, causing `/health` p99 latency to degrade to 35–50+ ms and failing the 30 ms SLA. Reserving 2 full CPUs guarantees dedicated CPU bandwidth for the V8 event loop alongside 2 worker threads.
+- **Architectural Context & Contention:**
+  - Bcrypt cost factor 12 is a CPU-intensive operation (~230 ms of continuous CPU execution per verification). The native `@node-rs/bcrypt` library offloads hashing to libuv worker threads.
+  - On a 1-CPU container or under CPU contention with a lower request (e.g. 500m), CFS time-slicing starves the V8 main event loop, causing `/health` p99 latency to degrade to 35–50+ ms.
+  - Setting requests equal to limits establishes `Guaranteed` QoS, which shields the pod from CFS share degradation. However, **Kubernetes Guaranteed QoS does not imply exclusive physical CPU pinning**; nodes without `cpuManagerPolicy=static` may still exhibit hyperthread sharing or Linux scheduling jitter.
+  - **Sidecar Requirement:** If sidecars (e.g. Istio, Fluentbit) are introduced to the Pod, every container in the Pod must have matching CPU and memory requests and limits; otherwise, Kubernetes demotes the Pod QoS class to `Burstable`.
 - **Infrastructure Cost & Capacity:**
-  - *Baseline Footprint (3 replicas):* 6.0 vCPUs, 3 GiB RAM (~$180–$220/month on standard cloud compute).
+  - *Baseline Footprint (3 replicas):* 6.0 vCPUs, 3 GiB RAM (~$180–$220/month on standard cloud compute). Accepted explicitly by operations to support native bcrypt concurrency.
   - *Peak Autoscaling (10 replicas via HPA):* 20.0 vCPUs, 10 GiB RAM.
+  - *HPA Target:* `averageUtilization: 70%` corresponds to approximately 1.4 CPU per Pod before triggering horizontal scale-out.
   - *Node Planning:* Nodes must have $\ge 4\text{ vCPUs}$ (e.g. `c6i.xlarge` hosting 1-2 pods or `c6i.2xlarge` hosting 3 pods alongside daemonsets).
-  - *Trade-off Justification:* The 4x baseline reservation increase over 500m is required to prevent node-level CPU starvation and cascading health/liveness check timeouts during authentication spikes.
 
 ### Libuv Threadpool Bootstrap
 - Libuv reads `UV_THREADPOOL_SIZE` only once when the worker pool is first created.

@@ -253,6 +253,19 @@ function getCgroupLimits() {
   let cgroupCpuLimit: number | null = null;
   let cgroupMemoryLimitBytes: number | null = null;
   let cgroupVersion: 'v1' | 'v2' | 'none' = 'none';
+  let detectionError: string | null = null;
+
+  if (process.platform !== 'linux') {
+    return {
+      cgroupVersion: 'none' as const,
+      cgroupCpuLimit: null,
+      cgroupMemoryLimitBytes: null,
+      cgroupMemoryLimitMb: null,
+      detectionStatus: 'unsupported_platform' as const,
+      detectionError: null,
+      detectionNote: `Non-Linux platform (${process.platform}): cgroups not applicable`,
+    };
+  }
 
   // Check cgroups v2
   try {
@@ -272,8 +285,8 @@ function getCgroupLimits() {
         cgroupMemoryLimitBytes = parseInt(memMax, 10);
       }
     }
-  } catch {
-    /* ignore cgroup v2 read errors */
+  } catch (err: unknown) {
+    detectionError = err instanceof Error ? err.message : String(err);
   }
 
   // Check cgroups v1 if v2 wasn't detected
@@ -290,16 +303,25 @@ function getCgroupLimits() {
         const limit = parseInt(fs.readFileSync('/sys/fs/cgroup/memory/memory.limit_in_bytes', 'utf8').trim(), 10);
         if (limit < 1e15) cgroupMemoryLimitBytes = limit;
       }
-    } catch {
-      /* ignore cgroup v1 read errors */
+    } catch (err: unknown) {
+      detectionError = detectionError ? `${detectionError}; ${String(err)}` : String(err);
     }
   }
+
+  const detectionStatus = cgroupVersion !== 'none'
+    ? 'detected'
+    : (detectionError ? 'error' : 'not_found');
 
   return {
     cgroupVersion,
     cgroupCpuLimit,
     cgroupMemoryLimitBytes,
     cgroupMemoryLimitMb: cgroupMemoryLimitBytes ? Math.round(cgroupMemoryLimitBytes / 1024 / 1024) : null,
+    detectionStatus,
+    detectionError,
+    detectionNote: detectionStatus === 'detected'
+      ? `cgroups ${cgroupVersion} detected successfully`
+      : (detectionError || 'cgroup pseudo-filesystem not mounted or unlimited'),
   };
 }
 

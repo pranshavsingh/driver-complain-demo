@@ -64,16 +64,20 @@ spec:
                   optional: true
           # Resource reservations tuned to match native bcrypt benchmark requirements:
           # - QoS Class: Guaranteed (requests == limits for both CPU and memory).
-          # - CPU: 2 full CPUs reserved to eliminate CFS scheduling latency and ensure
-          #   the V8 event loop has dedicated CPU headroom while 2 libuv worker threads
-          #   process cost-12 Blowfish hashing, guaranteeing /health p99 <= 30ms SLA.
-          # - Infrastructure Cost & Cluster Footprint:
-          #   * Baseline (3 replicas): 6.0 vCPUs, 3 GiB RAM (~$180-$220/mo on standard cloud compute).
+          #   NOTE: Guaranteed QoS prevents CFS share degradation and out-of-memory eviction,
+          #   but does NOT imply exclusive physical CPU pinning (which requires node-level kubelet
+          #   cpuManagerPolicy=static). Hyperthread contention and OS-level jitter remain possible.
+          # - Sidecar Warning: If sidecar containers (e.g. Istio, Fluentbit) are added to this Pod,
+          #   every sidecar must also specify matching CPU and memory requests and limits; otherwise,
+          #   the Pod QoS class drops to Burstable.
+          # - Sizing Decision: Configured at 2 CPU and 1 GiB only because infrastructure cost and
+          #   node capacity have been explicitly accepted by operations.
+          # - Infrastructure Cost & Capacity:
+          #   * Baseline (3 replicas): 6.0 vCPUs, 3 GiB RAM (~$180-$220/mo on cloud compute).
           #   * Peak (10 replicas via HPA): 20.0 vCPUs, 10 GiB RAM.
+          #   * HPA Scaling: target averageUtilization=70% corresponds to ~1.4 CPU per Pod.
           #   * Node Capacity: Nodes must have >= 4 vCPUs (e.g., c6i.xlarge hosting 1-2 pods
           #     or c6i.2xlarge hosting 3 pods alongside daemonsets).
-          #   * Trade-off: Reserving 2 CPUs prevents CPU starvation and cascading health probe
-          #     timeouts under multi-tenant cluster contention at the cost of higher base reservation.
           resources:
             requests:
               cpu: '2'
