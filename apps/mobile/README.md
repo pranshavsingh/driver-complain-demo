@@ -166,23 +166,109 @@ two Firebase files uploaded as EAS file secrets, which arrive as those same env 
 Versioning is `appVersionSource: "local"`: `version` and `android.versionCode` in `app.json` are
 the source of truth, so a release is a reviewable diff rather than remote state.
 
+## Offline-First SQLite Synchronization (Milestone 6)
+
+The driver app supports resilient, offline-first complaint creation and background synchronization designed for rural roads and spotty cellular connectivity.
+
+### Architecture Overview
+
+```
+                      ┌──────────────────────────────────────┐
+                      │            Driver Mobile UI          │
+                      │  (Register Complaint / History List) │
+                      └──────────────────┬───────────────────┘
+                                         │
+                   Save complaint & copy │ persistent attachments
+                                         ▼
+                      ┌──────────────────────────────────────┐
+                      │         SQLite Local Database        │
+                      │  pending_complaints / attachments    │
+                      └──────────────────┬───────────────────┘
+                                         │
+                        Listen to NetInfo│ and AppState transitions
+                                         ▼
+                      ┌──────────────────────────────────────┐
+                      │          Sync Engine Worker          │
+                      │  (FIFO, Mutex Lock, Backoff, Auth)   │
+                      └──────────────────┬───────────────────┘
+                                         │
+                        POST /complaints │ with Idempotency-Key
+                                         ▼
+                      ┌──────────────────────────────────────┐
+                      │           Cloud Backend API          │
+                      │  (Unique [driverId, idempotencyKey]) │
+                      └──────────────────────────────────────┘
+```
+
+### 1. SQLite Local Persistence
+- **Storage Engine:** Expo SDK 57 compatible `expo-sqlite` running in synchronous WAL (Write-Ahead Logging) mode with foreign keys enabled.
+- **Migration Tracking:** Versioned migrations tracked through the `_schema_migrations` table, executing safely and idempotently on app launch.
+- **Tables:**
+  - `pending_complaints`: Stores pending faults, user ID, client-generated idempotency keys, category, priority, GPS coordinates, location names, sync status (`PENDING`, `SYNCING`, `FAILED_TRANSIENT`, `FAILED_PERMANENT`, `SYNCED`), retry counts, timestamps, and server confirmation IDs.
+  - `pending_attachments`: Stores media attachments linked via foreign keys with `ON DELETE CASCADE`.
+- **Indexes:** Indexed on `user_id`, `(user_id, sync_status, created_at)`, `(user_id, idempotency_key)`, and `complaint_id` for fast query performance.
+
+### 2. Offline Complaint Creation & State Lifecycle
+- **Zero Signal Operation:** Drivers can open the registration form, enter issue descriptions, select categories and priorities, and capture photos, voice notes, or videos with zero signal.
+- **Feedback & Transparency:** Complaints are saved locally and confirm: *"Your complaint is saved offline and waiting to sync. It will upload automatically as soon as internet connection is restored."* No false server submissions are implied.
+- **Sync Badges:**
+  - `Waiting to sync` (Amber): Saved locally, waiting for connectivity or next sync cycle.
+  - `Syncing…` (Blue): Currently uploading to server.
+  - `Needs attention` / `Sync Failed` (Red): Encountered an error, displaying the exact failure message and a 48dp interactive **Retry Sync** button.
+  - `Synced` (Green): Authoritatively accepted by the server.
+- **Offline Inspection:** Tapping an unsynced card in history navigates to the complaint detail screen displaying local cached details and attached media previews.
+
+### 3. Attachment Persistence & Cleanup
+- Selected camera photos, gallery images, voice notes, and video clips are copied from volatile OS picker cache into persistent application storage (`${documentDirectory}persistent_attachments/`).
+- Persistent media files survive device reboots and app updates.
+- Local attachment files are **only cleaned up after authoritative server 2xx confirmation**, guaranteeing no data loss on network drops or process interruptions.
+
+### 4. Server-Side Idempotency
+- Every complaint generates a unique UUIDv4 client idempotency key transmitted via headers (`Idempotency-Key`) or request body.
+- The PostgreSQL database enforces uniqueness scoped per driver: `@@unique([driverId, idempotencyKey])`.
+- Concurrent duplicate requests or repeated retries safely return the existing winner record without duplicating complaints or uploading duplicate files.
+- Legacy clients without idempotency keys continue to function safely without disruption.
+
+### 5. Synchronization Engine
+- **Triggers:** Automatically triggered on network restoration (`NetInfo`), app foregrounding (`AppState`), or authenticated launch. Manual sync is accessible via pull-to-refresh or the **Sync Now** banner button.
+- **Concurrency Guard:** Single worker mutex lock prevents overlapping sync runs.
+- **Order & Reliability:** Processes records in strict FIFO order by creation timestamp.
+- **Fault Classification:**
+  - *Transient Failures (5xx, Network Timeout, Offline):* Increments retry count, marks as `FAILED_TRANSIENT`, and halts the remaining queue to respect exponential backoff with jitter and server `Retry-After` headers.
+  - *Permanent Failures (400, 422):* Marks record as `FAILED_PERMANENT` with detailed error explanation, preventing infinite retry loops.
+  - *Crash Recovery:* Interrupted sync attempts stuck in `SYNCING` state are automatically reset back to `PENDING` on session resume.
+
+### 6. Authentication & Account Isolation
+- Queued SQLite records are strictly scoped to `user_id`.
+- If a driver signs out, pending complaints remain safely stored in SQLite and will not synchronize without authentication.
+- When Driver B logs into a shared device, Driver A's pending queue remains isolated and inactive. When Driver A logs back in, their pending queue resumes automatically.
+- Offline session resumption is enabled via secure cached profile verification in `expo-secure-store`.
+
+## Testing
+
+```bash
+# Run mobile unit & integration test suite (Vitest + in-memory SQLite)
+pnpm --filter @driver-complaint/mobile test
+
+# Run API server idempotency integration tests (Postgres + Supertest)
+pnpm --filter @driver-complaint/api test src/modules/complaints/__tests__/idempotency.integration.test.ts
+
+# Run mobile typecheck and lint
+pnpm --filter @driver-complaint/mobile typecheck
+pnpm --filter @driver-complaint/mobile lint
+
+# Run Metro bundle verification
+pnpm --filter @driver-complaint/mobile bundle
+```
+
 ## Not implemented here
 
-- **Offline queueing.** A complaint filed with no signal fails and must be retried by hand. The
-  form keeps its contents on failure so retrying costs a tap, but nothing is stored for later. A
-  real fix needs a local queue plus server-side idempotency.
-- **No idempotency key on `POST /complaints`.** The Send button disables itself while a request
-  is in flight, which narrows the double-submit window but does not close it: a driver who taps
-  twice on a stalling connection can still file the same fault twice. Closing it needs a
-  client-generated key that the API stores and de-duplicates on.
 - **Editing or deleting a complaint.** Deliberate — the complaint list is an audit trail.
 - **iOS store configuration.** `ios` keys exist in `app.json` and the code is
   platform-neutral, but nothing has been built or tested on iOS. `requestPermission` there uses
   an API RNFirebase has deprecated; revisit when iOS actually ships.
 - **Notification centre UI** (`GET /notifications` exists and is unused here) and admin
   features of any kind.
-- **Automated tests.** Verified by typecheck, lint and a real Metro bundle; every runtime check
-  is manual, on a device. See the phase report.
 
 ## Known dependency warnings
 

@@ -155,6 +155,7 @@ export const complaints = {
     if (input.latitude != null) form.append('latitude', String(input.latitude));
     if (input.longitude != null) form.append('longitude', String(input.longitude));
     if (input.locationName) form.append('locationName', input.locationName);
+    if (input.idempotencyKey) form.append('idempotencyKey', input.idempotencyKey);
 
     if (evidence?.photo) appendFile(form, 'photo', evidence.photo);
     if (evidence?.voice) appendFile(form, 'voice', evidence.voice);
@@ -251,6 +252,7 @@ export const loading = {
       address?: string;
       locationName?: string;
       complaintId?: string;
+      idempotencyKey?: string;
     },
     photo: FileToUpload,
   ): Promise<LoadingRecord> => {
@@ -261,6 +263,7 @@ export const loading = {
     form.append('longitude', String(input.longitude));
     if (input.address) form.append('address', input.address);
     if (input.locationName) form.append('locationName', input.locationName);
+    if (input.idempotencyKey) form.append('idempotencyKey', input.idempotencyKey);
     if (input.complaintId) form.append('complaintId', input.complaintId);
     appendFile(form, 'photo', photo);
     return request(LoadingRecordSchema, '/loading/reached', { method: 'POST', body: form });

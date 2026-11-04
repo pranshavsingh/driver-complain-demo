@@ -38,6 +38,10 @@ function collectEvidence(files: Request['files']): ComplaintEvidence {
 export async function create(req: Request, res: Response): Promise<void> {
   if (!req.user) throw ApiError.unauthorized();
   const input = req.body as CreateComplaint;
+  const headerKey = req.header('idempotency-key') || req.header('x-idempotency-key');
+  if (headerKey && !input.idempotencyKey) {
+    input.idempotencyKey = headerKey.trim();
+  }
   const complaint = await complaintsService.create(
     req.user.id,
     input,

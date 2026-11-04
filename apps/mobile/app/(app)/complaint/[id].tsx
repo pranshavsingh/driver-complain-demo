@@ -1,11 +1,12 @@
-import { type ReactElement } from 'react';
-import { Image, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useState, type ReactElement } from 'react';
+import { ActivityIndicator, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { VideoView, useVideoPlayer } from 'expo-video';
-import type { ComplaintAttachmentPublic, ComplaintUpdatePublic } from '@driver-complaint/shared-types';
+import type { ComplaintAttachmentPublic, ComplaintUpdatePublic, Priority } from '@driver-complaint/shared-types';
 import * as api from '../../../src/api/endpoints';
+import { useAuth } from '../../../src/auth/AuthContext';
 import { PriorityBadge, StatusBadge } from '../../../src/components/Badges';
 import { Button } from '../../../src/components/Button';
 import { Card, Row } from '../../../src/components/Card';
@@ -14,13 +15,59 @@ import { Header } from '../../../src/components/Header';
 import { ComplaintDetailSkeleton } from '../../../src/components/LoadingSystem';
 import { useApiResource } from '../../../src/hooks/useApiResource';
 import { describeVehicle, formatDateTime, formatDuration, formatEnum, fullName } from '../../../src/lib/format';
+import {
+  complaintsRepository,
+  type PendingComplaintRecord,
+} from '../../../src/db/complaintsRepository';
+import { syncService } from '../../../src/sync/syncService';
 import { colors, fontSize, radius, spacing } from '../../../src/theme';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function ComplaintDetailScreen(): ReactElement {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { user } = useAuth();
+  const [localRecord, setLocalRecord] = useState<PendingComplaintRecord | null>(null);
+  const [isRetrying, setIsRetrying] = useState(false);
+
+  const loadLocalRecord = useCallback((): void => {
+    void complaintsRepository
+      .getComplaintById(id)
+      .then((record) => {
+        if (record) setLocalRecord(record);
+      })
+      .catch(() => {});
+  }, [id]);
+
+  useEffect(() => {
+    loadLocalRecord();
+  }, [loadLocalRecord]);
+
+  useEffect(() => {
+    const unsub = syncService.addListener((event) => {
+      if (event.complaintId === id || !event.complaintId) {
+        loadLocalRecord();
+      }
+    });
+    return () => unsub();
+  }, [id, loadLocalRecord]);
+
   const complaint = useApiResource(`complaint:${id}`, () => api.complaints.get(id));
 
-  if (complaint.loading && complaint.data === null && !complaint.error) {
+  const handleRetryLocal = (): void => {
+    if (!user || !localRecord) return;
+    setIsRetrying(true);
+    void complaintsRepository
+      .updateSyncStatus(localRecord.id, 'PENDING')
+      .then(() => syncService.triggerSync(user.id))
+      .then(() => {
+        loadLocalRecord();
+      })
+      .finally(() => {
+        setIsRetrying(false);
+      });
+  };
+
+  if (complaint.loading && complaint.data === null && !complaint.error && !localRecord) {
     return (
       <SafeAreaView style={styles.screen} edges={['top']}>
         <Header title="Report" back />
@@ -30,24 +77,26 @@ export default function ComplaintDetailScreen(): ReactElement {
   }
 
   const data = complaint.data;
-  const photos = data?.attachments.filter((a) => a.kind === 'PHOTO') ?? [];
-  const voiceNotes = data?.attachments.filter((a) => a.kind === 'VOICE') ?? [];
-  const videos = data?.attachments.filter((a) => a.kind === 'VIDEO') ?? [];
 
-  return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
-      <Header title={data?.complaintNo ?? 'Report'} back />
-      <ScrollView
-        contentContainerStyle={styles.content}
-        refreshControl={
-          <RefreshControl refreshing={complaint.loading} onRefresh={complaint.reload} />
-        }
-      >
-        {complaint.error ? (
-          <ErrorNotice error={complaint.error} onRetry={complaint.reload} />
-        ) : null}
+  // If server data exists, show server view
+  if (data) {
+    const photos = data.attachments.filter((a) => a.kind === 'PHOTO');
+    const voiceNotes = data.attachments.filter((a) => a.kind === 'VOICE');
+    const videos = data.attachments.filter((a) => a.kind === 'VIDEO');
 
-        {data ? (
+    return (
+      <SafeAreaView style={styles.screen} edges={['top']}>
+        <Header title={data.complaintNo ?? 'Report'} back />
+        <ScrollView
+          contentContainerStyle={styles.content}
+          refreshControl={
+            <RefreshControl refreshing={complaint.loading} onRefresh={complaint.reload} />
+          }
+        >
+          {complaint.error ? (
+            <ErrorNotice error={complaint.error} onRetry={complaint.reload} />
+          ) : null}
+
           <View>
             <View style={styles.badges}>
               <StatusBadge status={data.status} />
@@ -110,6 +159,169 @@ export default function ComplaintDetailScreen(): ReactElement {
               )}
             </Card>
           </View>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // If local record exists (offline or pending sync)
+  if (localRecord) {
+    const localPhotos = localRecord.attachments.filter((a) => a.kind === 'PHOTO');
+    const localVoiceNotes = localRecord.attachments.filter((a) => a.kind === 'VOICE');
+    const localVideos = localRecord.attachments.filter((a) => a.kind === 'VIDEO');
+
+    let badgeLabel = 'Waiting to sync';
+    let badgeBg = '#FEF3C7';
+    let badgeColor = '#92400E';
+    let badgeBorder = '#FDE68A';
+
+    if (localRecord.syncStatus === 'SYNCING') {
+      badgeLabel = 'Syncing…';
+      badgeBg = '#DBEAFE';
+      badgeColor = '#1E40AF';
+      badgeBorder = '#BFDBFE';
+    } else if (
+      localRecord.syncStatus === 'FAILED_TRANSIENT' ||
+      localRecord.syncStatus === 'FAILED_PERMANENT'
+    ) {
+      badgeLabel = localRecord.syncStatus === 'FAILED_PERMANENT' ? 'Needs Attention' : 'Sync Failed';
+      badgeBg = '#FEE2E2';
+      badgeColor = '#991B1B';
+      badgeBorder = '#FECACA';
+    } else if (localRecord.syncStatus === 'SYNCED') {
+      badgeLabel = 'Synced';
+      badgeBg = '#DCFCE7';
+      badgeColor = '#166534';
+      badgeBorder = '#BBF7D0';
+    }
+
+    return (
+      <SafeAreaView style={styles.screen} edges={['top']}>
+        <Header title={localRecord.serverComplaintNo ?? 'Offline Report'} back />
+        <ScrollView
+          contentContainerStyle={styles.content}
+          refreshControl={
+            <RefreshControl
+              refreshing={isRetrying}
+              onRefresh={() => {
+                handleRetryLocal();
+                complaint.reload();
+              }}
+            />
+          }
+        >
+          <View>
+            <View style={styles.badges}>
+              <View
+                style={[
+                  styles.localBadge,
+                  { backgroundColor: badgeBg, borderColor: badgeBorder },
+                ]}
+              >
+                <Text style={[styles.localBadgeText, { color: badgeColor }]}>{badgeLabel}</Text>
+              </View>
+              <PriorityBadge priority={localRecord.priority as Priority} />
+            </View>
+
+            <Text style={styles.title}>{localRecord.title}</Text>
+            <Text style={styles.description}>{localRecord.description}</Text>
+
+            {localRecord.lastFailureReason ? (
+              <View style={styles.failureBox}>
+                <Ionicons name="warning-outline" size={18} color="#991B1B" />
+                <View style={{ flex: 1, marginLeft: 8 }}>
+                  <Text style={styles.failureTitle}>Sync Error</Text>
+                  <Text style={styles.failureText}>{localRecord.lastFailureReason}</Text>
+                </View>
+              </View>
+            ) : null}
+
+            {(localRecord.syncStatus === 'FAILED_TRANSIENT' ||
+              localRecord.syncStatus === 'FAILED_PERMANENT') && (
+              <Pressable
+                style={styles.retryButton}
+                onPress={handleRetryLocal}
+                disabled={isRetrying}
+                accessibilityLabel="Retry syncing this complaint"
+                accessibilityRole="button"
+              >
+                {isRetrying ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Ionicons name="refresh" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+                    <Text style={styles.retryButtonText}>Retry Sync Now</Text>
+                  </>
+                )}
+              </Pressable>
+            )}
+
+            <Card title="Local Details">
+              <Row label="Recorded Locally" value={formatDateTime(localRecord.createdAt)} />
+              <Row label="Vehicle" value={localRecord.vehicleNumber ?? 'Not recorded'} />
+              <Row label="Category" value={localRecord.category} />
+              {localRecord.locationName ? (
+                <Row label="Location" value={localRecord.locationName} />
+              ) : null}
+              <Row label="Sync Status" value={badgeLabel} />
+              {localRecord.retryCount > 0 ? (
+                <Row label="Retry Attempts" value={String(localRecord.retryCount)} />
+              ) : null}
+            </Card>
+
+            {localPhotos.length > 0 ? (
+              <Card title={localPhotos.length === 1 ? 'Photo' : 'Photos'}>
+                {localPhotos.map((att) => (
+                  <Image
+                    key={att.id}
+                    source={{ uri: att.localUri }}
+                    style={styles.photo}
+                    resizeMode="cover"
+                    accessibilityLabel={att.fileName}
+                  />
+                ))}
+              </Card>
+            ) : null}
+
+            {localVoiceNotes.length > 0 ? (
+              <Card title={localVoiceNotes.length === 1 ? 'Voice Note' : 'Voice Notes'}>
+                {localVoiceNotes.map((att) => (
+                  <View key={att.id} style={styles.localAttachmentRow}>
+                    <Ionicons name="mic" size={20} color="#1D4ED8" />
+                    <Text style={styles.localAttachmentName}>{att.fileName}</Text>
+                    <Text style={styles.localAttachmentSize}>
+                      {Math.round(att.fileSize / 1024)} KB
+                    </Text>
+                  </View>
+                ))}
+              </Card>
+            ) : null}
+
+            {localVideos.length > 0 ? (
+              <Card title={localVideos.length === 1 ? 'Video Clip' : 'Video Clips'}>
+                {localVideos.map((att) => (
+                  <View key={att.id} style={styles.localAttachmentRow}>
+                    <Ionicons name="videocam" size={20} color="#1D4ED8" />
+                    <Text style={styles.localAttachmentName}>{att.fileName}</Text>
+                    <Text style={styles.localAttachmentSize}>
+                      {Math.round(att.fileSize / 1024)} KB
+                    </Text>
+                  </View>
+                ))}
+              </Card>
+            ) : null}
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={styles.screen} edges={['top']}>
+      <Header title="Report" back />
+      <ScrollView contentContainerStyle={styles.content}>
+        {complaint.error ? (
+          <ErrorNotice error={complaint.error} onRetry={complaint.reload} />
         ) : null}
       </ScrollView>
     </SafeAreaView>
@@ -281,5 +493,70 @@ const styles = StyleSheet.create({
   entryNote: { fontSize: fontSize.body, color: colors.text, marginTop: spacing.xs },
   entryMeta: { fontSize: fontSize.small, color: colors.textMuted, marginTop: spacing.xs },
   errorText: { fontSize: fontSize.small, color: colors.danger, marginTop: spacing.xs },
+  localBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    alignSelf: 'flex-start',
+  },
+  localBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  failureBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  failureTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#991B1B',
+    marginBottom: 2,
+  },
+  failureText: {
+    fontSize: 12,
+    color: '#B91C1C',
+  },
+  retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#DC2626',
+    borderRadius: radius.md,
+    minHeight: 48,
+    paddingHorizontal: spacing.lg,
+    marginBottom: spacing.lg,
+  },
+  retryButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  localAttachmentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: radius.sm,
+    padding: spacing.md,
+    marginBottom: spacing.xs,
+    gap: spacing.sm,
+  },
+  localAttachmentName: {
+    flex: 1,
+    fontSize: 13,
+    color: '#0F172A',
+    fontWeight: '500',
+  },
+  localAttachmentSize: {
+    fontSize: 12,
+    color: '#64748B',
+  },
 });
 

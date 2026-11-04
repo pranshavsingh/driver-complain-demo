@@ -16,6 +16,8 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
+import * as Crypto from 'expo-crypto';
+import NetInfo from '@react-native-community/netinfo';
 import {
   CreateComplaintSchema,
   type ComplaintCategory,
@@ -29,12 +31,14 @@ import { useApiResource } from '../../../src/hooks/useApiResource';
 import { describeVehicle, formatDuration } from '../../../src/lib/format';
 import {
   NO_EVIDENCE,
-  toEvidenceUpload,
   type EvidenceState,
 } from '../../../src/media/EvidencePicker';
 import { MAX_PHOTO_BYTES, MAX_VOICE_SECONDS, PHOTO_QUALITY } from '../../../src/media/limits';
 import { useVoiceRecorder, type VoiceNote } from '../../../src/media/recorder';
 import { captureVideo, videoCaptureAvailable } from '../../../src/media/video';
+import { complaintsRepository } from '../../../src/db/complaintsRepository';
+import { persistAttachment } from '../../../src/media/attachmentStorage';
+import { syncService } from '../../../src/sync/syncService';
 import { radius, spacing } from '../../../src/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { TakeFuelModal } from '../../../src/components/TakeFuelModal';
@@ -256,31 +260,120 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
       return;
     }
 
-    api.complaints
-      .create(parsed.data, toEvidenceUpload(evidence))
-      .then((res) => {
-        setTextInput('');
-        setManualVehicleInput('');
-        setEvidence(NO_EVIDENCE);
-        setPriority('MEDIUM');
-        setSubmitStatus(null);
-        if (res.wasAppended) {
-          Alert.alert(
-            'Added to Open Complaint',
-            `Your new update and evidence have been added to your open complaint (${res.complaintNo}).`,
-            [{ text: 'OK', onPress: () => router.push('/(app)/(tabs)/history') }],
-          );
-        } else {
-          router.push('/(app)/(tabs)/history');
-        }
-      })
-      .catch((err: unknown) => {
-        setError(err);
-      })
-      .finally(() => {
-        setSubmitting(false);
-        setSubmitStatus(null);
+    try {
+      if (!user) {
+        throw new Error('You must be signed in to submit a complaint.');
+      }
+
+      setSubmitStatus('Saving complaint locally…');
+      const complaintId = Crypto.randomUUID();
+      const idempotencyKey = Crypto.randomUUID();
+
+      const pendingAttachments: Array<{
+        localUri: string;
+        kind: 'PHOTO' | 'VOICE' | 'VIDEO';
+        fileName: string;
+        mimeType: string;
+        fileSize: number;
+      }> = [];
+
+      if (evidence.photo) {
+        setSubmitStatus('Securing photo attachment…');
+        const persisted = await persistAttachment(
+          evidence.photo.uri,
+          evidence.photo.name,
+          evidence.photo.type,
+          'PHOTO',
+        );
+        pendingAttachments.push({
+          localUri: persisted.localUri,
+          kind: 'PHOTO',
+          fileName: persisted.fileName,
+          mimeType: persisted.mimeType,
+          fileSize: persisted.fileSize,
+        });
+      }
+
+      if (evidence.voice) {
+        setSubmitStatus('Securing voice recording…');
+        const persisted = await persistAttachment(
+          evidence.voice.uri,
+          evidence.voice.name,
+          evidence.voice.type,
+          'VOICE',
+        );
+        pendingAttachments.push({
+          localUri: persisted.localUri,
+          kind: 'VOICE',
+          fileName: persisted.fileName,
+          mimeType: persisted.mimeType,
+          fileSize: persisted.fileSize,
+        });
+      }
+
+      if (evidence.video) {
+        setSubmitStatus('Securing video clip…');
+        const persisted = await persistAttachment(
+          evidence.video.uri,
+          evidence.video.name,
+          evidence.video.type,
+          'VIDEO',
+        );
+        pendingAttachments.push({
+          localUri: persisted.localUri,
+          kind: 'VIDEO',
+          fileName: persisted.fileName,
+          mimeType: persisted.mimeType,
+          fileSize: persisted.fileSize,
+        });
+      }
+
+      await complaintsRepository.savePendingComplaint({
+        id: complaintId,
+        userId: user.id,
+        idempotencyKey,
+        title: parsed.data.title,
+        description: parsed.data.description,
+        category: (parsed.data.category as string) || (category as string) || 'BREAKDOWN',
+        priority: (parsed.data.priority as string) || priority,
+        vehicleNumber: parsed.data.vehicleNumber,
+        latitude: parsed.data.latitude,
+        longitude: parsed.data.longitude,
+        locationName: parsed.data.locationName,
+        attachments: pendingAttachments,
       });
+
+      // Clear the form state
+      setTextInput('');
+      setManualVehicleInput('');
+      setEvidence(NO_EVIDENCE);
+      setPriority('MEDIUM');
+      setSubmitStatus(null);
+      setSubmitting(false);
+
+      // Trigger background sync worker
+      void syncService.triggerSync(user.id);
+
+      const net = await NetInfo.fetch();
+      const isOnline = Boolean(net.isConnected && net.isInternetReachable !== false);
+
+      Alert.alert(
+        'Complaint Saved',
+        isOnline
+          ? 'Your complaint is saved and syncing to the server now.'
+          : 'Your complaint is saved offline and waiting to sync. It will upload automatically as soon as internet connection is restored.',
+        [
+          {
+            text: 'View Complaints',
+            onPress: () => router.push('/(app)/(tabs)/history'),
+          },
+        ],
+      );
+    } catch (saveErr: unknown) {
+      setSubmitting(false);
+      setSubmitStatus(null);
+      setError(saveErr instanceof Error ? saveErr : new Error(String(saveErr)));
+    }
   };
 
   const hasAttachments = Boolean(evidence.photo || evidence.voice || evidence.video);

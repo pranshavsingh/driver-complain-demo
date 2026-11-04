@@ -247,6 +247,26 @@ export async function create(
   const driver = await prisma.driver.findUnique({ where: { userId: driverUserId } });
   if (!driver) throw ApiError.badRequest('Your account has no driver profile');
 
+  const rawIdempotencyKey = input.idempotencyKey?.trim() || null;
+  if (rawIdempotencyKey) {
+    const existingIdempotent = await prisma.complaint.findUnique({
+      where: {
+        driverId_idempotencyKey: {
+          driverId: driver.id,
+          idempotencyKey: rawIdempotencyKey,
+        },
+      },
+      include: listInclude,
+    });
+    if (existingIdempotent) {
+      logger.info(
+        { driverId: driver.id, complaintId: existingIdempotent.id, idempotencyKey: rawIdempotencyKey },
+        'Idempotent complaint replay detected — returning existing record without re-uploading',
+      );
+      return toComplaintPublic(existingIdempotent);
+    }
+  }
+
   let vehicleIdToUse: string | null = null;
 
   if (input.vehicleNumber?.trim()) {
@@ -329,18 +349,21 @@ export async function create(
   const finalTitle = rawTitle || `${categoryToUse} Issue`;
 
   // Duplicate Check: Only merge if driver submitted an identical unresolved complaint within the last 5 minutes (prevents accidental double-taps)
+  // When an explicit idempotencyKey is supplied, skip the 5-minute title heuristic.
   const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
-  const existingOpenComplaint = await prisma.complaint.findFirst({
-    where: {
-      driverId: driver.id,
-      category: categoryToUse,
-      title: { equals: finalTitle, mode: 'insensitive' },
-      ...(vehicleIdToUse ? { vehicleId: vehicleIdToUse } : {}),
-      status: { notIn: ['RESOLVED', 'CLOSED'] },
-      createdAt: { gte: fiveMinutesAgo },
-    },
-    orderBy: { createdAt: 'desc' },
-  });
+  const existingOpenComplaint = rawIdempotencyKey
+    ? null
+    : await prisma.complaint.findFirst({
+        where: {
+          driverId: driver.id,
+          category: categoryToUse,
+          title: { equals: finalTitle, mode: 'insensitive' },
+          ...(vehicleIdToUse ? { vehicleId: vehicleIdToUse } : {}),
+          status: { notIn: ['RESOLVED', 'CLOSED'] },
+          createdAt: { gte: fiveMinutesAgo },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
 
   // Route to executive under vehicle's Site In-charge / matching site first, then category executive / admin.
   const autoAssignedToId = await findLeastLoadedAdmin(categoryToUse, siteInchargeIdForVehicle, vehicleSite);
@@ -517,7 +540,9 @@ export async function create(
     orderBy: { createdAt: 'desc' },
   });
 
-  const created = await prisma.$transaction(async (tx) => {
+  let created;
+  try {
+    created = await prisma.$transaction(async (tx) => {
     const counter = await tx.counter.upsert({
       where: { name: `complaint-${year}` },
       create: { name: `complaint-${year}`, value: 1 },
@@ -560,6 +585,7 @@ export async function create(
         latitude: isFinite(parsedLat) ? parsedLat : null,
         longitude: isFinite(parsedLng) ? parsedLng : null,
         locationName: input.locationName?.trim() || null,
+        idempotencyKey: rawIdempotencyKey,
       },
     });
 
@@ -653,6 +679,27 @@ export async function create(
       include: listInclude,
     });
   }, { timeout: 30000, maxWait: 10000 });
+  } catch (err: unknown) {
+    if (rawIdempotencyKey && (err as { code?: string })?.code === 'P2002') {
+      const winner = await prisma.complaint.findUnique({
+        where: {
+          driverId_idempotencyKey: {
+            driverId: driver.id,
+            idempotencyKey: rawIdempotencyKey,
+          },
+        },
+        include: listInclude,
+      });
+      if (winner) {
+        logger.info(
+          { driverId: driver.id, complaintId: winner.id, idempotencyKey: rawIdempotencyKey },
+          'Concurrent duplicate complaint submission resolved via idempotency key',
+        );
+        return toComplaintPublic(winner);
+      }
+    }
+    throw err;
+  }
 
   // Post-commit delivery to all target users
   const categoryExecsAfter = await prisma.user.findMany({
