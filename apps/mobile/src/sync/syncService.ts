@@ -296,23 +296,38 @@ class SyncService {
       );
 
       // Revalidate active account before committing local sync state!
-      // If user logged out or switched while the network call was in flight,
-      // DO NOT mark synced, DO NOT delete files, and reset to PENDING for safe resumption!
+      // If user logged out or switched while the network call was in flight:
+      // 1. DO NOT mark synced
+      // 2. DO NOT delete local files
+      // 3. Reset to PENDING and preserve the record with its idempotency key intact for safe resumption
       if (this.sessionGeneration !== startGeneration || this.activeUserId !== record.userId) {
-        console.log('[syncService] User switched/logged out during upload — preserving local files and resetting to PENDING');
+        console.log('[syncService] Session changed during/after upload — resetting to PENDING and preserving local files');
         await complaintsRepository.updateSyncStatus(record.id, 'PENDING');
         return false;
       }
 
-      // Server confirmed success!
-      await complaintsRepository.markComplaintSynced(
+      // Revalidate session generation immediately before changing local sync state!
+      const committed = await complaintsRepository.markComplaintSynced(
         record.id,
+        record.userId,
         response.id,
         response.complaintNo,
       );
 
-      // Clean up local persistent attachments now that server has confirmed
+      if (!committed) {
+        console.warn('[syncService] Complaint record was not updated (possibly owned by another user or removed)');
+        return false;
+      }
+
+      // Revalidate session generation before deleting persistent attachments!
+      if (this.sessionGeneration !== startGeneration || this.activeUserId !== record.userId) {
+        console.log('[syncService] Session changed after commit — preserving local attachment files');
+        return false;
+      }
+
+      // Clean up local persistent attachments now that server has confirmed and session remains active
       for (const uri of attachmentsToDelete) {
+        if (this.sessionGeneration !== startGeneration || this.activeUserId !== record.userId) break;
         await removeLocalAttachment(uri);
       }
 
@@ -326,9 +341,9 @@ class SyncService {
 
       return true;
     } catch (err: unknown) {
-      // If error occurred because account changed or upload was aborted, restore to PENDING and exit
+      // If error occurred because account changed or upload was aborted, do NOT mutate another session's state
       if (this.sessionGeneration !== startGeneration || this.activeUserId !== record.userId) {
-        console.log('[syncService] Aborted due to account change — resetting to PENDING');
+        console.log('[syncService] Interrupted due to account change — resetting to PENDING without mutating other sessions');
         await complaintsRepository.updateSyncStatus(record.id, 'PENDING');
         return false;
       }

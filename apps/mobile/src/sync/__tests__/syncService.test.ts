@@ -506,4 +506,132 @@ describe('SyncService', () => {
     const retryTime = new Date(record!.nextRetryAt!).getTime();
     expect(retryTime).toBeGreaterThanOrEqual(Date.now() + 85000);
   });
+
+  it('handles account switch race exactly between HTTP completion and local state persistence', async () => {
+    await complaintsRepository.savePendingComplaint({
+      id: 'c-commit-race',
+      userId: 'driver-1',
+      idempotencyKey: 'idem-race-key',
+      title: 'Commit race complaint',
+      description: 'Testing exact timing between HTTP return and SQLite commit',
+      category: 'BREAKDOWN',
+      priority: 'HIGH',
+      attachments: [
+        {
+          id: 'att-race',
+          kind: 'PHOTO',
+          localUri: 'file:///persistent/race_photo.jpg',
+          fileName: 'race_photo.jpg',
+          mimeType: 'image/jpeg',
+          fileSize: 4096,
+        },
+      ],
+    });
+
+    // Mock HTTP completion triggers session change synchronously BEFORE resolving
+    vi.mocked(api.complaints.create).mockImplementationOnce(async () => {
+      // Simulate account switch right at HTTP completion
+      syncService.setActiveUser({ id: 'driver-2' } as any);
+      return { id: 'srv-race-winner', complaintNo: 'CMP-RACE-1' } as any;
+    });
+
+    syncService.setActiveUser({ id: 'driver-1' } as any);
+    await syncService.triggerSync('driver-1');
+
+    // Driver 1's record was NOT marked SYNCED by the stale HTTP response
+    const driver1Record = await complaintsRepository.getComplaintById('c-commit-race');
+    expect(driver1Record?.syncStatus).not.toBe('SYNCED');
+    expect(driver1Record?.serverComplaintId).toBeNull();
+
+    // Driver 1's local persistent attachment was NOT deleted
+    expect(mediaStorage.removeLocalAttachment).not.toHaveBeenCalled();
+
+    // Later, Driver 1 logs back in
+    syncService.setActiveUser({ id: 'driver-1' } as any);
+
+    // Mock server returning the complaint on replay with same idempotency key
+    vi.mocked(api.complaints.create).mockResolvedValueOnce({
+      id: 'srv-race-winner',
+      complaintNo: 'CMP-RACE-1',
+    } as any);
+
+    await syncService.triggerSync('driver-1');
+
+    // Verified: now marked SYNCED with server complaint ID
+    const syncedRecord = await complaintsRepository.getComplaintById('c-commit-race');
+    expect(syncedRecord?.syncStatus).toBe('SYNCED');
+    expect(syncedRecord?.serverComplaintId).toBe('srv-race-winner');
+    expect(syncedRecord?.serverComplaintNo).toBe('CMP-RACE-1');
+
+    // And local attachment is safely deleted now that commit succeeded
+    expect(mediaStorage.removeLocalAttachment).toHaveBeenCalledWith('file:///persistent/race_photo.jpg');
+  });
+
+  it('provides deliberate permanent failure recovery for missing attachments and prevents duplicates', async () => {
+    await complaintsRepository.savePendingComplaint({
+      id: 'c-recovery-test',
+      userId: 'driver-1',
+      idempotencyKey: 'idem-recovery-key',
+      title: 'Recovery complaint',
+      description: 'Will fail due to missing attachment then recover',
+      category: 'BREAKDOWN',
+      priority: 'HIGH',
+      attachments: [
+        {
+          id: 'att-missing-rec',
+          kind: 'PHOTO',
+          localUri: 'file:///persistent/lost_file.jpg',
+          fileName: 'lost_file.jpg',
+          mimeType: 'image/jpeg',
+          fileSize: 4096,
+        },
+      ],
+    });
+
+    // 1. File missing initially
+    vi.mocked(mediaStorage.isFileAccessible).mockResolvedValue(false);
+
+    syncService.setActiveUser({ id: 'driver-1' } as any);
+    await syncService.triggerSync('driver-1');
+
+    let record = await complaintsRepository.getComplaintById('c-recovery-test');
+    expect(record?.syncStatus).toBe('FAILED_PERMANENT');
+    expect(record?.lastFailureReason).toContain('Missing local attachment file');
+    expect(api.complaints.create).not.toHaveBeenCalled();
+
+    // 2. Automatic queue ignores permanent failures
+    const queue = await complaintsRepository.getPendingQueueForUser('driver-1', 10);
+    expect(queue.length).toBe(0);
+
+    // 3. Driver attempts manual retry without fixing the missing attachment -> still fails permanently
+    await complaintsRepository.retryComplaint('c-recovery-test');
+    await syncService.triggerSync('driver-1');
+    record = await complaintsRepository.getComplaintById('c-recovery-test');
+    expect(record?.syncStatus).toBe('FAILED_PERMANENT');
+    expect(api.complaints.create).not.toHaveBeenCalled();
+
+    // 4. Deliberate recovery path: driver removes the missing attachment record
+    await complaintsRepository.removeAttachment('c-recovery-test', 'att-missing-rec');
+    record = await complaintsRepository.getComplaintById('c-recovery-test');
+    expect(record?.attachments.length).toBe(0);
+
+    // 5. Driver retries now that the issue is resolved
+    vi.mocked(api.complaints.create).mockResolvedValueOnce({
+      id: 'srv-recovery-id',
+      complaintNo: 'CMP-RECOVERY-01',
+    } as any);
+
+    await complaintsRepository.retryComplaint('c-recovery-test');
+    await syncService.triggerSync('driver-1');
+
+    // 6. Confirmed: submitted and synced using the ORIGINAL complaint identity and idempotency key
+    expect(api.complaints.create).toHaveBeenCalledTimes(1);
+    const [payload] = vi.mocked(api.complaints.create).mock.calls[0]!;
+    expect(payload.idempotencyKey).toBe('idem-recovery-key');
+
+    const recovered = await complaintsRepository.getComplaintById('c-recovery-test');
+    expect(recovered?.syncStatus).toBe('SYNCED');
+    expect(recovered?.serverComplaintId).toBe('srv-recovery-id');
+    expect(recovered?.serverComplaintNo).toBe('CMP-RECOVERY-01');
+  });
 });

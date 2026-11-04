@@ -226,13 +226,6 @@ async function sendOnce(
     if (token) headers.Authorization = `Bearer ${token}`;
   }
 
-  const controller = new AbortController();
-  let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    controller.abort();
-  }, timeoutMs);
-
   console.log(`[NET-REQ] ${opts.method ?? 'GET'} ${url}`);
   if (isMultipart && opts.body && typeof opts.body === 'object' && '_parts' in (opts.body as Record<string, unknown>)) {
     const parts = (opts.body as { _parts: [string, unknown][] })._parts;
@@ -246,27 +239,69 @@ async function sendOnce(
     // which natively streams `{ uri, name, type }` files from disk without reading into JS memory!
     return await new Promise<Response>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
+      let settled = false;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+
+      const cleanup = () => {
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
+        if (opts.signal) {
+          opts.signal.removeEventListener('abort', onAbort);
+        }
+        xhr.onload = null;
+        xhr.onerror = null;
+        xhr.ontimeout = null;
+        xhr.onabort = null;
+      };
+
+      const onAbort = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        try {
+          xhr.abort();
+        } catch {
+          // ignore abort error
+        }
+        reject(new ApiClientError(0, { code: 'ABORTED', message: 'Request aborted' }));
+      };
+
+      // Check if already aborted before sending
+      if (opts.signal?.aborted) {
+        onAbort();
+        return;
+      }
+
+      if (opts.signal) {
+        opts.signal.addEventListener('abort', onAbort, { once: true });
+      }
+
       xhr.open(opts.method ?? 'POST', url);
       xhr.timeout = timeoutMs;
       for (const [k, v] of Object.entries(headers)) {
         xhr.setRequestHeader(k, v);
       }
 
-      const onAbort = () => {
-        xhr.abort();
-        reject(new ApiClientError(0, { code: 'ABORTED', message: 'Request aborted' }));
-      };
-
-      if (opts.signal) {
-        if (opts.signal.aborted) {
-          onAbort();
-          return;
+      // Safety timeout timer in addition to xhr.timeout
+      timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        try {
+          xhr.abort();
+        } catch {
+          // Ignore errors on aborting already-timed-out request
         }
-        opts.signal.addEventListener('abort', onAbort, { once: true });
-      }
+        reject(networkError(new Error('Upload timed out'), true));
+      }, timeoutMs);
 
       xhr.onload = () => {
-        if (opts.signal) opts.signal.removeEventListener('abort', onAbort);
+        if (settled) return;
+        settled = true;
+        cleanup();
+
         const responseHeaders = new Headers();
         const allHeaders = xhr.getAllResponseHeaders() || '';
         allHeaders.split('\r\n').forEach((line) => {
@@ -281,29 +316,66 @@ async function sendOnce(
         console.log(`[NET-RES] ${res.status} ${opts.method ?? 'POST'} ${url}`);
         resolve(res);
       };
+
       xhr.onerror = (e) => {
-        if (opts.signal) opts.signal.removeEventListener('abort', onAbort);
-        console.warn(`[NET-ERR] XHR error on ${url}:`, e);
-        reject(networkError(e, false));
+        if (settled) return;
+        settled = true;
+        cleanup();
+        if (opts.signal?.aborted) {
+          reject(new ApiClientError(0, { code: 'ABORTED', message: 'Request aborted' }));
+        } else {
+          console.warn(`[NET-ERR] XHR error on ${url}:`, e);
+          reject(networkError(e, false));
+        }
       };
+
       xhr.ontimeout = () => {
-        if (opts.signal) opts.signal.removeEventListener('abort', onAbort);
+        if (settled) return;
+        settled = true;
+        cleanup();
         console.warn(`[NET-ERR] XHR timeout on ${url}`);
         reject(networkError(new Error('Upload timed out'), true));
       };
-      xhr.send(opts.body as FormData);
+
+      xhr.onabort = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(new ApiClientError(0, { code: 'ABORTED', message: 'Request aborted' }));
+      };
+
+      try {
+        xhr.send(opts.body as FormData);
+      } catch (err) {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        if (opts.signal?.aborted) {
+          reject(new ApiClientError(0, { code: 'ABORTED', message: 'Request aborted' }));
+        } else {
+          reject(networkError(err, false));
+        }
+      }
     });
   }
+
+  // Fetch path for JSON requests
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
 
   const onAbort = () => {
     controller.abort();
   };
   if (opts.signal) {
     if (opts.signal.aborted) {
-      controller.abort();
-    } else {
-      opts.signal.addEventListener('abort', onAbort, { once: true });
+      clearTimeout(timer);
+      throw new ApiClientError(0, { code: 'ABORTED', message: 'Request aborted' });
     }
+    opts.signal.addEventListener('abort', onAbort, { once: true });
   }
 
   try {
@@ -316,6 +388,9 @@ async function sendOnce(
     console.log(`[NET-RES] ${res.status} ${opts.method ?? 'GET'} ${url}`);
     return res;
   } catch (err) {
+    if (opts.signal?.aborted) {
+      throw new ApiClientError(0, { code: 'ABORTED', message: 'Request aborted' });
+    }
     console.warn(`[NET-ERR] ${opts.method ?? 'GET'} ${url}:`, err);
     throw networkError(err, timedOut);
   } finally {

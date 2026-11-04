@@ -19,6 +19,7 @@ import {
   complaintsRepository,
   type PendingComplaintRecord,
 } from '../../../src/db/complaintsRepository';
+import { isFileAccessible } from '../../../src/media/attachmentStorage';
 import { syncService } from '../../../src/sync/syncService';
 import { colors, fontSize, radius, spacing } from '../../../src/theme';
 import { Ionicons } from '@expo/vector-icons';
@@ -57,7 +58,7 @@ export default function ComplaintDetailScreen(): ReactElement {
     if (!user || !localRecord) return;
     setIsRetrying(true);
     void complaintsRepository
-      .updateSyncStatus(localRecord.id, 'PENDING')
+      .retryComplaint(localRecord.id)
       .then(() => syncService.triggerSync(user.id))
       .then(() => {
         loadLocalRecord();
@@ -65,6 +66,24 @@ export default function ComplaintDetailScreen(): ReactElement {
       .finally(() => {
         setIsRetrying(false);
       });
+  };
+
+  const handleRemoveMissingAttachmentsAndRetry = async (): Promise<void> => {
+    if (!user || !localRecord) return;
+    setIsRetrying(true);
+    try {
+      for (const att of localRecord.attachments) {
+        const exists = await isFileAccessible(att.localUri);
+        if (!exists) {
+          await complaintsRepository.removeAttachment(localRecord.id, att.id);
+        }
+      }
+      await complaintsRepository.retryComplaint(localRecord.id);
+      await syncService.triggerSync(user.id);
+      loadLocalRecord();
+    } finally {
+      setIsRetrying(false);
+    }
   };
 
   if (complaint.loading && complaint.data === null && !complaint.error && !localRecord) {
@@ -233,6 +252,29 @@ export default function ComplaintDetailScreen(): ReactElement {
                   <Text style={styles.failureTitle}>Sync Error</Text>
                   <Text style={styles.failureText}>{localRecord.lastFailureReason}</Text>
                 </View>
+              </View>
+            ) : null}
+
+            {localRecord.syncStatus === 'FAILED_PERMANENT' &&
+            localRecord.lastFailureReason?.includes('Missing local attachment file') ? (
+              <View style={styles.recoveryCard}>
+                <View style={styles.recoveryCardHeader}>
+                  <Ionicons name="build-outline" size={18} color="#991B1B" />
+                  <Text style={styles.recoveryCardTitle}>Evidence Recovery Options</Text>
+                </View>
+                <Text style={styles.recoveryCardBody}>
+                  An attachment file is missing from device storage. You can remove the missing attachment to proceed with text details, or retry if you restored the file.
+                </Text>
+                <Pressable
+                  style={styles.removeMissingButton}
+                  onPress={handleRemoveMissingAttachmentsAndRetry}
+                  disabled={isRetrying}
+                  accessibilityLabel="Remove missing attachment and retry"
+                  accessibilityRole="button"
+                >
+                  <Ionicons name="trash-outline" size={16} color="#B91C1C" style={{ marginRight: 6 }} />
+                  <Text style={styles.removeMissingButtonText}>Remove Missing Attachment & Retry</Text>
+                </Pressable>
               </View>
             ) : null}
 
@@ -557,6 +599,47 @@ const styles = StyleSheet.create({
   localAttachmentSize: {
     fontSize: 12,
     color: '#64748B',
+  },
+  recoveryCard: {
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  recoveryCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+    gap: 6,
+  },
+  recoveryCardTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#92400E',
+  },
+  recoveryCardBody: {
+    fontSize: 12,
+    color: '#78350F',
+    lineHeight: 18,
+    marginBottom: spacing.sm,
+  },
+  removeMissingButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: radius.sm,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  removeMissingButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#B91C1C',
   },
 });
 

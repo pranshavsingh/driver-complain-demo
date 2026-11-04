@@ -13,15 +13,18 @@ const ATTACHMENT_DIR = `${FileSystem.documentDirectory ?? ''}persistent_attachme
 
 /**
  * Ensures the persistent directory exists on disk.
+ * Explicitly propagates filesystem errors instead of swallowing them.
  */
-async function ensureDirectoryExists(): Promise<void> {
+export async function ensureDirectoryExists(): Promise<void> {
   try {
     const dirInfo = await FileSystem.getInfoAsync(ATTACHMENT_DIR);
     if (!dirInfo.exists) {
       await FileSystem.makeDirectoryAsync(ATTACHMENT_DIR, { intermediates: true });
     }
   } catch (err) {
-    console.warn('[attachmentStorage] Failed to ensure attachment directory:', err);
+    throw new Error(
+      `Failed to initialize attachment directory (${ATTACHMENT_DIR}): ${err instanceof Error ? err.message : String(err)}`,
+    );
   }
 }
 
@@ -60,6 +63,7 @@ export async function persistAttachment(
   // Verify destination file existence and size before committing
   const info = await FileSystem.getInfoAsync(destinationUri);
   if (!info.exists) {
+    await FileSystem.deleteAsync(destinationUri, { idempotent: true }).catch(() => {});
     throw new Error(
       `Failed to verify ${kind.toLowerCase()} attachment (${fileName}): Destination file does not exist after copy`,
     );

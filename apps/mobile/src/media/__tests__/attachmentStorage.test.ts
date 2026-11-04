@@ -5,6 +5,7 @@ import {
   persistAttachmentBatch,
   isFileAccessible,
   removeLocalAttachment,
+  ensureDirectoryExists,
 } from '../attachmentStorage';
 
 describe('AttachmentStorage', () => {
@@ -15,6 +16,7 @@ describe('AttachmentStorage', () => {
       size: 2048,
       isDirectory: false,
     } as any);
+    vi.mocked(FileSystem.makeDirectoryAsync).mockResolvedValue(undefined);
     vi.mocked(FileSystem.copyAsync).mockResolvedValue(undefined);
     vi.mocked(FileSystem.deleteAsync).mockResolvedValue(undefined);
   });
@@ -41,6 +43,29 @@ describe('AttachmentStorage', () => {
 
     // Verified destination existence and size
     expect(FileSystem.getInfoAsync).toHaveBeenCalledWith(result.localUri);
+  });
+
+  it('explicitly propagates directory creation failure without swallowing errors', async () => {
+    vi.mocked(FileSystem.getInfoAsync).mockResolvedValueOnce({ exists: false } as any);
+    vi.mocked(FileSystem.makeDirectoryAsync).mockRejectedValueOnce(
+      new Error('EACCES: permission denied, mkdir /persistent_attachments'),
+    );
+
+    await expect(ensureDirectoryExists()).rejects.toThrow(/Failed to initialize attachment directory.*EACCES/);
+
+    vi.mocked(FileSystem.getInfoAsync).mockResolvedValueOnce({ exists: false } as any);
+    vi.mocked(FileSystem.makeDirectoryAsync).mockRejectedValueOnce(
+      new Error('EACCES: permission denied, mkdir /persistent_attachments'),
+    );
+
+    await expect(
+      persistAttachment(
+        'file:///cache/photo.jpg',
+        'photo.jpg',
+        'image/jpeg',
+        'PHOTO',
+      ),
+    ).rejects.toThrow(/Failed to initialize attachment directory.*EACCES/);
   });
 
   it('fails fast on copy error without falling back to temporary cache URI, cleaning up destination', async () => {
@@ -73,6 +98,8 @@ describe('AttachmentStorage', () => {
         'VIDEO',
       ),
     ).rejects.toThrow(/Destination file does not exist after copy/);
+
+    expect(FileSystem.deleteAsync).toHaveBeenCalled();
   });
 
   it('fails fast and deletes destination if copied file is empty (0 bytes)', async () => {
@@ -115,11 +142,11 @@ describe('AttachmentStorage', () => {
     expect(results[1]?.fileName).toBe('v1.m4a');
   });
 
-  it('persistAttachmentBatch rolls back and cleans up earlier files if a subsequent copy fails', async () => {
+  it('persistAttachmentBatch rolls back and cleans up every file copied earlier in the batch', async () => {
     // First copy succeeds, second copy fails
     vi.mocked(FileSystem.copyAsync)
       .mockResolvedValueOnce(undefined) // item 1
-      .mockRejectedValueOnce(new Error('Permission denied')); // item 2
+      .mockRejectedValueOnce(new Error('Disk I/O error')); // item 2
 
     const items = [
       {
@@ -136,7 +163,7 @@ describe('AttachmentStorage', () => {
       },
     ];
 
-    await expect(persistAttachmentBatch(items)).rejects.toThrow(/Permission denied/);
+    await expect(persistAttachmentBatch(items)).rejects.toThrow(/Disk I\/O error/);
 
     // Rolled back the first file
     expect(FileSystem.deleteAsync).toHaveBeenCalled();
@@ -158,4 +185,3 @@ describe('AttachmentStorage', () => {
     expect(FileSystem.deleteAsync).toHaveBeenCalledWith('file:///doc/old.jpg', { idempotent: true });
   });
 });
-

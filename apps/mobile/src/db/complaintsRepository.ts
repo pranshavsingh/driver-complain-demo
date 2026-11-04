@@ -465,15 +465,41 @@ export const complaintsRepository = {
 
   /**
    * Mark a complaint as successfully synced with server details.
+   * Scopes strictly by id AND userId (when provided) to prevent cross-account commit races.
+   * Supports both (id, serverComplaintId, serverComplaintNo, db?) and
+   * (id, userId, serverComplaintId, serverComplaintNo, db?).
+   * Returns true if the record was updated, false otherwise.
    */
   async markComplaintSynced(
     id: string,
-    serverComplaintId: string,
-    serverComplaintNo: string,
-    db: SQLite.SQLiteDatabase = getDatabase(),
-  ): Promise<void> {
+    arg2: string,
+    arg3: string,
+    arg4?: string | SQLite.SQLiteDatabase,
+    arg5?: SQLite.SQLiteDatabase,
+  ): Promise<boolean> {
+    let userId: string | null = null;
+    let serverComplaintId: string;
+    let serverComplaintNo: string;
+    let targetDb: SQLite.SQLiteDatabase;
+
+    if (typeof arg4 === 'string') {
+      userId = arg2;
+      serverComplaintId = arg3;
+      serverComplaintNo = arg4;
+      targetDb = arg5 ?? getDatabase();
+    } else {
+      serverComplaintId = arg2;
+      serverComplaintNo = arg3;
+      targetDb = (arg4 as SQLite.SQLiteDatabase) ?? getDatabase();
+    }
+
     const now = new Date().toISOString();
-    db.runSync(
+    const whereClause = userId ? 'WHERE id = ? AND user_id = ?;' : 'WHERE id = ?;';
+    const params = userId
+      ? [serverComplaintId, serverComplaintNo, now, id, userId]
+      : [serverComplaintId, serverComplaintNo, now, id];
+
+    const res = targetDb.runSync(
       `UPDATE pending_complaints 
        SET sync_status = 'SYNCED', 
            server_complaint_id = ?, 
@@ -481,8 +507,44 @@ export const complaintsRepository = {
            last_failure_reason = NULL,
            next_retry_at = NULL,
            updated_at = ?
+       ${whereClause}`,
+      params,
+    );
+    return res.changes === 1;
+  },
+
+  /**
+   * Remove an attachment record from SQLite.
+   * Used when driver chooses to recover a complaint with a missing or unrecoverable attachment.
+   */
+  async removeAttachment(
+    complaintId: string,
+    attachmentId: string,
+    db: SQLite.SQLiteDatabase = getDatabase(),
+  ): Promise<void> {
+    db.runSync(
+      `DELETE FROM pending_attachments WHERE id = ? AND complaint_id = ?;`,
+      [attachmentId, complaintId],
+    );
+  },
+
+  /**
+   * Replace/update an attachment's localUri and metadata in SQLite.
+   * Used when driver re-captures or replaces missing evidence during recovery.
+   */
+  async updateAttachment(
+    attachmentId: string,
+    localUri: string,
+    fileName: string,
+    fileSize: number,
+    mimeType: string,
+    db: SQLite.SQLiteDatabase = getDatabase(),
+  ): Promise<void> {
+    db.runSync(
+      `UPDATE pending_attachments 
+       SET local_uri = ?, file_name = ?, file_size = ?, mime_type = ? 
        WHERE id = ?;`,
-      [serverComplaintId, serverComplaintNo, now, id],
+      [localUri, fileName, fileSize, mimeType, attachmentId],
     );
   },
 

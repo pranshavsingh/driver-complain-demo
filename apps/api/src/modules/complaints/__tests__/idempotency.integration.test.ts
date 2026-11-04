@@ -290,4 +290,115 @@ describe('M6 Server Idempotency Integration Tests', () => {
       txSpy.mockRestore();
     }
   });
+
+  it('handles true concurrent create with evidence: persists 1 complaint, returns same ID, compensates loser assets without deleting winner assets', async () => {
+    vi.mocked(deleteAsset).mockClear();
+    vi.mocked(uploadBuffer).mockClear();
+
+    const key = `idem-concurrent-evidence-${Date.now()}`;
+    const evidence = {
+      PHOTO: {
+        buffer: Buffer.from('concurrent-evidence-bytes'),
+        originalName: 'concurrent.jpg',
+      },
+    };
+
+    // Run two create requests concurrently with the same driver, idempotency key, and evidence payload
+    const [res1, res2] = await Promise.all([
+      create(
+        driver1UserId,
+        {
+          title: 'Concurrent tyre blowout',
+          description: 'Left rear tyre blowout on ring road',
+          category: 'TYRE_ISSUE',
+          priority: 'URGENT',
+          idempotencyKey: key,
+        },
+        evidence,
+      ),
+      create(
+        driver1UserId,
+        {
+          title: 'Concurrent tyre blowout',
+          description: 'Left rear tyre blowout on ring road',
+          category: 'TYRE_ISSUE',
+          priority: 'URGENT',
+          idempotencyKey: key,
+        },
+        evidence,
+      ),
+    ]);
+
+    // 1. Both requests return the same complaint ID and complaint number
+    expect(res1.id).toBe(res2.id);
+    expect(res1.complaintNo).toBe(res2.complaintNo);
+
+    // 2. Exactly one complaint is persisted in the database
+    const dbCount = await prisma.complaint.count({
+      where: { driverId: driver1Id, idempotencyKey: key },
+    });
+    expect(dbCount).toBe(1);
+
+    // 3. Inspect persisted attachments on the winning complaint
+    const winningComplaint = await prisma.complaint.findUnique({
+      where: { id: res1.id },
+      include: { attachments: true },
+    });
+    expect(winningComplaint?.attachments.length).toBe(1);
+    const winningAssetPublicId = winningComplaint!.attachments[0]!.publicId;
+
+    // 4. The winning complaint's asset is NEVER deleted
+    const deletedPublicIds = vi.mocked(deleteAsset).mock.calls.map((call) => call[0]);
+    expect(deletedPublicIds).not.toContain(winningAssetPublicId);
+
+    // If both requests uploaded assets before the race was resolved at the DB layer,
+    // the loser's uploaded asset was compensated
+    if (vi.mocked(uploadBuffer).mock.calls.length > 1) {
+      expect(deleteAsset).toHaveBeenCalled();
+    }
+  });
+
+  it('handles concurrent append updates on existing open complaints and compensates on failure', async () => {
+    vi.mocked(deleteAsset).mockClear();
+
+    // Create an initial open complaint
+    const initial = await create(driver1UserId, {
+      title: 'Transmission noise',
+      description: 'Gear grinding in 3rd',
+      category: 'BREAKDOWN',
+      priority: 'HIGH',
+      idempotencyKey: `init-append-${Date.now()}`,
+    });
+    expect(initial.id).toBeDefined();
+
+    // Concurrent append attempt: simulate transaction failure on append
+    const txSpy = vi.spyOn(prisma, '$transaction').mockRejectedValueOnce(new Error('Append transaction deadlocked'));
+    const evidence = {
+      PHOTO: {
+        buffer: Buffer.from('append-fail-evidence'),
+        originalName: 'gear.jpg',
+      },
+    };
+
+    try {
+      await expect(
+        create(
+          driver1UserId,
+          {
+            title: 'Transmission noise update',
+            description: 'Now grinding in 4th gear as well',
+            category: 'BREAKDOWN',
+            priority: 'HIGH',
+            vehicleId: initial.vehicleId ?? undefined,
+          },
+          evidence,
+        ),
+      ).rejects.toThrow(/Append transaction deadlocked/);
+
+      // Failed append compensates its own uploaded assets
+      expect(deleteAsset).toHaveBeenCalled();
+    } finally {
+      txSpy.mockRestore();
+    }
+  });
 });

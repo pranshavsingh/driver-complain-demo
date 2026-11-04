@@ -132,7 +132,7 @@ export default function ComplaintHistoryScreen(): ReactElement {
     setIsSyncing(true);
     // Reset status to PENDING and trigger sync
     void complaintsRepository
-      .updateSyncStatus(complaintId, 'PENDING')
+      .retryComplaint(complaintId)
       .then(() => syncService.triggerSync(user.id))
       .finally(() => {
         setIsSyncing(false);
