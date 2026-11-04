@@ -92,4 +92,19 @@ export async function uploadBuffer(
   }
 }
 
+/**
+ * Safely delete an uploaded asset from Cloudinary (compensation/cleanup on failed tx or race loss).
+ */
+export async function deleteAsset(
+  publicId: string,
+  resourceType: 'image' | 'video' | 'raw' | 'auto' = 'image',
+): Promise<void> {
+  if (!cloudinaryEnabled || !publicId) return;
+  try {
+    await cloudinary.uploader.destroy(publicId, { resource_type: resourceType });
+  } catch (err) {
+    logger.warn({ err, publicId, resourceType }, 'Failed to compensate/delete orphaned Cloudinary asset');
+  }
+}
+
 export { cloudinary };

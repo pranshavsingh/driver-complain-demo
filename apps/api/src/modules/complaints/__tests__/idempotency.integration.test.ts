@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vites
 import { prisma } from '../../../lib/prisma';
 import { hashPin } from '../../../lib/password';
 import { create } from '../complaints.service';
+import { uploadBuffer, deleteAsset } from '../../../lib/cloudinary';
 
 vi.mock('../../../lib/cloudinary', () => {
   let n = 0;
@@ -21,6 +22,7 @@ vi.mock('../../../lib/cloudinary', () => {
         durationSec: isImage ? null : 15,
       };
     }),
+    deleteAsset: vi.fn(async () => {}),
   };
 });
 
@@ -208,5 +210,84 @@ describe('M6 Server Idempotency Integration Tests', () => {
 
     expect(complaintWithoutKey.id).toBeDefined();
     expect(complaintWithoutKey.idempotencyKey).toBeNull();
+  });
+
+  it('does not create duplicate Cloudinary uploads on idempotent duplicate requests', async () => {
+    vi.mocked(uploadBuffer).mockClear();
+    const key = `idem-upload-test-${Date.now()}`;
+    const evidence = {
+      PHOTO: {
+        buffer: Buffer.from('fake-photo-data'),
+        originalName: 'photo.jpg',
+      },
+    };
+
+    // First request uploads to Cloudinary
+    const first = await create(
+      driver1UserId,
+      {
+        title: 'Broken taillight',
+        description: 'Right rear light assembly cracked',
+        category: 'BREAKDOWN',
+        priority: 'LOW',
+        idempotencyKey: key,
+      },
+      evidence,
+    );
+
+    expect(first.id).toBeDefined();
+    expect(uploadBuffer).toHaveBeenCalledTimes(1);
+
+    // Duplicate request with same idempotency key and same evidence
+    const second = await create(
+      driver1UserId,
+      {
+        title: 'Broken taillight (replay)',
+        description: 'Should not re-upload',
+        category: 'BREAKDOWN',
+        priority: 'LOW',
+        idempotencyKey: key,
+      },
+      evidence,
+    );
+
+    // Returns original complaint without calling uploadBuffer again
+    expect(second.id).toBe(first.id);
+    expect(uploadBuffer).toHaveBeenCalledTimes(1);
+  });
+
+  it('compensates and deletes uploaded assets via deleteAsset if database transaction fails', async () => {
+    vi.mocked(deleteAsset).mockClear();
+    const key = `idem-compensate-${Date.now()}`;
+    const evidence = {
+      PHOTO: {
+        buffer: Buffer.from('fake-fail-data'),
+        originalName: 'fail.jpg',
+      },
+    };
+
+    // Spy on prisma.$transaction to simulate database failure during commit
+    const txSpy = vi.spyOn(prisma, '$transaction').mockRejectedValueOnce(new Error('Simulated database write error'));
+
+    try {
+      await expect(
+        create(
+          driver1UserId,
+          {
+            title: 'Failed transaction test',
+            description: 'Will fail at db layer',
+            category: 'BREAKDOWN',
+            priority: 'HIGH',
+            idempotencyKey: key,
+          },
+          evidence,
+        ),
+      ).rejects.toThrow(/Simulated database write error/);
+
+      // deleteAsset MUST be called for the uploaded photo to prevent orphaned Cloudinary assets
+      expect(deleteAsset).toHaveBeenCalled();
+    } finally {
+      txSpy.mockRestore();
+    }
   });
 });

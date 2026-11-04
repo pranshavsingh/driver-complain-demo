@@ -17,14 +17,16 @@ export class ApiClientError extends Error {
   readonly code: string;
   readonly details: unknown;
   readonly requestId: string | undefined;
+  readonly retryAfter: number | undefined;
 
-  constructor(status: number, payload: ApiErrorPayload) {
+  constructor(status: number, payload: ApiErrorPayload, retryAfter?: number) {
     super(payload.message);
     this.name = 'ApiClientError';
     this.status = status;
     this.code = payload.code;
     this.details = payload.details;
     this.requestId = payload.requestId;
+    this.retryAfter = retryAfter;
   }
 }
 
@@ -55,6 +57,7 @@ export interface RequestOptions {
   /** Auth endpoints opt out: they carry no access token and must not trigger a refresh. */
   anonymous?: boolean;
   timeoutMs?: number;
+  signal?: AbortSignal;
 }
 
 /**
@@ -88,7 +91,25 @@ async function readError(res: Response): Promise<ApiClientError> {
     // Not JSON — a captive-portal login page, a proxy error, or a dropped connection. Keep
     // the generic message rather than masking the status code.
   }
-  return new ApiClientError(res.status, payload);
+  let retryAfterSeconds: number | undefined;
+  try {
+    const rawHeader = res.headers.get('Retry-After');
+    if (rawHeader) {
+      const parsedSec = parseInt(rawHeader, 10);
+      if (!isNaN(parsedSec) && parsedSec >= 0) {
+        retryAfterSeconds = parsedSec;
+      } else {
+        const parsedDate = Date.parse(rawHeader);
+        if (!isNaN(parsedDate)) {
+          retryAfterSeconds = Math.max(0, Math.ceil((parsedDate - Date.now()) / 1000));
+        }
+      }
+    }
+  } catch {
+    // Header parsing graceful fallback
+  }
+
+  return new ApiClientError(res.status, payload, retryAfterSeconds);
 }
 
 /**
@@ -230,7 +251,22 @@ async function sendOnce(
       for (const [k, v] of Object.entries(headers)) {
         xhr.setRequestHeader(k, v);
       }
+
+      const onAbort = () => {
+        xhr.abort();
+        reject(new ApiClientError(0, { code: 'ABORTED', message: 'Request aborted' }));
+      };
+
+      if (opts.signal) {
+        if (opts.signal.aborted) {
+          onAbort();
+          return;
+        }
+        opts.signal.addEventListener('abort', onAbort, { once: true });
+      }
+
       xhr.onload = () => {
+        if (opts.signal) opts.signal.removeEventListener('abort', onAbort);
         const responseHeaders = new Headers();
         const allHeaders = xhr.getAllResponseHeaders() || '';
         allHeaders.split('\r\n').forEach((line) => {
@@ -246,15 +282,28 @@ async function sendOnce(
         resolve(res);
       };
       xhr.onerror = (e) => {
+        if (opts.signal) opts.signal.removeEventListener('abort', onAbort);
         console.warn(`[NET-ERR] XHR error on ${url}:`, e);
         reject(networkError(e, false));
       };
       xhr.ontimeout = () => {
+        if (opts.signal) opts.signal.removeEventListener('abort', onAbort);
         console.warn(`[NET-ERR] XHR timeout on ${url}`);
         reject(networkError(new Error('Upload timed out'), true));
       };
       xhr.send(opts.body as FormData);
     });
+  }
+
+  const onAbort = () => {
+    controller.abort();
+  };
+  if (opts.signal) {
+    if (opts.signal.aborted) {
+      controller.abort();
+    } else {
+      opts.signal.addEventListener('abort', onAbort, { once: true });
+    }
   }
 
   try {
@@ -271,6 +320,9 @@ async function sendOnce(
     throw networkError(err, timedOut);
   } finally {
     clearTimeout(timer);
+    if (opts.signal) {
+      opts.signal.removeEventListener('abort', onAbort);
+    }
   }
 }
 
@@ -292,10 +344,16 @@ async function fetchRaw(path: string, opts: RequestOptions): Promise<Response> {
   // HTTP errors (4xx, 5xx) are NOT retried — those are definitive server responses.
   let lastErr: ApiClientError | null = null;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (opts.signal?.aborted) {
+      throw new ApiClientError(0, { code: 'ABORTED', message: 'Request aborted' });
+    }
     if (attempt > 0) {
       const delay = retryDelay(attempt - 1);
       console.log(`[api] Network reconnecting in ${String(delay / 1000)} s (attempt ${String(attempt)}/${String(maxRetries)})...`);
       await sleep(delay);
+      if (opts.signal?.aborted) {
+        throw new ApiClientError(0, { code: 'ABORTED', message: 'Request aborted' });
+      }
     }
     try {
       const res = await sendOnce(url, opts, isMultipart, timeoutMs);
@@ -318,6 +376,9 @@ async function fetchRaw(path: string, opts: RequestOptions): Promise<Response> {
       return replay;
     } catch (err) {
       if (err instanceof ApiClientError) {
+        if (err.code === 'ABORTED') {
+          throw err;
+        }
         // Only retry on transport-level failures (NETWORK_ERROR, NETWORK_TIMEOUT).
         // HTTP errors (ApiClientError with a real status) should not be retried.
         if (err.status === 0) {

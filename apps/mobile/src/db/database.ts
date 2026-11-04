@@ -1,6 +1,6 @@
 import * as SQLite from 'expo-sqlite';
 
-export const CURRENT_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEMA_VERSION = 2;
 
 let dbInstance: SQLite.SQLiteDatabase | null = null;
 
@@ -69,6 +69,19 @@ export function migrateDatabase(db: SQLite.SQLiteDatabase): void {
       CREATE INDEX IF NOT EXISTS idx_pending_attachments_complaint ON pending_attachments(complaint_id);
 
       INSERT INTO _schema_migrations (version, applied_at) VALUES (1, datetime('now'));
+    `);
+  }
+
+  if (!appliedVersions.has(2)) {
+    // Migration 2: Add next_retry_at column and composite retry scheduling index
+    const tableInfo = db.getAllSync<{ name: string }>('PRAGMA table_info(pending_complaints);');
+    const hasNextRetryAt = tableInfo.some((col) => col.name === 'next_retry_at');
+    if (!hasNextRetryAt) {
+      db.execSync('ALTER TABLE pending_complaints ADD COLUMN next_retry_at TEXT;');
+    }
+    db.execSync(`
+      CREATE INDEX IF NOT EXISTS idx_pending_complaints_retry ON pending_complaints(user_id, sync_status, next_retry_at, created_at);
+      INSERT INTO _schema_migrations (version, applied_at) VALUES (2, datetime('now'));
     `);
   }
 }

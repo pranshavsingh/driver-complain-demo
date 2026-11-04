@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 
 export type SQLiteRunResult = { changes: number; lastInsertRowId: number };
 
-export function openDatabaseSync(name: string): any {
+export function openDatabaseSync(_name: string): any {
   const rawDb = new DatabaseSync(':memory:');
   return {
     execSync(sql: string): void {

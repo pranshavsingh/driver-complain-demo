@@ -38,6 +38,7 @@ export interface PendingComplaintRecord {
   updatedAt: string;
   syncStatus: LocalSyncStatus;
   retryCount: number;
+  nextRetryAt?: string | null;
   lastSyncAttempt?: string | null;
   lastFailureReason?: string | null;
   serverComplaintId?: string | null;
@@ -91,6 +92,7 @@ interface ComplaintRow {
   updated_at: string;
   sync_status: LocalSyncStatus;
   retry_count: number;
+  next_retry_at: string | null;
   last_sync_attempt: string | null;
   last_failure_reason: string | null;
   server_complaint_id: string | null;
@@ -142,12 +144,29 @@ function mapComplaintRow(row: ComplaintRow, attachments: PendingAttachmentRecord
     updatedAt: row.updated_at,
     syncStatus: row.sync_status,
     retryCount: row.retry_count,
+    nextRetryAt: row.next_retry_at,
     lastSyncAttempt: row.last_sync_attempt,
     lastFailureReason: row.last_failure_reason,
     serverComplaintId: row.server_complaint_id,
     serverComplaintNo: row.server_complaint_no,
     attachments,
   };
+}
+
+/**
+ * Calculates exponential backoff with jitter.
+ * Sequence base 5s: ~5s, ~10s, ~20s, ~40s, ~80s, ~160s, max 300s (5m).
+ */
+export function calculateBackoffMs(
+  retryCount: number,
+  baseDelayMs = 5000,
+  maxDelayMs = 300000,
+  jitterFactor = 0.25,
+): number {
+  const exp = Math.min(Math.max(0, retryCount), 10);
+  const rawBackoff = Math.min(maxDelayMs, baseDelayMs * Math.pow(2, exp));
+  const jitter = (Math.random() * 2 - 1) * jitterFactor * rawBackoff;
+  return Math.min(maxDelayMs, Math.max(1000, Math.round(rawBackoff + jitter)));
 }
 
 export const complaintsRepository = {
@@ -240,6 +259,7 @@ export const complaintsRepository = {
         updatedAt: now,
         syncStatus: 'PENDING',
         retryCount: 0,
+        nextRetryAt: null,
         lastSyncAttempt: null,
         lastFailureReason: null,
         serverComplaintId: null,
@@ -254,19 +274,24 @@ export const complaintsRepository = {
 
   /**
    * Fetch pending complaints that are eligible for synchronization for a specific user.
-   * Scoped strictly by userId.
+   * Scoped strictly by userId. Selects PENDING complaints or FAILED_TRANSIENT whose next_retry_at has arrived.
    */
   async getPendingQueueForUser(
     userId: string,
     limit = 20,
     db: SQLite.SQLiteDatabase = getDatabase(),
+    asOf: string = new Date().toISOString(),
   ): Promise<PendingComplaintRecord[]> {
     const rows = db.getAllSync<ComplaintRow>(
       `SELECT * FROM pending_complaints 
-       WHERE user_id = ? AND sync_status IN ('PENDING', 'FAILED_TRANSIENT')
+       WHERE user_id = ? 
+         AND (
+           sync_status = 'PENDING' 
+           OR (sync_status = 'FAILED_TRANSIENT' AND next_retry_at IS NOT NULL AND next_retry_at <= ?)
+         )
        ORDER BY created_at ASC
        LIMIT ?;`,
-      [userId, limit],
+      [userId, asOf, limit],
     );
 
     if (rows.length === 0) return [];
@@ -367,6 +392,7 @@ export const complaintsRepository = {
 
   /**
    * Update sync status of a complaint.
+   * If resetting to PENDING, clears next_retry_at.
    */
   async updateSyncStatus(
     id: string,
@@ -375,34 +401,65 @@ export const complaintsRepository = {
     db: SQLite.SQLiteDatabase = getDatabase(),
   ): Promise<void> {
     const now = new Date().toISOString();
+    const clearRetryTime = status === 'PENDING';
     db.runSync(
       `UPDATE pending_complaints 
-       SET sync_status = ?, last_failure_reason = ?, updated_at = ?, last_sync_attempt = ?
+       SET sync_status = ?, 
+           last_failure_reason = ?, 
+           updated_at = ?, 
+           last_sync_attempt = ?,
+           next_retry_at = CASE WHEN ? = 1 THEN NULL ELSE next_retry_at END
        WHERE id = ?;`,
-      [status, lastFailureReason, now, now, id],
+      [status, lastFailureReason, now, now, clearRetryTime ? 1 : 0, id],
     );
   },
 
   /**
-   * Increment retry count and mark status as FAILED_TRANSIENT or FAILED_PERMANENT.
+   * Increment retry count, calculate next_retry_at (exponential backoff or Retry-After header),
+   * and mark status as FAILED_TRANSIENT or FAILED_PERMANENT.
    */
   async recordSyncFailure(
     id: string,
     failureReason: string,
     isPermanent = false,
-    db: SQLite.SQLiteDatabase = getDatabase(),
+    retryAfterSecondsOrDb?: number | SQLite.SQLiteDatabase,
+    maybeDb?: SQLite.SQLiteDatabase,
   ): Promise<void> {
-    const now = new Date().toISOString();
+    const retryAfterSeconds = typeof retryAfterSecondsOrDb === 'number' ? retryAfterSecondsOrDb : undefined;
+    const db = (retryAfterSecondsOrDb && typeof retryAfterSecondsOrDb === 'object' && 'runSync' in retryAfterSecondsOrDb)
+      ? (retryAfterSecondsOrDb as SQLite.SQLiteDatabase)
+      : (maybeDb ?? getDatabase());
+
+    const now = new Date();
+    const nowIso = now.toISOString();
     const status: LocalSyncStatus = isPermanent ? 'FAILED_PERMANENT' : 'FAILED_TRANSIENT';
+
+    let nextRetryAt: string | null = null;
+    if (!isPermanent) {
+      const row = db.getFirstSync<{ retry_count: number }>(
+        'SELECT retry_count FROM pending_complaints WHERE id = ?;',
+        [id],
+      );
+      const currentRetry = row?.retry_count ?? 0;
+      let delayMs: number;
+      if (typeof retryAfterSeconds === 'number' && retryAfterSeconds > 0) {
+        delayMs = Math.min(300_000, Math.max(1_000, Math.round(retryAfterSeconds * 1000)));
+      } else {
+        delayMs = calculateBackoffMs(currentRetry);
+      }
+      nextRetryAt = new Date(now.getTime() + delayMs).toISOString();
+    }
+
     db.runSync(
       `UPDATE pending_complaints 
        SET sync_status = ?, 
            retry_count = retry_count + 1, 
            last_failure_reason = ?, 
+           next_retry_at = ?,
            updated_at = ?, 
            last_sync_attempt = ?
        WHERE id = ?;`,
-      [status, failureReason, now, now, id],
+      [status, failureReason, nextRetryAt, nowIso, nowIso, id],
     );
   },
 
@@ -422,9 +479,46 @@ export const complaintsRepository = {
            server_complaint_id = ?, 
            server_complaint_no = ?, 
            last_failure_reason = NULL,
+           next_retry_at = NULL,
            updated_at = ?
        WHERE id = ?;`,
       [serverComplaintId, serverComplaintNo, now, id],
+    );
+  },
+
+  /**
+   * Reset transient auth/session failures back to PENDING when auth is restored.
+   */
+  async resetAuthExpiredComplaints(
+    userId: string,
+    db: SQLite.SQLiteDatabase = getDatabase(),
+  ): Promise<number> {
+    const now = new Date().toISOString();
+    const result = db.runSync(
+      `UPDATE pending_complaints 
+       SET sync_status = 'PENDING', next_retry_at = NULL, updated_at = ?
+       WHERE user_id = ? AND sync_status = 'FAILED_TRANSIENT' AND (last_failure_reason LIKE '%Session expired%' OR next_retry_at IS NULL);`,
+      [now, userId],
+    );
+    return result.changes;
+  },
+
+  /**
+   * Reset a failed complaint back to PENDING for manual retry by the driver.
+   */
+  async retryComplaint(
+    id: string,
+    db: SQLite.SQLiteDatabase = getDatabase(),
+  ): Promise<void> {
+    const now = new Date().toISOString();
+    db.runSync(
+      `UPDATE pending_complaints 
+       SET sync_status = 'PENDING', 
+           next_retry_at = NULL, 
+           last_failure_reason = NULL,
+           updated_at = ?
+       WHERE id = ?;`,
+      [now, id],
     );
   },
 

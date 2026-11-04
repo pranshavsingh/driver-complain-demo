@@ -9,8 +9,9 @@ describe('SQLite Database & Migrations', () => {
     const migrations = db.getAllSync<{ version: number; applied_at: string }>(
       'SELECT version, applied_at FROM _schema_migrations ORDER BY version ASC;'
     );
-    expect(migrations.length).toBe(1);
+    expect(migrations.length).toBe(2);
     expect(migrations[0]?.version).toBe(1);
+    expect(migrations[1]?.version).toBe(2);
 
     // Verify pending_complaints table exists
     const complaintsTable = db.getFirstSync<{ name: string }>(
@@ -18,6 +19,11 @@ describe('SQLite Database & Migrations', () => {
     );
     expect(complaintsTable).not.toBeNull();
     expect(complaintsTable?.name).toBe('pending_complaints');
+
+    // Verify pending_complaints has next_retry_at column
+    const columns = db.getAllSync<{ name: string }>('PRAGMA table_info(pending_complaints);');
+    const colNames = columns.map((c) => c.name);
+    expect(colNames).toContain('next_retry_at');
 
     // Verify pending_attachments table exists
     const attachmentsTable = db.getFirstSync<{ name: string }>(
@@ -35,6 +41,7 @@ describe('SQLite Database & Migrations', () => {
     expect(indexNames).toContain('idx_pending_complaints_queue');
     expect(indexNames).toContain('idx_pending_complaints_idempotency');
     expect(indexNames).toContain('idx_pending_attachments_complaint');
+    expect(indexNames).toContain('idx_pending_complaints_retry');
   });
 
   it('runs idempotently when called multiple times without duplicate table or index errors', () => {
@@ -47,7 +54,7 @@ describe('SQLite Database & Migrations', () => {
     const migrations = db.getAllSync<{ version: number }>(
       'SELECT version FROM _schema_migrations;'
     );
-    expect(migrations.length).toBe(1);
+    expect(migrations.length).toBe(2);
   });
 
   it('enforces foreign key cascade deletion for attachments', () => {

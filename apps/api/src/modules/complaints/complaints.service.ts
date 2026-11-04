@@ -15,7 +15,7 @@ import {
 } from '@driver-complaint/shared-types';
 import { prisma } from '../../lib/prisma';
 import { toComplaintPublic, toComplaintDetail } from '../../lib/serializers';
-import { uploadBuffer, cloudinaryFolder } from '../../lib/cloudinary';
+import { uploadBuffer, deleteAsset, cloudinaryFolder } from '../../lib/cloudinary';
 import { dispatchComplaintEvent } from '../../lib/notify';
 import { transcribeAudio, transcribeAudioFromUrl, translateText } from '../../lib/transcribe';
 import { getActiveAdminUserIds } from '../../lib/admin-cache';
@@ -409,90 +409,100 @@ export async function create(
       : rawDesc || voiceTranscription || 'Issue reported by driver';
 
   if (existingOpenComplaint) {
-    const updatedComplaint = await prisma.$transaction(
-      async (tx) => {
-        if (uploads.length > 0) {
-          await tx.complaintAttachment.createMany({
-            data: uploads.map(({ kind, asset, originalName, transcription }) => ({
-              complaintId: existingOpenComplaint.id,
-              uploadedById: driverUserId,
-              kind,
-              url: asset.url,
-              publicId: asset.publicId,
-              resourceType: asset.resourceType,
-              format: asset.format,
-              bytes: asset.bytes,
-              durationSec: asset.durationSec,
-              originalName,
-              transcription,
-            })),
-          });
-        }
-
-        await tx.complaintUpdate.create({
-          data: {
-            complaintId: existingOpenComplaint.id,
-            authorId: driverUserId,
-            fromStatus: existingOpenComplaint.status,
-            toStatus: existingOpenComplaint.status,
-            note: `[Driver Update] ${finalDescription}`,
-          },
-        });
-
-        const now = new Date();
-        await tx.complaint.update({
-          where: { id: existingOpenComplaint.id },
-          data: {
-            updatedAt: now,
-            ...(voiceTranscription && !existingOpenComplaint.transcription
-              ? { transcription: voiceTranscription }
-              : {}),
-            ...((() => { const v = typeof input.latitude === 'number' ? input.latitude : parseFloat(String(input.latitude)); return isFinite(v) ? { latitude: v } : {}; })()),
-            ...((() => { const v = typeof input.longitude === 'number' ? input.longitude : parseFloat(String(input.longitude)); return isFinite(v) ? { longitude: v } : {}; })()),
-            ...(input.locationName?.trim() ? { locationName: input.locationName.trim() } : {}),
-          },
-        });
-
-        const notifyUserIds = Array.from(
-          new Set([
-            ...adminIds,
-            ...(existingOpenComplaint.assignedToId ? [existingOpenComplaint.assignedToId] : []),
-          ]),
-        );
-
-        if (notifyUserIds.length > 0) {
-          for (const id of notifyUserIds) {
-            const n = await tx.notification.create({
-              data: {
-                userId: id,
-                type: 'COMMENT_ADDED',
-                title: `Update on ${existingOpenComplaint.complaintNo}`,
-                body: `Driver added update: ${finalDescription.slice(0, 100)}`,
+    let updatedComplaint;
+    try {
+      updatedComplaint = await prisma.$transaction(
+        async (tx) => {
+          if (uploads.length > 0) {
+            await tx.complaintAttachment.createMany({
+              data: uploads.map(({ kind, asset, originalName, transcription }) => ({
                 complaintId: existingOpenComplaint.id,
-                data: { complaintId: existingOpenComplaint.id, type: 'COMMENT_ADDED' },
-              }
-            });
-            emitEventToUsers([n.userId], 'notification:new', {
-              id: n.id,
-              type: n.type,
-              title: n.title,
-              body: n.body,
-              complaintId: n.complaintId,
-              complaintNo: existingOpenComplaint.complaintNo,
-              isRead: n.isRead,
-              createdAt: n.createdAt.toISOString(),
-              data: n.data,
+                uploadedById: driverUserId,
+                kind,
+                url: asset.url,
+                publicId: asset.publicId,
+                resourceType: asset.resourceType,
+                format: asset.format,
+                bytes: asset.bytes,
+                durationSec: asset.durationSec,
+                originalName,
+                transcription,
+              })),
             });
           }
-        }
 
-        return tx.complaint.findUniqueOrThrow({
-          where: { id: existingOpenComplaint.id },
-          include: listInclude,
-        });
-      },
-      { timeout: 15000, maxWait: 10000 },
-    );
+          await tx.complaintUpdate.create({
+            data: {
+              complaintId: existingOpenComplaint.id,
+              authorId: driverUserId,
+              fromStatus: existingOpenComplaint.status,
+              toStatus: existingOpenComplaint.status,
+              note: `[Driver Update] ${finalDescription}`,
+            },
+          });
+
+          const now = new Date();
+          await tx.complaint.update({
+            where: { id: existingOpenComplaint.id },
+            data: {
+              updatedAt: now,
+              ...(voiceTranscription && !existingOpenComplaint.transcription
+                ? { transcription: voiceTranscription }
+                : {}),
+              ...((() => { const v = typeof input.latitude === 'number' ? input.latitude : parseFloat(String(input.latitude)); return isFinite(v) ? { latitude: v } : {}; })()),
+              ...((() => { const v = typeof input.longitude === 'number' ? input.longitude : parseFloat(String(input.longitude)); return isFinite(v) ? { longitude: v } : {}; })()),
+              ...(input.locationName?.trim() ? { locationName: input.locationName.trim() } : {}),
+            },
+          });
+
+          const notifyUserIds = Array.from(
+            new Set([
+              ...adminIds,
+              ...(existingOpenComplaint.assignedToId ? [existingOpenComplaint.assignedToId] : []),
+            ]),
+          );
+
+          if (notifyUserIds.length > 0) {
+            for (const id of notifyUserIds) {
+              const n = await tx.notification.create({
+                data: {
+                  userId: id,
+                  type: 'COMMENT_ADDED',
+                  title: `Update on ${existingOpenComplaint.complaintNo}`,
+                  body: `Driver added update: ${finalDescription.slice(0, 100)}`,
+                  complaintId: existingOpenComplaint.id,
+                  data: { complaintId: existingOpenComplaint.id, type: 'COMMENT_ADDED' },
+                }
+              });
+              emitEventToUsers([n.userId], 'notification:new', {
+                id: n.id,
+                type: n.type,
+                title: n.title,
+                body: n.body,
+                complaintId: n.complaintId,
+                complaintNo: existingOpenComplaint.complaintNo,
+                isRead: n.isRead,
+                createdAt: n.createdAt.toISOString(),
+                data: n.data,
+              });
+            }
+          }
+
+          return tx.complaint.findUniqueOrThrow({
+            where: { id: existingOpenComplaint.id },
+            include: listInclude,
+          });
+        },
+        { timeout: 15000, maxWait: 10000 },
+      );
+    } catch (appendErr) {
+      if (uploads.length > 0) {
+        await Promise.allSettled(
+          uploads.map(({ asset, kind }) => deleteAsset(asset.publicId, resourceTypeFor(kind))),
+        );
+      }
+      throw appendErr;
+    }
 
     const notifyUserIds = Array.from(
       new Set([
@@ -680,6 +690,13 @@ export async function create(
     });
   }, { timeout: 30000, maxWait: 10000 });
   } catch (err: unknown) {
+    // If concurrent race or transaction failed, compensate/clean up any uploaded assets to prevent orphans
+    if (uploads.length > 0) {
+      await Promise.allSettled(
+        uploads.map(({ asset, kind }) => deleteAsset(asset.publicId, resourceTypeFor(kind))),
+      );
+    }
+
     if (rawIdempotencyKey && (err as { code?: string })?.code === 'P2002') {
       const winner = await prisma.complaint.findUnique({
         where: {
@@ -693,7 +710,7 @@ export async function create(
       if (winner) {
         logger.info(
           { driverId: driver.id, complaintId: winner.id, idempotencyKey: rawIdempotencyKey },
-          'Concurrent duplicate complaint submission resolved via idempotency key',
+          'Concurrent duplicate complaint submission resolved via idempotency key; race loser assets compensated',
         );
         return toComplaintPublic(winner);
       }

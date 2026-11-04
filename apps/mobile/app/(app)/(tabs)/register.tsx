@@ -37,7 +37,7 @@ import { MAX_PHOTO_BYTES, MAX_VOICE_SECONDS, PHOTO_QUALITY } from '../../../src/
 import { useVoiceRecorder, type VoiceNote } from '../../../src/media/recorder';
 import { captureVideo, videoCaptureAvailable } from '../../../src/media/video';
 import { complaintsRepository } from '../../../src/db/complaintsRepository';
-import { persistAttachment } from '../../../src/media/attachmentStorage';
+import { persistAttachmentBatch } from '../../../src/media/attachmentStorage';
 import { syncService } from '../../../src/sync/syncService';
 import { radius, spacing } from '../../../src/theme';
 import { Ionicons } from '@expo/vector-icons';
@@ -265,69 +265,54 @@ export default function WhatsAppRegisterComplaintScreen(): ReactElement {
         throw new Error('You must be signed in to submit a complaint.');
       }
 
-      setSubmitStatus('Saving complaint locally…');
+      setSubmitStatus('Securing attachments to persistent storage…');
       const complaintId = Crypto.randomUUID();
       const idempotencyKey = Crypto.randomUUID();
 
-      const pendingAttachments: Array<{
-        localUri: string;
-        kind: 'PHOTO' | 'VOICE' | 'VIDEO';
+      const itemsToPersist: Array<{
+        sourceUri: string;
         fileName: string;
         mimeType: string;
-        fileSize: number;
+        kind: 'PHOTO' | 'VOICE' | 'VIDEO';
       }> = [];
 
       if (evidence.photo) {
-        setSubmitStatus('Securing photo attachment…');
-        const persisted = await persistAttachment(
-          evidence.photo.uri,
-          evidence.photo.name,
-          evidence.photo.type,
-          'PHOTO',
-        );
-        pendingAttachments.push({
-          localUri: persisted.localUri,
+        itemsToPersist.push({
+          sourceUri: evidence.photo.uri,
+          fileName: evidence.photo.name,
+          mimeType: evidence.photo.type,
           kind: 'PHOTO',
-          fileName: persisted.fileName,
-          mimeType: persisted.mimeType,
-          fileSize: persisted.fileSize,
         });
       }
 
       if (evidence.voice) {
-        setSubmitStatus('Securing voice recording…');
-        const persisted = await persistAttachment(
-          evidence.voice.uri,
-          evidence.voice.name,
-          evidence.voice.type,
-          'VOICE',
-        );
-        pendingAttachments.push({
-          localUri: persisted.localUri,
+        itemsToPersist.push({
+          sourceUri: evidence.voice.uri,
+          fileName: evidence.voice.name,
+          mimeType: evidence.voice.type,
           kind: 'VOICE',
-          fileName: persisted.fileName,
-          mimeType: persisted.mimeType,
-          fileSize: persisted.fileSize,
         });
       }
 
       if (evidence.video) {
-        setSubmitStatus('Securing video clip…');
-        const persisted = await persistAttachment(
-          evidence.video.uri,
-          evidence.video.name,
-          evidence.video.type,
-          'VIDEO',
-        );
-        pendingAttachments.push({
-          localUri: persisted.localUri,
+        itemsToPersist.push({
+          sourceUri: evidence.video.uri,
+          fileName: evidence.video.name,
+          mimeType: evidence.video.type,
           kind: 'VIDEO',
-          fileName: persisted.fileName,
-          mimeType: persisted.mimeType,
-          fileSize: persisted.fileSize,
         });
       }
 
+      const persistedFiles = await persistAttachmentBatch(itemsToPersist);
+      const pendingAttachments = persistedFiles.map((p) => ({
+        localUri: p.localUri,
+        kind: p.kind,
+        fileName: p.fileName,
+        mimeType: p.mimeType,
+        fileSize: p.fileSize,
+      }));
+
+      setSubmitStatus('Saving complaint locally…');
       await complaintsRepository.savePendingComplaint({
         id: complaintId,
         userId: user.id,

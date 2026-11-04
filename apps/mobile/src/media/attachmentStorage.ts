@@ -28,6 +28,7 @@ async function ensureDirectoryExists(): Promise<void> {
 /**
  * Copy an attachment from its picker or recorder temporary URI into
  * persistent application storage so it survives app restarts.
+ * Fails fast without temporary fallback if copying or verification fails.
  */
 export async function persistAttachment(
   sourceUri: string,
@@ -37,46 +38,69 @@ export async function persistAttachment(
 ): Promise<PersistentFile> {
   await ensureDirectoryExists();
 
-  const extension = fileName.includes('.') ? fileName.split('.').pop() : 'dat';
-  const cleanBase = fileName.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const dotIndex = fileName.lastIndexOf('.');
+  const extension = dotIndex !== -1 ? fileName.substring(dotIndex + 1) : 'dat';
+  const baseName = dotIndex !== -1 ? fileName.substring(0, dotIndex) : fileName;
+  const cleanBase = baseName.replace(/[^a-zA-Z0-9_-]/g, '_') || 'file';
   const persistentFileName = `att_${Date.now()}_${Math.random().toString(36).substring(2, 8)}_${cleanBase}.${extension}`;
   const destinationUri = `${ATTACHMENT_DIR}${persistentFileName}`;
 
   try {
-    // Copy rather than move to preserve original picker cache intact if other components use it
     await FileSystem.copyAsync({
       from: sourceUri,
       to: destinationUri,
     });
-
-    const info = await FileSystem.getInfoAsync(destinationUri);
-    const fileSize = info.exists && 'size' in info ? (info.size ?? 0) : 0;
-
-    return {
-      localUri: destinationUri,
-      fileName,
-      mimeType,
-      fileSize,
-      kind,
-    };
   } catch (err) {
-    console.warn('[attachmentStorage] Copy failed, falling back to source URI:', err);
-    // If copying fails (e.g. disk full), gracefully fall back to original URI rather than crashing
-    let fileSize = 0;
-    try {
-      const info = await FileSystem.getInfoAsync(sourceUri);
-      if (info.exists && 'size' in info) fileSize = info.size ?? 0;
-    } catch {
-      // Ignored
-    }
+    await FileSystem.deleteAsync(destinationUri, { idempotent: true }).catch(() => {});
+    throw new Error(
+      `Failed to persist ${kind.toLowerCase()} attachment (${fileName}): ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
 
-    return {
-      localUri: sourceUri,
-      fileName,
-      mimeType,
-      fileSize,
-      kind,
-    };
+  // Verify destination file existence and size before committing
+  const info = await FileSystem.getInfoAsync(destinationUri);
+  if (!info.exists) {
+    throw new Error(
+      `Failed to verify ${kind.toLowerCase()} attachment (${fileName}): Destination file does not exist after copy`,
+    );
+  }
+
+  const fileSize = 'size' in info ? (info.size ?? 0) : 0;
+  if (fileSize <= 0) {
+    await FileSystem.deleteAsync(destinationUri, { idempotent: true }).catch(() => {});
+    throw new Error(
+      `Failed to verify ${kind.toLowerCase()} attachment (${fileName}): Destination file is empty (0 bytes)`,
+    );
+  }
+
+  return {
+    localUri: destinationUri,
+    fileName,
+    mimeType,
+    fileSize,
+    kind,
+  };
+}
+
+/**
+ * Atomically persist a batch of attachments. If any attachment fails to copy
+ * or verify, all previously copied files from this batch are cleaned up immediately.
+ */
+export async function persistAttachmentBatch(
+  items: Array<{ sourceUri: string; fileName: string; mimeType: string; kind: AttachmentKind }>,
+): Promise<PersistentFile[]> {
+  const persisted: PersistentFile[] = [];
+  try {
+    for (const item of items) {
+      const file = await persistAttachment(item.sourceUri, item.fileName, item.mimeType, item.kind);
+      persisted.push(file);
+    }
+    return persisted;
+  } catch (err) {
+    for (const file of persisted) {
+      await removeLocalAttachment(file.localUri).catch(() => {});
+    }
+    throw err;
   }
 }
 

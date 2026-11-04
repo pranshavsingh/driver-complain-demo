@@ -1,11 +1,16 @@
+import { vi } from 'vitest';
+
 export const documentDirectory = 'file:///mock/documents/';
 
-export async function makeDirectoryAsync(dir: string, options?: any): Promise<void> {}
+export const makeDirectoryAsync = vi.fn(async (_dir: string, _options?: any): Promise<void> => {});
 
-export async function getInfoAsync(fileUri: string): Promise<any> {
-  return { exists: true, size: 1024, isDirectory: false };
-}
+export const getInfoAsync = vi.fn(async (_fileUri: string): Promise<any> => ({
+  exists: true,
+  size: 1024,
+  isDirectory: false,
+}));
 
-export async function copyAsync(options: { from: string; to: string }): Promise<void> {}
+export const copyAsync = vi.fn(async (_options: { from: string; to: string }): Promise<void> => {});
 
-export async function deleteAsync(fileUri: string, options?: any): Promise<void> {}
+export const deleteAsync = vi.fn(async (_fileUri: string, _options?: any): Promise<void> => {});
+

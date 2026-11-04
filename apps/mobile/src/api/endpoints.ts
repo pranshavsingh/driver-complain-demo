@@ -141,7 +141,7 @@ function appendFile(form: FormData, fieldName: string, file: FileToUpload): void
 }
 
 export const complaints = {
-  create: async (input: CreateComplaint, evidence?: EvidenceUpload): Promise<ComplaintPublic> => {
+  create: async (input: CreateComplaint, evidence?: EvidenceUpload, signal?: AbortSignal): Promise<ComplaintPublic> => {
     await warmUpServer();
 
     const form = new FormData();
@@ -164,6 +164,7 @@ export const complaints = {
     return request(ComplaintPublicSchema, '/complaints', {
       method: 'POST',
       body: form,
+      signal,
     });
   },
 

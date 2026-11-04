@@ -49,7 +49,7 @@ describe('SyncService', () => {
 
     // Default file accessible
     vi.mocked(mediaStorage.isFileAccessible).mockResolvedValue(true);
-    vi.mocked(mediaStorage.removeLocalAttachment).mockResolvedValue(true);
+    vi.mocked(mediaStorage.removeLocalAttachment).mockResolvedValue(undefined);
   });
 
   it('synchronizes pending complaints in FIFO order and marks them synced upon server confirmation', async () => {
@@ -210,10 +210,16 @@ describe('SyncService', () => {
     const record = await complaintsRepository.getComplaintById('c-transient-503');
     expect(record?.syncStatus).toBe('FAILED_TRANSIENT');
     expect(record?.retryCount).toBe(1);
+    expect(record?.nextRetryAt).toBeDefined();
 
-    // Queue still holds item for retry
-    const queue = await complaintsRepository.getPendingQueueForUser('driver-1', 10);
-    expect(queue.length).toBe(1);
+    // Immediate queue skips it while backoff is active
+    const queueNow = await complaintsRepository.getPendingQueueForUser('driver-1', 10);
+    expect(queueNow.length).toBe(0);
+
+    // Future queue includes it when backoff time arrives
+    const farFuture = new Date(Date.now() + 600000).toISOString();
+    const queueLater = await complaintsRepository.getPendingQueueForUser('driver-1', 10, undefined, farFuture);
+    expect(queueLater.length).toBe(1);
   });
 
   it('enforces driver account isolation: never synchronizes data belonging to another driver', async () => {
@@ -268,5 +274,236 @@ describe('SyncService', () => {
     const result = await syncService.triggerSync('driver-1');
     expect(result).toBe(false);
     expect(api.complaints.create).not.toHaveBeenCalled();
+  });
+
+  it('never silently loses missing photo attachment: aborts, marks permanent failure, and preserves metadata', async () => {
+    await complaintsRepository.savePendingComplaint({
+      id: 'c-missing-photo',
+      userId: 'driver-1',
+      idempotencyKey: 'idem-missing-photo',
+      title: 'Missing photo complaint',
+      description: 'Photo was deleted from disk by cleaner tool',
+      category: 'BREAKDOWN',
+      priority: 'HIGH',
+      attachments: [
+        {
+          id: 'att-photo',
+          kind: 'PHOTO',
+          localUri: 'file:///persistent/missing_bumper.jpg',
+          fileName: 'missing_bumper.jpg',
+          mimeType: 'image/jpeg',
+          fileSize: 1024,
+        },
+      ],
+    });
+
+    vi.mocked(mediaStorage.isFileAccessible).mockResolvedValueOnce(false);
+
+    syncService.setActiveUser({ id: 'driver-1' } as any);
+    const result = await syncService.triggerSync('driver-1');
+    expect(result).toBe(true);
+
+    // Complaint must NOT have been submitted to API
+    expect(api.complaints.create).not.toHaveBeenCalled();
+
+    // Record marked as FAILED_PERMANENT requiring attention, with reason explaining missing file
+    const record = await complaintsRepository.getComplaintById('c-missing-photo');
+    expect(record?.syncStatus).toBe('FAILED_PERMANENT');
+    expect(record?.lastFailureReason).toContain('Missing local attachment file: missing_bumper.jpg (PHOTO)');
+    // Metadata preserved
+    expect(record?.attachments.length).toBe(1);
+    expect(record?.attachments[0]?.fileName).toBe('missing_bumper.jpg');
+
+    // Never deleted local attachments
+    expect(mediaStorage.removeLocalAttachment).not.toHaveBeenCalled();
+  });
+
+  it('never silently loses missing voice attachment: aborts, marks permanent failure, and preserves metadata', async () => {
+    await complaintsRepository.savePendingComplaint({
+      id: 'c-missing-voice',
+      userId: 'driver-1',
+      idempotencyKey: 'idem-missing-voice',
+      title: 'Missing voice note',
+      description: 'Voice note was removed',
+      category: 'BREAKDOWN',
+      priority: 'MEDIUM',
+      attachments: [
+        {
+          id: 'att-voice',
+          kind: 'VOICE',
+          localUri: 'file:///persistent/missing_audio.m4a',
+          fileName: 'missing_audio.m4a',
+          mimeType: 'audio/m4a',
+          fileSize: 4096,
+        },
+      ],
+    });
+
+    vi.mocked(mediaStorage.isFileAccessible).mockResolvedValueOnce(false);
+
+    syncService.setActiveUser({ id: 'driver-1' } as any);
+    await syncService.triggerSync('driver-1');
+
+    expect(api.complaints.create).not.toHaveBeenCalled();
+
+    const record = await complaintsRepository.getComplaintById('c-missing-voice');
+    expect(record?.syncStatus).toBe('FAILED_PERMANENT');
+    expect(record?.lastFailureReason).toContain('Missing local attachment file: missing_audio.m4a (VOICE)');
+    expect(mediaStorage.removeLocalAttachment).not.toHaveBeenCalled();
+  });
+
+  it('never silently loses missing video attachment: aborts, marks permanent failure, and preserves metadata', async () => {
+    await complaintsRepository.savePendingComplaint({
+      id: 'c-missing-video',
+      userId: 'driver-1',
+      idempotencyKey: 'idem-missing-video',
+      title: 'Missing video footage',
+      description: 'Dashcam clip missing',
+      category: 'BREAKDOWN',
+      priority: 'CRITICAL',
+      attachments: [
+        {
+          id: 'att-video',
+          kind: 'VIDEO',
+          localUri: 'file:///persistent/missing_clip.mp4',
+          fileName: 'missing_clip.mp4',
+          mimeType: 'video/mp4',
+          fileSize: 8192,
+        },
+      ],
+    });
+
+    vi.mocked(mediaStorage.isFileAccessible).mockResolvedValueOnce(false);
+
+    syncService.setActiveUser({ id: 'driver-1' } as any);
+    await syncService.triggerSync('driver-1');
+
+    expect(api.complaints.create).not.toHaveBeenCalled();
+
+    const record = await complaintsRepository.getComplaintById('c-missing-video');
+    expect(record?.syncStatus).toBe('FAILED_PERMANENT');
+    expect(record?.lastFailureReason).toContain('Missing local attachment file: missing_clip.mp4 (VIDEO)');
+    expect(mediaStorage.removeLocalAttachment).not.toHaveBeenCalled();
+  });
+
+  it('protects account isolation: logout during in-flight upload resets item to PENDING and preserves files', async () => {
+    await complaintsRepository.savePendingComplaint({
+      id: 'c-logout-midflight',
+      userId: 'driver-1',
+      idempotencyKey: 'idem-logout-test',
+      title: 'In-flight logout test',
+      description: 'Driver logs out before server responds',
+      category: 'BREAKDOWN',
+      priority: 'HIGH',
+      attachments: [
+        {
+          id: 'att-logout',
+          kind: 'PHOTO',
+          localUri: 'file:///persistent/logout_photo.jpg',
+          fileName: 'logout_photo.jpg',
+          mimeType: 'image/jpeg',
+          fileSize: 2048,
+        },
+      ],
+    });
+
+    // Make API take 50ms, during which driver logs out
+    vi.mocked(api.complaints.create).mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      return { id: 'srv-logout-1', complaintNo: 'CMP-LOGOUT-1' } as any;
+    });
+
+    syncService.setActiveUser({ id: 'driver-1' } as any);
+    const syncPromise = syncService.triggerSync('driver-1');
+
+    // Simulate driver logging out while request is in flight
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    syncService.setActiveUser(null);
+
+    await syncPromise;
+
+    // Record MUST NOT be marked SYNCED
+    const record = await complaintsRepository.getComplaintById('c-logout-midflight');
+    expect(record?.syncStatus).toBe('PENDING');
+    expect(record?.serverComplaintId).toBeNull();
+
+    // Attachments MUST NOT be deleted
+    expect(mediaStorage.removeLocalAttachment).not.toHaveBeenCalled();
+  });
+
+  it('protects account isolation: switching accounts during in-flight upload does not cross-contaminate or delete files', async () => {
+    await complaintsRepository.savePendingComplaint({
+      id: 'c-switch-driver1',
+      userId: 'driver-1',
+      idempotencyKey: 'idem-switch-test',
+      title: 'Driver 1 complaint',
+      description: 'Driver 1 submits',
+      category: 'BREAKDOWN',
+      priority: 'HIGH',
+      attachments: [
+        {
+          id: 'att-switch',
+          kind: 'PHOTO',
+          localUri: 'file:///persistent/switch_photo.jpg',
+          fileName: 'switch_photo.jpg',
+          mimeType: 'image/jpeg',
+          fileSize: 2048,
+        },
+      ],
+    });
+
+    vi.mocked(api.complaints.create).mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      return { id: 'srv-switch-1', complaintNo: 'CMP-SWITCH-1' } as any;
+    });
+
+    syncService.setActiveUser({ id: 'driver-1' } as any);
+    const syncPromise = syncService.triggerSync('driver-1');
+
+    // Driver 2 logs in on the same device while Driver 1 upload is in flight
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    syncService.setActiveUser({ id: 'driver-2' } as any);
+
+    await syncPromise;
+
+    // Driver 1's record must remain PENDING for driver 1, not committed or deleted
+    const driver1Record = await complaintsRepository.getComplaintById('c-switch-driver1');
+    expect(driver1Record?.syncStatus).toBe('PENDING');
+    expect(driver1Record?.serverComplaintId).toBeNull();
+    expect(mediaStorage.removeLocalAttachment).not.toHaveBeenCalled();
+
+    // When Driver 1 logs back in later, the original idempotency key and attachments are still intact for safe resumption!
+    expect(driver1Record?.idempotencyKey).toBe('idem-switch-test');
+    expect(driver1Record?.attachments.length).toBe(1);
+  });
+
+  it('respects Retry-After header from server during transient failure and delays retry', async () => {
+    await complaintsRepository.savePendingComplaint({
+      id: 'c-rate-limited',
+      userId: 'driver-1',
+      idempotencyKey: 'idem-rate-limit',
+      title: 'Rate limit test',
+      description: 'Server sends 429 with Retry-After: 90',
+      category: 'BREAKDOWN',
+      priority: 'MEDIUM',
+    });
+
+    const errorWithRetryAfter = new ApiClientError(
+      429,
+      { code: 'RATE_LIMITED', message: 'Too many requests. Please wait.', details: null },
+      90,
+    );
+
+    vi.mocked(api.complaints.create).mockRejectedValueOnce(errorWithRetryAfter);
+
+    syncService.setActiveUser({ id: 'driver-1' } as any);
+    await syncService.triggerSync('driver-1');
+
+    const record = await complaintsRepository.getComplaintById('c-rate-limited');
+    expect(record?.syncStatus).toBe('FAILED_TRANSIENT');
+    expect(record?.nextRetryAt).toBeDefined();
+
+    const retryTime = new Date(record!.nextRetryAt!).getTime();
+    expect(retryTime).toBeGreaterThanOrEqual(Date.now() + 85000);
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createTestDatabase } from '../../test/sqliteTestHelper';
-import { complaintsRepository } from '../complaintsRepository';
+import { complaintsRepository, calculateBackoffMs } from '../complaintsRepository';
 
 describe('ComplaintsRepository', () => {
   it('saves pending complaint and attachments transactionally', async () => {
@@ -286,4 +286,174 @@ describe('ComplaintsRepository', () => {
     expect(counts.failed).toBe(1);
     expect(counts.totalUnsynced).toBe(3);
   });
+
+  it('calculates exponential backoff within expected bounds and jitter factor', () => {
+    // Retry 0: base 5s ± 25% => between ~3.75s and ~6.25s
+    const b0 = calculateBackoffMs(0);
+    expect(b0).toBeGreaterThanOrEqual(3750);
+    expect(b0).toBeLessThanOrEqual(6250);
+
+    // Retry 1: 10s ± 25% => between ~7.5s and ~12.5s
+    const b1 = calculateBackoffMs(1);
+    expect(b1).toBeGreaterThanOrEqual(7500);
+    expect(b1).toBeLessThanOrEqual(12500);
+
+    // High retry capped at maxDelay (300,000 ms)
+    const bHigh = calculateBackoffMs(20);
+    expect(bHigh).toBeLessThanOrEqual(300000);
+  });
+
+  it('schedules next_retry_at on transient failure and respects server Retry-After', async () => {
+    const db = createTestDatabase();
+
+    await complaintsRepository.savePendingComplaint(
+      {
+        id: 'c-retry-after',
+        userId: 'driver-1',
+        idempotencyKey: 'k-ra',
+        title: 'Retry After Test',
+        description: 'Test',
+        category: 'BREAKDOWN',
+        priority: 'MEDIUM',
+      },
+      db,
+    );
+
+    const before = Date.now();
+    // Simulate server 429 with Retry-After: 45
+    await complaintsRepository.recordSyncFailure('c-retry-after', 'Rate limited (429)', false, 45, db);
+    const after = Date.now();
+
+    const record = await complaintsRepository.getComplaintById('c-retry-after', db);
+    expect(record?.nextRetryAt).toBeDefined();
+    const retryTime = new Date(record!.nextRetryAt!).getTime();
+    expect(retryTime).toBeGreaterThanOrEqual(before + 44000);
+    expect(retryTime).toBeLessThanOrEqual(after + 46000);
+  });
+
+  it('getPendingQueueForUser selects only records whose next_retry_at has arrived', async () => {
+    const db = createTestDatabase();
+
+    // Record 1: PENDING (eligible immediately)
+    await complaintsRepository.savePendingComplaint(
+      {
+        id: 'c-elig-1',
+        userId: 'driver-1',
+        idempotencyKey: 'k-elig-1',
+        title: 'Eligible 1',
+        description: 'D',
+        category: 'BREAKDOWN',
+        priority: 'LOW',
+      },
+      db,
+    );
+
+    // Record 2: FAILED_TRANSIENT with next_retry_at in the future (+10 minutes)
+    await complaintsRepository.savePendingComplaint(
+      {
+        id: 'c-future-retry',
+        userId: 'driver-1',
+        idempotencyKey: 'k-fut',
+        title: 'Future retry',
+        description: 'D',
+        category: 'BREAKDOWN',
+        priority: 'LOW',
+      },
+      db,
+    );
+    const futureDate = new Date(Date.now() + 600000).toISOString();
+    db.runSync(
+      `UPDATE pending_complaints SET sync_status = 'FAILED_TRANSIENT', next_retry_at = ? WHERE id = 'c-future-retry'`,
+      [futureDate],
+    );
+
+    // Record 3: FAILED_TRANSIENT with next_retry_at in the past (-1 minute)
+    await complaintsRepository.savePendingComplaint(
+      {
+        id: 'c-past-retry',
+        userId: 'driver-1',
+        idempotencyKey: 'k-past',
+        title: 'Past retry',
+        description: 'D',
+        category: 'BREAKDOWN',
+        priority: 'LOW',
+      },
+      db,
+    );
+    const pastDate = new Date(Date.now() - 60000).toISOString();
+    db.runSync(
+      `UPDATE pending_complaints SET sync_status = 'FAILED_TRANSIENT', next_retry_at = ? WHERE id = 'c-past-retry'`,
+      [pastDate],
+    );
+
+    // Current queue check: should return c-elig-1 and c-past-retry, but NOT c-future-retry
+    const queueNow = await complaintsRepository.getPendingQueueForUser('driver-1', 10, db);
+    const queueIds = queueNow.map((r) => r.id);
+    expect(queueIds).toContain('c-elig-1');
+    expect(queueIds).toContain('c-past-retry');
+    expect(queueIds).not.toContain('c-future-retry');
+
+    // Future queue check (simulating after 15 minutes): c-future-retry is now eligible!
+    const farFuture = new Date(Date.now() + 900000).toISOString();
+    const queueLater = await complaintsRepository.getPendingQueueForUser('driver-1', 10, db, farFuture);
+    const queueLaterIds = queueLater.map((r) => r.id);
+    expect(queueLaterIds).toContain('c-future-retry');
+  });
+
+  it('updateSyncStatus clears next_retry_at when resetting to PENDING', async () => {
+    const db = createTestDatabase();
+
+    await complaintsRepository.savePendingComplaint(
+      {
+        id: 'c-clear-retry',
+        userId: 'driver-1',
+        idempotencyKey: 'k-clear',
+        title: 'Clear retry test',
+        description: 'D',
+        category: 'BREAKDOWN',
+        priority: 'LOW',
+      },
+      db,
+    );
+
+    await complaintsRepository.recordSyncFailure('c-clear-retry', 'Transient error', false, 60, db);
+    let record = await complaintsRepository.getComplaintById('c-clear-retry', db);
+    expect(record?.nextRetryAt).not.toBeNull();
+
+    // Reset to PENDING
+    await complaintsRepository.updateSyncStatus('c-clear-retry', 'PENDING', null, db);
+    record = await complaintsRepository.getComplaintById('c-clear-retry', db);
+    expect(record?.syncStatus).toBe('PENDING');
+    expect(record?.nextRetryAt).toBeNull();
+  });
+
+  it('resetAuthExpiredComplaints recovers session-expired items back to PENDING', async () => {
+    const db = createTestDatabase();
+
+    await complaintsRepository.savePendingComplaint(
+      {
+        id: 'c-auth-exp',
+        userId: 'driver-1',
+        idempotencyKey: 'k-exp',
+        title: 'Session expired test',
+        description: 'D',
+        category: 'BREAKDOWN',
+        priority: 'LOW',
+      },
+      db,
+    );
+
+    await complaintsRepository.updateSyncStatus('c-auth-exp', 'FAILED_TRANSIENT', 'Session expired. Please log in again.', db);
+    let record = await complaintsRepository.getComplaintById('c-auth-exp', db);
+    expect(record?.syncStatus).toBe('FAILED_TRANSIENT');
+
+    // When driver logs back in, resetAuthExpiredComplaints is invoked
+    const recovered = await complaintsRepository.resetAuthExpiredComplaints('driver-1', db);
+    expect(recovered).toBe(1);
+
+    record = await complaintsRepository.getComplaintById('c-auth-exp', db);
+    expect(record?.syncStatus).toBe('PENDING');
+    expect(record?.nextRetryAt).toBeNull();
+  });
 });
+
