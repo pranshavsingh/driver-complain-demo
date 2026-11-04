@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll, vi } from 'vitest';
 import { prisma } from '../../../lib/prisma';
 import { hashPin } from '../../../lib/password';
 import { create } from '../complaints.service';
@@ -26,47 +26,93 @@ vi.mock('../../../lib/cloudinary', () => {
   };
 });
 
+const defaultUploadBufferMock = vi.mocked(uploadBuffer).getMockImplementation();
+
 vi.mock('../../../lib/transcribe', () => ({
   transcribeAudio: vi.fn(async () => null),
   transcribeAudioFromUrl: vi.fn(async () => null),
   translateText: vi.fn(async (text: string) => text),
 }));
 
+/**
+ * ConcurrencyBarrier
+ * Coordinates concurrent test requests deterministically.
+ * Fails closed: if the deadline expires before all expected participants arrive,
+ * it rejects with a clear error indicating participant count vs target count.
+ */
 class ConcurrencyBarrier {
   private count = 0;
   private readonly target: number;
+  private readonly timeoutMs: number;
   private releaseBarrier!: () => void;
+  private rejectBarrier!: (reason: Error) => void;
   private readonly barrierPromise: Promise<void>;
   private timeoutId: ReturnType<typeof setTimeout> | null = null;
+  private settled = false;
 
   constructor(target = 2, timeoutMs = 15000) {
     this.target = target;
-    this.barrierPromise = new Promise<void>((resolve) => {
-      this.releaseBarrier = resolve;
+    this.timeoutMs = timeoutMs;
+    this.barrierPromise = new Promise<void>((resolve, reject) => {
+      this.releaseBarrier = () => {
+        if (!this.settled) {
+          this.settled = true;
+          this.clearTimer();
+          resolve();
+        }
+      };
+      this.rejectBarrier = (err: Error) => {
+        if (!this.settled) {
+          this.settled = true;
+          this.clearTimer();
+          reject(err);
+        }
+      };
       this.timeoutId = setTimeout(() => {
-        resolve(); // Never hang test suite
+        this.rejectBarrier(
+          new Error(
+            `ConcurrencyBarrier timed out: only ${this.count} of ${this.target} participants arrived within ${this.timeoutMs}ms`,
+          ),
+        );
       }, timeoutMs);
     });
+
+    // Attach catch handler to prevent unhandled rejection warnings if a test fails before awaiting
+    this.barrierPromise.catch(() => {});
+  }
+
+  private clearTimer(): void {
+    if (this.timeoutId) {
+      clearTimeout(this.timeoutId);
+      this.timeoutId = null;
+    }
   }
 
   async arriveAndAwait(): Promise<void> {
     this.count++;
     if (this.count >= this.target) {
-      if (this.timeoutId) {
-        clearTimeout(this.timeoutId);
-        this.timeoutId = null;
-      }
       this.releaseBarrier();
     }
     return this.barrierPromise;
   }
 
   release(): void {
-    if (this.timeoutId) {
-      clearTimeout(this.timeoutId);
-      this.timeoutId = null;
-    }
     this.releaseBarrier();
+  }
+
+  cleanup(): void {
+    this.clearTimer();
+    if (!this.settled) {
+      this.releaseBarrier();
+    }
+  }
+
+  get participantCount(): number {
+    return this.count;
+  }
+
+  get targetCount(): number {
+    return this.target;
   }
 }
 
@@ -132,10 +178,61 @@ beforeAll(async () => {
 
 beforeEach(cleanup);
 
+afterEach(() => {
+  if (defaultUploadBufferMock) {
+    vi.mocked(uploadBuffer).mockImplementation(defaultUploadBufferMock);
+  }
+});
+
 afterAll(async () => {
   await cleanup();
   await prisma.driver.deleteMany({ where: { userId: { in: [driver1UserId, driver2UserId].filter(Boolean) } } });
   await prisma.user.deleteMany({ where: { id: { in: [driver1UserId, driver2UserId, adminUserId].filter(Boolean) } } });
+});
+
+describe('ConcurrencyBarrier Unit Tests', () => {
+  it('fails closed: rejects with clear error when a participant is missing and timeout expires', async () => {
+    const barrier = new ConcurrencyBarrier(2, 50);
+    // Only 1 participant arrives, target is 2
+    const arrivePromise = barrier.arriveAndAwait();
+    await expect(arrivePromise).rejects.toThrow(
+      'ConcurrencyBarrier timed out: only 1 of 2 participants arrived within 50ms',
+    );
+    expect(barrier.participantCount).toBe(1);
+    expect(barrier.targetCount).toBe(2);
+  });
+
+  it('fails closed: rejects when zero participants arrive before timeout', async () => {
+    const barrier = new ConcurrencyBarrier(2, 50);
+    await new Promise((r) => setTimeout(r, 60));
+    await expect(barrier.arriveAndAwait()).rejects.toThrow(
+      /ConcurrencyBarrier timed out: only 0 of 2 participants arrived within 50ms/,
+    );
+  });
+
+  it('resolves successfully when all expected participants arrive before timeout', async () => {
+    const barrier = new ConcurrencyBarrier(3, 500);
+    let resolved = false;
+
+    const p1 = barrier.arriveAndAwait();
+    const p2 = barrier.arriveAndAwait();
+    expect(barrier.participantCount).toBe(2);
+
+    const p3 = barrier.arriveAndAwait();
+    expect(barrier.participantCount).toBe(3);
+
+    await Promise.all([p1, p2, p3]);
+    resolved = true;
+    expect(resolved).toBe(true);
+  });
+
+  it('cleanup clears pending timer and releases barrier safely without throwing', async () => {
+    const barrier = new ConcurrencyBarrier(2, 10000);
+    const p1 = barrier.arriveAndAwait();
+    expect(barrier.participantCount).toBe(1);
+    barrier.cleanup();
+    await expect(p1).resolves.toBeUndefined();
+  });
 });
 
 describe('M6 Server Idempotency Integration Tests', () => {
@@ -349,15 +446,37 @@ describe('M6 Server Idempotency Integration Tests', () => {
       },
     };
 
-    // Synchronization barrier: holds each request in uploadBuffer until both requests
-    // have completed their Cloudinary upload phase.
+    // Synchronization barriers:
+    // 1. lookupBarrier: holds both requests until both have completed their initial idempotency lookup.
+    // 2. uploadBarrier: holds both requests in uploadBuffer until both have completed Cloudinary upload.
+    const lookupBarrier = new ConcurrencyBarrier(2);
     const uploadBarrier = new ConcurrencyBarrier(2);
-    const uploadedAssets: string[] = [];
 
-    // Intercept uploadBuffer to record uploaded assets and synchronize at the barrier
+    const lookupResults: Array<{ args: any; result: any }> = [];
+    const originalFindUnique = prisma.complaint.findUnique;
+    prisma.complaint.findUnique = (async (args: any) => {
+      const result = await originalFindUnique(args);
+      // Synchronize only the initial idempotency check for this test's key
+      if (
+        args?.where?.driverId_idempotencyKey?.idempotencyKey === key &&
+        lookupResults.length < 2
+      ) {
+        lookupResults.push({ args, result });
+        await lookupBarrier.arriveAndAwait();
+      }
+      return result;
+    }) as any;
+
+    const uploadedAssets: string[] = [];
+    let uploadArrivalsBeforeRelease = 0;
     const originalUploadBuffer = vi.mocked(uploadBuffer).getMockImplementation();
+
     vi.mocked(uploadBuffer).mockImplementation(async (buffer, options) => {
-      // Execute the upload to generate a unique asset
+      // 1. Prove both initial lookups completed and returned null before uploads release to DB
+      expect(lookupResults.length).toBe(2);
+      expect(lookupResults[0]?.result).toBeNull();
+      expect(lookupResults[1]?.result).toBeNull();
+
       const result = await (originalUploadBuffer ? originalUploadBuffer(buffer, options) : {
         url: `https://cdn.test/barrier_${Date.now()}_${Math.random()}.jpg`,
         publicId: `test/asset_barrier_${Date.now()}_${Math.random().toString(36).slice(2)}`,
@@ -367,9 +486,15 @@ describe('M6 Server Idempotency Integration Tests', () => {
         durationSec: null,
       });
       uploadedAssets.push(result.publicId);
+      uploadArrivalsBeforeRelease++;
 
-      // Force both requests to finish uploadBuffer before either proceeds to the database transaction!
+      // Force both requests to reach the upload barrier before either proceeds
       await uploadBarrier.arriveAndAwait();
+
+      // Assert exactly two upload calls reached the barrier before allowing either request to continue
+      expect(uploadBarrier.participantCount).toBe(2);
+      expect(uploadArrivalsBeforeRelease).toBe(2);
+
       return result;
     });
 
@@ -404,16 +529,22 @@ describe('M6 Server Idempotency Integration Tests', () => {
       expect(res1.id).toBe(res2.id);
       expect(res1.complaintNo).toBe(res2.complaintNo);
 
-      // 2. Exactly two assets were uploaded before the database transaction
-      expect(uploadedAssets.length).toBe(2);
+      // 2. Both initial idempotency lookups returned no existing complaint
+      expect(lookupResults.length).toBe(2);
+      expect(lookupResults[0]?.result).toBeNull();
+      expect(lookupResults[1]?.result).toBeNull();
 
-      // 3. Exactly one complaint exists in database for this driver and idempotency key
+      // 3. Exactly two assets were uploaded before the database transaction
+      expect(uploadedAssets.length).toBe(2);
+      expect(uploadArrivalsBeforeRelease).toBe(2);
+
+      // 4. Exactly one complaint exists in database for this driver and idempotency key
       const dbCount = await prisma.complaint.count({
         where: { driverId: driver1Id, idempotencyKey: key },
       });
       expect(dbCount).toBe(1);
 
-      // 4. Exactly one winning attachment is persisted
+      // 5. Exactly one winning attachment is persisted
       const winningComplaint = await prisma.complaint.findUnique({
         where: { id: res1.id },
         include: { attachments: true },
@@ -426,20 +557,20 @@ describe('M6 Server Idempotency Integration Tests', () => {
       const losingAssetPublicId = uploadedAssets.find((id) => id !== winningAssetPublicId)!;
       expect(losingAssetPublicId).toBeDefined();
 
-      // 5. The winning Cloudinary public ID is NEVER passed to deleteAsset
+      // 6. The winning Cloudinary public ID is NEVER passed to deleteAsset
       const deletedPublicIds = vi.mocked(deleteAsset).mock.calls.map((call) => call[0]);
       expect(deletedPublicIds).not.toContain(winningAssetPublicId);
 
-      // 6. The losing request's Cloudinary public ID IS passed to deleteAsset
+      // 7. The losing request's Cloudinary public ID IS passed to deleteAsset
       expect(deletedPublicIds).toContain(losingAssetPublicId);
 
-      // 7. No orphaned assets remain: every uploaded asset is either persisted or deleted
+      // 8. No orphaned assets remain: every uploaded asset is either persisted or deleted
       const allAccountedAssets = [winningAssetPublicId, ...deletedPublicIds];
       for (const assetId of uploadedAssets) {
         expect(allAccountedAssets).toContain(assetId);
       }
 
-      // 8. No duplicate updates or duplicate notifications are created
+      // 9. No duplicate updates or duplicate notifications are created
       const updateCount = await prisma.complaintUpdate.count({
         where: { complaintId: res1.id },
       });
@@ -457,14 +588,16 @@ describe('M6 Server Idempotency Integration Tests', () => {
       const uniqueRecipientIds = new Set(recipientIds);
       expect(recipientIds.length).toBe(uniqueRecipientIds.size);
     } finally {
-      uploadBarrier.release();
+      lookupBarrier.cleanup();
+      uploadBarrier.cleanup();
+      prisma.complaint.findUnique = originalFindUnique;
       if (originalUploadBuffer) {
         vi.mocked(uploadBuffer).mockImplementation(originalUploadBuffer);
       }
     }
   });
 
-  it('winning asset protection: winning transaction persists attachment, concurrent loser compensates only its own asset, and subsequent transaction failure cleans up only its own asset', async () => {
+  it('winning asset protection: winning transaction persists attachment, concurrent loser compensates only its own asset, and subsequent append-update failure cleans up only its own asset', async () => {
     vi.mocked(deleteAsset).mockClear();
     vi.mocked(uploadBuffer).mockClear();
 
@@ -493,6 +626,9 @@ describe('M6 Server Idempotency Integration Tests', () => {
       await uploadBarrier.arriveAndAwait();
       return asset;
     });
+
+    let originalFindFirst = prisma.complaint.findFirst;
+    let failTxSpy: any;
 
     try {
       const [resA, resB] = await Promise.all([
@@ -537,12 +673,13 @@ describe('M6 Server Idempotency Integration Tests', () => {
       const losingAssetId = deletedAfterRace[0];
       expect(losingAssetId).not.toBe(winningAssetId);
 
-      // Now verify transaction failure on an append update or new complaint:
-      // Ensure that a failed transaction cleans up ONLY its own uploaded asset,
+      // Now verify subsequent failure on the append-update path:
+      // An append update arrives within 5 minutes with the same driver, category, and title,
+      // without an idempotencyKey, matching the winning complaint.
+      // Ensure that a failed transaction during append cleans up ONLY its own uploaded asset,
       // and never touches the winning asset!
       vi.mocked(deleteAsset).mockClear();
 
-      // Mock transaction failure specifically for the next create
       const failedAssetPublicId = `test/protect_asset_failed_${Date.now()}`;
       vi.mocked(uploadBuffer).mockImplementationOnce(async () => ({
         url: `https://cdn.test/${failedAssetPublicId}.jpg`,
@@ -553,44 +690,76 @@ describe('M6 Server Idempotency Integration Tests', () => {
         durationSec: null,
       }));
 
-      // Simulate append update failure
-      const failTxSpy = vi.spyOn(prisma, '$transaction').mockRejectedValueOnce(
-        new Error('Simulated atomic failure during append'),
-      );
+      // Confirm the failed operation follows the intended append-update path:
+      // Intercept prisma.complaint.findFirst to prove it matched the existing open winning complaint
+      originalFindFirst = prisma.complaint.findFirst;
+      let foundMatchingOpenComplaint: any = null;
+      prisma.complaint.findFirst = (async (args: any) => {
+        const found = await originalFindFirst(args);
+        if (args?.where?.title?.equals === complaintInDb.title && args?.where?.category === complaintInDb.category) {
+          foundMatchingOpenComplaint = found;
+        }
+        return found;
+      }) as any;
 
-      try {
-        await expect(
-          create(
-            driver1UserId,
-            {
-              title: 'Append update to winning complaint',
-              description: 'Additional notes on broken part',
-              category: 'BREAKDOWN',
-              priority: 'HIGH',
-              vehicleId: complaintInDb.vehicleId ?? undefined,
+      // Track that the append transaction branch is indeed entered and targets complaintInDb.id
+      let appendTransactionInvoked = false;
+      let targetedComplaintId: string | null = null;
+      failTxSpy = vi.spyOn(prisma, '$transaction').mockImplementationOnce(async (cb: any, _options: any) => {
+        if (typeof cb === 'function') {
+          appendTransactionInvoked = true;
+          // Invoke the callback with an intercepted tx to capture the complaintId targeted by the append
+          const mockTx = {
+            complaintAttachment: {
+              createMany: vi.fn(async ({ data }: any) => {
+                targetedComplaintId = data[0]?.complaintId;
+                throw new Error('Simulated atomic failure during append update');
+              }),
             },
-            {
-              PHOTO: { buffer: Buffer.from('failed-part-data'), originalName: 'broken_gear.jpg' },
-            },
-          ),
-        ).rejects.toThrow(/Simulated atomic failure during append/);
+          };
+          return cb(mockTx);
+        }
+        throw new Error('Simulated atomic failure during append update');
+      });
 
-        // Assert that deleteAsset was called for the failed asset ONLY
-        expect(deleteAsset).toHaveBeenCalledWith(failedAssetPublicId, 'image');
-        expect(deleteAsset).not.toHaveBeenCalledWith(winningAssetId, expect.anything());
+      await expect(
+        create(
+          driver1UserId,
+          {
+            title: complaintInDb.title, // Matches existing open complaint title
+            description: 'Additional notes on broken part during append update',
+            category: complaintInDb.category, // Matches existing open complaint category
+            priority: 'HIGH',
+            vehicleId: complaintInDb.vehicleId ?? undefined,
+            // Explicitly no idempotencyKey so it exercises the 5-minute append-update deduplication path
+          },
+          {
+            PHOTO: { buffer: Buffer.from('failed-part-data'), originalName: 'broken_gear.jpg' },
+          },
+        ),
+      ).rejects.toThrow(/Simulated atomic failure during append update/);
 
-        // Assert winning complaint and its asset are STILL intact in the database!
-        const recheckedComplaint = await prisma.complaint.findUniqueOrThrow({
-          where: { id: resA.id },
-          include: { attachments: true },
-        });
-        expect(recheckedComplaint.attachments.length).toBe(1);
-        expect(recheckedComplaint.attachments[0]!.publicId).toBe(winningAssetId);
-      } finally {
-        failTxSpy.mockRestore();
-      }
+      // Confirm that the append-update path was indeed matched and followed:
+      expect(foundMatchingOpenComplaint).not.toBeNull();
+      expect(foundMatchingOpenComplaint?.id).toBe(complaintInDb.id);
+      expect(appendTransactionInvoked).toBe(true);
+      expect(targetedComplaintId).toBe(complaintInDb.id);
+
+      // Assert that deleteAsset was called for the failed asset ONLY
+      expect(deleteAsset).toHaveBeenCalledWith(failedAssetPublicId, 'image');
+      expect(deleteAsset).not.toHaveBeenCalledWith(winningAssetId, expect.anything());
+
+      // Assert winning complaint and its asset are STILL intact in PostgreSQL!
+      const recheckedComplaint = await prisma.complaint.findUniqueOrThrow({
+        where: { id: resA.id },
+        include: { attachments: true },
+      });
+      expect(recheckedComplaint.attachments.length).toBe(1);
+      expect(recheckedComplaint.attachments[0]!.publicId).toBe(winningAssetId);
     } finally {
-      uploadBarrier.release();
+      uploadBarrier.cleanup();
+      prisma.complaint.findFirst = originalFindFirst;
+      if (failTxSpy) failTxSpy.mockRestore();
       if (originalUploadBuffer) {
         vi.mocked(uploadBuffer).mockImplementation(originalUploadBuffer);
       }
@@ -610,7 +779,7 @@ describe('M6 Server Idempotency Integration Tests', () => {
     });
     expect(initial.id).toBeDefined();
 
-    // Concurrent append attempt: simulate transaction failure on append
+    // Concurrent append attempt: simulate transaction failure on append matching initial title & category
     const txSpy = vi.spyOn(prisma, '$transaction').mockRejectedValueOnce(new Error('Append transaction deadlocked'));
     const evidence = {
       PHOTO: {
@@ -624,9 +793,9 @@ describe('M6 Server Idempotency Integration Tests', () => {
         create(
           driver1UserId,
           {
-            title: 'Transmission noise update',
+            title: initial.title,
             description: 'Now grinding in 4th gear as well',
-            category: 'BREAKDOWN',
+            category: initial.category,
             priority: 'HIGH',
             vehicleId: initial.vehicleId ?? undefined,
           },
