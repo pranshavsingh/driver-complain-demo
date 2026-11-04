@@ -1,7 +1,7 @@
-// Increase libuv thread pool BEFORE anything else — bcrypt, DNS, and fs all use it.
-// Default is 4; under load, bcrypt verifyPin() calls saturate the pool.
+// Configure libuv thread pool default BEFORE anything else — bcrypt, DNS, and fs use it.
+// Tuned to 2 to match container 2-CPU allocation for native @node-rs/bcrypt operations.
 if (!process.env.UV_THREADPOOL_SIZE) {
-  process.env.UV_THREADPOOL_SIZE = '16';
+  process.env.UV_THREADPOOL_SIZE = '2';
 }
 
 import { createServer } from 'node:http';

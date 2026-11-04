@@ -11,7 +11,7 @@ This document provides a comprehensive specification of all environment variable
 | `NODE_ENV` | Enum (`development` \| `test` \| `production`) | `development` | **Yes** | Defines Node runtime mode. When `production`, stack traces are hidden and security headers are enforced. |
 | `PORT` | Integer | `4000` | No | Port on which the HTTP server listens. |
 | `LOG_LEVEL` | Enum (`fatal` \| `error` \| `warn` \| `info` \| `debug` \| `trace` \| `silent`) | `info` | No | Log output verbosity level for Pino logger. |
-| `UV_THREADPOOL_SIZE` | Integer | `16` | No | Libuv worker thread pool size for bcrypt, DNS, and filesystem I/O. |
+| `UV_THREADPOOL_SIZE` | Integer | `2` | No | Libuv worker thread pool size for bcrypt, DNS, and filesystem I/O. Tuned to 2 to match container 2-CPU allocation for native @node-rs/bcrypt. |
 
 ---
 

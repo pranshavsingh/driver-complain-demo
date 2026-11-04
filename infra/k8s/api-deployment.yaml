@@ -33,7 +33,7 @@ spec:
             - name: PORT
               value: '4000'
             - name: UV_THREADPOOL_SIZE
-              value: '16'
+              value: '2'
             - name: REQUIRE_REDIS_READY
               value: 'true'
             - name: DATABASE_URL
@@ -64,10 +64,10 @@ spec:
                   optional: true
           resources:
             requests:
-              cpu: 250m
+              cpu: 500m
               memory: 512Mi
             limits:
-              cpu: '1'
+              cpu: '2'
               memory: 1Gi
           readinessProbe:
             httpGet:

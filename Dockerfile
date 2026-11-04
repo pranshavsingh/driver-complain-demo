@@ -55,6 +55,7 @@ WORKDIR /app
 # Production environment configurations
 ENV NODE_ENV=production
 ENV PORT=4000
+ENV UV_THREADPOOL_SIZE=2
 
 # Copy node_modules and built packages from builder stage
 COPY --from=builder /app/package.json ./package.json
