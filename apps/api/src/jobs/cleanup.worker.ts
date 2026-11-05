@@ -12,6 +12,7 @@ import { logger } from '../lib/logger';
 import { prisma } from '../lib/prisma';
 import { tryAdvisoryXactLock, ADVISORY_LOCK_IDS } from '../lib/advisory-lock';
 import { QUEUES } from './queue';
+import { instrumentWorker } from './queue-metrics';
 
 const require = createRequire(import.meta.url);
 
@@ -79,6 +80,8 @@ export async function startCleanupScheduler(): Promise<void> {
         },
         { connection: redis, concurrency: 1 },
       );
+
+      instrumentWorker(worker, QUEUES.TOKEN_CLEANUP);
 
       worker.on('failed', (_job: unknown, err: unknown) => {
         const msg = err instanceof Error ? err.message : String(err);

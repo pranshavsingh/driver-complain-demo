@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { env } from '../config/env';
 import { logger } from './logger';
+import { dbUpGauge, dbQueryDurationSeconds } from './metrics';
 
 /**
  * Reuse a single PrismaClient across hot-reloads in dev; a fresh one per process
@@ -73,24 +74,39 @@ export async function withDbRetry<T>(fn: () => Promise<T>, maxRetries = 3): Prom
   }
 }
 
+/**
+ * NOTE ON PRISMA CONNECTION POOL METRICS:
+ * Prisma Client executes queries using an internal compiled Rust query engine.
+ * The Rust engine does not export active/idle/waiting pool metrics to JavaScript
+ * runtime without previewFeatures metrics (which emits raw Prometheus text rather
+ * than programmatic counters).
+ * Furthermore, in this architecture, PgBouncer (infra/pgbouncer.ini) acts as the
+ * true transaction-pooling proxy. Recommended production pool instrumentation
+ * is the standard pgbouncer_exporter scraping SHOW POOLS and SHOW STATS.
+ */
 const extendedPrisma = basePrisma.$extends({
   query: {
     $allModels: {
       async $allOperations({ model, operation, args, query }) {
         return withDbRetry(async () => {
-          const t0 = Date.now();
-          if (process.env.NODE_ENV === 'test') {
-             console.log(`[${new Date().toISOString()}] [PRISMA] ${model}.${operation} START`);
-          }
+          const start = process.hrtime();
           try {
             const res = await query(args);
-            if (process.env.NODE_ENV === 'test') {
-               console.log(`[${new Date().toISOString()}] [PRISMA] ${model}.${operation} SUCCESS (${Date.now() - t0}ms)`);
-            }
+            const [seconds, nanoseconds] = process.hrtime(start);
+            dbQueryDurationSeconds.observe(
+              { model: model || 'raw', operation: operation || 'unknown' },
+              seconds + nanoseconds / 1e9,
+            );
+            dbUpGauge.set(1);
             return res;
           } catch (e: any) {
-            if (process.env.NODE_ENV === 'test') {
-               console.log(`[${new Date().toISOString()}] [PRISMA] ${model}.${operation} ERROR: ${e?.message} (${Date.now() - t0}ms)`);
+            const [seconds, nanoseconds] = process.hrtime(start);
+            dbQueryDurationSeconds.observe(
+              { model: model || 'raw', operation: operation || 'unknown' },
+              seconds + nanoseconds / 1e9,
+            );
+            if (isConnectionError(e)) {
+              dbUpGauge.set(0);
             }
             throw e;
           }
@@ -124,6 +140,3 @@ export const prisma: ExtendedPrismaClient = new Proxy(extendedPrisma, {
     return Reflect.get(target, prop, receiver);
   },
 }) as ExtendedPrismaClient;
-
-
-

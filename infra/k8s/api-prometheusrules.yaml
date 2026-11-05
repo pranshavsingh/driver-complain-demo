@@ -1,0 +1,140 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# PrometheusRule Alerts for Driver Complaint API (SSE Connect+)
+# Standard Prometheus Operator Custom Resource Definition (monitoring.coreos.com/v1)
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: api-prometheus-rules
+  labels:
+    app: driver-complaint-api
+    release: prometheus
+spec:
+  groups:
+    - name: api.rules
+      rules:
+        # ── HTTP Traffic & Availability Alerts ────────────────────────────────
+        - alert: HighHttp5xxErrorRate
+          expr: (sum(rate(sse_connect_http_requests_total{status_code=~"5.."}[5m])) / sum(rate(sse_connect_http_requests_total[5m]))) * 100 > 2
+          for: 5m
+          labels:
+            severity: critical
+            app: driver-complaint-api
+          annotations:
+            summary: "High HTTP 5xx error rate detected on API fleet"
+            description: "HTTP 5xx error rate is {{ $value | printf \"%.2f\" }}% over the last 5 minutes (threshold: > 2%). Check container logs and database connectivity."
+
+        - alert: HighHttpP95Latency
+          expr: histogram_quantile(0.95, sum(rate(sse_connect_http_request_duration_seconds_bucket[5m])) by (le)) > 1.0
+          for: 5m
+          labels:
+            severity: warning
+            app: driver-complaint-api
+          annotations:
+            summary: "API p95 HTTP request latency exceeds 1.0s"
+            description: "95th percentile request latency is {{ $value | printf \"%.2f\" }}s over 5m. Investigate slow endpoints or database lock contention."
+
+        - alert: HighHttpP99Latency
+          expr: histogram_quantile(0.99, sum(rate(sse_connect_http_request_duration_seconds_bucket[5m])) by (le)) > 2.5
+          for: 5m
+          labels:
+            severity: critical
+            app: driver-complaint-api
+          annotations:
+            summary: "API p99 HTTP request latency exceeds 2.5s"
+            description: "99th percentile request latency is {{ $value | printf \"%.2f\" }}s over 5m. Immediate attention required to prevent cascading client timeouts."
+
+        # ── Pod & Compute Resource Health ────────────────────────────────────
+        - alert: PodMemoryPressure
+          expr: (sum(container_memory_working_set_bytes{container="api"}) by (pod) / sum(kube_pod_container_resource_limits{container="api",resource="memory"}) by (pod)) * 100 > 85
+          for: 5m
+          labels:
+            severity: warning
+            app: driver-complaint-api
+          annotations:
+            summary: "Pod memory working set exceeds 85% of limit"
+            description: "Pod {{ $labels.pod }} memory utilization is {{ $value | printf \"%.2f\" }}%. Risk of Kubernetes OOMKilled eviction if memory continues growing."
+
+        - alert: PodRestartLoop
+          expr: rate(kube_pod_container_status_restarts_total{container="api"}[15m]) * 60 > 0.2
+          for: 5m
+          labels:
+            severity: critical
+            app: driver-complaint-api
+          annotations:
+            summary: "API container is restarting frequently (CrashLoopBackOff risk)"
+            description: "Pod {{ $labels.pod }} container is restarting at {{ $value | printf \"%.2f\" }} restarts/minute over 15m. Inspect container termination reasons."
+
+        # ── Redis Health Alerts ──────────────────────────────────────────────
+        - alert: RedisUnavailable
+          expr: sse_connect_redis_up == 0
+          for: 2m
+          labels:
+            severity: critical
+            app: driver-complaint-api
+          annotations:
+            summary: "Redis connectivity is down"
+            description: "API reports Redis connection state as DOWN. Background workers, Socket.IO cross-pod scaling, and caching are degraded."
+
+        # ── BullMQ Queue & Worker Backlog Alerts ─────────────────────────────
+        - alert: BullMQQueueBacklog
+          expr: sse_connect_bullmq_queue_jobs{status="waiting"} > 50
+          for: 5m
+          labels:
+            severity: warning
+            app: driver-complaint-api
+          annotations:
+            summary: "BullMQ queue has high backlog of waiting jobs"
+            description: "Queue {{ $labels.queue }} has {{ $value }} waiting jobs for more than 5 minutes. Check worker concurrency and processing errors."
+
+        - alert: BullMQJobFailureSpike
+          expr: sum(rate(sse_connect_bullmq_job_duration_seconds_count{status="failed"}[5m])) by (queue) * 60 > 5
+          for: 5m
+          labels:
+            severity: warning
+            app: driver-complaint-api
+          annotations:
+            summary: "BullMQ job failure spike on queue {{ $labels.queue }}"
+            description: "Queue {{ $labels.queue }} is experiencing {{ $value | printf \"%.2f\" }} failed jobs per minute. Review worker error logs."
+
+        # ── Database & Prisma Query Health ────────────────────────────────────
+        - alert: DatabaseUnavailable
+          expr: sse_connect_db_up == 0
+          for: 1m
+          labels:
+            severity: critical
+            app: driver-complaint-api
+          annotations:
+            summary: "PostgreSQL database connectivity is down"
+            description: "API instances report database connection failure. Core API functionality is failing."
+
+        - alert: DatabaseQueryLatencyHigh
+          expr: histogram_quantile(0.95, sum(rate(sse_connect_db_query_duration_seconds_bucket[5m])) by (le, model)) > 0.5
+          for: 5m
+          labels:
+            severity: warning
+            app: driver-complaint-api
+          annotations:
+            summary: "Prisma database query p95 latency exceeds 500ms"
+            description: "Queries on model {{ $labels.model }} have p95 latency of {{ $value | printf \"%.2f\" }}s over 5m. Check query execution plans and index usage."
+
+        # ── Transactional Outbox Lag Alerts ──────────────────────────────────
+        - alert: OutboxDispatchLagHigh
+          expr: sse_connect_outbox_dispatch_lag_seconds > 60
+          for: 5m
+          labels:
+            severity: warning
+            app: driver-complaint-api
+          annotations:
+            summary: "Transactional outbox dispatch lag exceeds 60 seconds"
+            description: "Oldest pending outbox event has been waiting for {{ $value | printf \"%.0f\" }} seconds. Dispatcher worker may be delayed."
+
+        - alert: OutboxDispatchStalled
+          expr: sse_connect_outbox_dispatch_lag_seconds > 300
+          for: 2m
+          labels:
+            severity: critical
+            app: driver-complaint-api
+          annotations:
+            summary: "Transactional outbox dispatch is STALLED (> 5 minutes)"
+            description: "Outbox dispatch lag has reached {{ $value | printf \"%.0f\" }} seconds. Events are not being fanned out to downstream consumers."

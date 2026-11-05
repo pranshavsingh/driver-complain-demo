@@ -6,7 +6,7 @@ import { logger } from './lib/logger';
 import { prisma } from './lib/prisma';
 import { pingRedis } from './lib/redis';
 import { Sentry } from './lib/sentry';
-import { register, metricsMiddleware, verifyMetricsAuth } from './lib/metrics';
+import { register, metricsMiddleware, verifyMetricsAuth, collectSystemMetrics } from './lib/metrics';
 import { requestId } from './middleware/request-id';
 import { apiRateLimiter } from './middleware/rate-limit';
 import { notFound } from './middleware/not-found';
@@ -113,6 +113,7 @@ export function createApp(): Express {
   // Prometheus Metrics scrape endpoint (protected)
   app.get('/metrics', verifyMetricsAuth, async (_req, res) => {
     try {
+      await collectSystemMetrics();
       res.set('Content-Type', register.contentType);
       res.end(await register.metrics());
     } catch (err) {

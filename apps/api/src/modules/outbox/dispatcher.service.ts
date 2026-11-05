@@ -2,6 +2,7 @@ import { prisma } from '../../lib/prisma';
 import { logger } from '../../lib/logger';
 import { prepareOutboxDispatch } from './outbox.service';
 import { OutboxStatus } from './outbox.types';
+import { recordOutboxDispatch } from './outbox.metrics';
 
 let dispatcherInterval: NodeJS.Timeout | null = null;
 let isDispatching = false;
@@ -35,7 +36,9 @@ export async function dispatchPendingOutboxEvents(batchSize = 50): Promise<{
         const res = await prepareOutboxDispatch(evt.id);
         dispatchedCount++;
         intentsCreated += res.intentsCreated;
+        recordOutboxDispatch('success', 1);
       } catch (err) {
+        recordOutboxDispatch('failure', 1);
         logger.error({ err, outboxId: evt.id }, 'Failed to prepare outbox dispatch');
       }
     }

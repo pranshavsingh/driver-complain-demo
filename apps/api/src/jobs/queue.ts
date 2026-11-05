@@ -19,6 +19,11 @@ export interface GenericQueue {
 
 const queues = new Map<string, GenericQueue>();
 
+/** Access all currently registered queue instances for metrics collection. */
+export function getRegisteredQueues(): Map<string, GenericQueue> {
+  return queues;
+}
+
 /** Lazily create / reuse a named queue. Returns null when Redis is unavailable. */
 async function getQueue(name: string): Promise<GenericQueue | null> {
   if (!redis) return null;
