@@ -1,5 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
-import type { AuthTokens } from '@driver-complaint/shared-types';
+import type { AuthTokens, UserPublic } from '@driver-complaint/shared-types';
 
 /**
  * Token storage for the driver's session.
@@ -15,6 +15,7 @@ import type { AuthTokens } from '@driver-complaint/shared-types';
  * logout removes the stored token rather than only forgetting it in memory.
  */
 const REFRESH_KEY = 'dc.refreshToken';
+const USER_KEY = 'dc.cachedUser';
 
 let accessToken: string | null = null;
 /**
@@ -66,8 +67,27 @@ export async function clearTokens(): Promise<void> {
   refreshToken = null;
   try {
     await SecureStore.deleteItemAsync(REFRESH_KEY);
+    await SecureStore.deleteItemAsync(USER_KEY);
   } catch {
     // Nothing recoverable — the in-memory copies are already gone.
+  }
+}
+
+export async function getCachedUser(): Promise<UserPublic | null> {
+  try {
+    const raw = await SecureStore.getItemAsync(USER_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as UserPublic;
+  } catch {
+    return null;
+  }
+}
+
+export async function setCachedUser(user: UserPublic): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(USER_KEY, JSON.stringify(user));
+  } catch {
+    // Graceful fallback
   }
 }
 

@@ -1,5 +1,6 @@
-import { useCallback, useRef, useState, type ReactElement } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   FlatList,
   Pressable,
@@ -11,7 +12,8 @@ import {
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import type { ComplaintPublic, ComplaintStatus } from '@driver-complaint/shared-types';
+import NetInfo from '@react-native-community/netinfo';
+import type { ComplaintPublic, ComplaintStatus, Priority } from '@driver-complaint/shared-types';
 import * as api from '../../../src/api/endpoints';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { PriorityBadge, StatusBadge } from '../../../src/components/Badges';
@@ -22,6 +24,11 @@ import { EmptyState } from '../../../src/components/ScreenState';
 import { useApiResource } from '../../../src/hooks/useApiResource';
 import { formatDateTime } from '../../../src/lib/format';
 import { SkeletonCardList } from '../../../src/components/SkeletonLoader';
+import {
+  complaintsRepository,
+  type PendingComplaintRecord,
+} from '../../../src/db/complaintsRepository';
+import { syncService } from '../../../src/sync/syncService';
 import { fontSize, radius, spacing } from '../../../src/theme';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -38,14 +45,65 @@ const STATUS_FILTERS: { label: string; value: ComplaintStatus | 'ALL' }[] = [
 
 export default function ComplaintHistoryScreen(): ReactElement {
   const insets = useSafeAreaInsets();
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
   const [pageSize, setPageSize] = useState(PAGE_STEP);
   const [statusFilter, setStatusFilter] = useState<ComplaintStatus | 'ALL'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
+  const [localComplaints, setLocalComplaints] = useState<PendingComplaintRecord[]>([]);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [isOnline, setIsOnline] = useState(true);
 
   const complaints = useApiResource(`complaints:mine:${String(pageSize)}`, () =>
     api.complaints.mine(1, pageSize),
   );
+
+  const loadLocalComplaints = useCallback(async (): Promise<void> => {
+    if (!user) {
+      setLocalComplaints([]);
+      return;
+    }
+    try {
+      const records = await complaintsRepository.getDisplayComplaintsForUser(user.id);
+      // Only keep unsynced ones in the local section so they don't duplicate server records
+      const unsynced = records.filter((r) => r.syncStatus !== 'SYNCED');
+      setLocalComplaints(unsynced);
+    } catch {
+      // Local DB read graceful fallback
+    }
+  }, [user]);
+
+  // Initial and focus load of local complaints
+  useEffect(() => {
+    void loadLocalComplaints();
+  }, [loadLocalComplaints]);
+
+  // Listen to network status changes
+  useEffect(() => {
+    const unsub = NetInfo.addEventListener((state) => {
+      setIsOnline(Boolean(state.isConnected && state.isInternetReachable !== false));
+    });
+    return () => unsub();
+  }, []);
+
+  // Subscribe to syncService notifications
+  useEffect(() => {
+    const unsub = syncService.addListener((event) => {
+      if (user && event.userId === user.id) {
+        if (event.type === 'SYNC_STARTED') {
+          setIsSyncing(true);
+        } else if (event.type === 'SYNC_COMPLETED' || event.type === 'SYNC_FAILED') {
+          setIsSyncing(false);
+          void loadLocalComplaints();
+          if (event.type === 'SYNC_COMPLETED') {
+            void complaints.reload();
+          }
+        } else {
+          void loadLocalComplaints();
+        }
+      }
+    });
+    return () => unsub();
+  }, [user, complaints, loadLocalComplaints]);
 
   const reloadComplaints = complaints.reload;
   const firstFocus = useRef(true);
@@ -55,9 +113,32 @@ export default function ComplaintHistoryScreen(): ReactElement {
         firstFocus.current = false;
         return;
       }
+      void loadLocalComplaints();
       reloadComplaints();
-    }, [reloadComplaints]),
+    }, [reloadComplaints, loadLocalComplaints]),
   );
+
+  const handleManualSync = (): void => {
+    if (!user) return;
+    setIsSyncing(true);
+    void syncService.triggerSync(user.id).finally(() => {
+      setIsSyncing(false);
+      void loadLocalComplaints();
+    });
+  };
+
+  const handleRetrySingle = (complaintId: string): void => {
+    if (!user) return;
+    setIsSyncing(true);
+    // Reset status to PENDING and trigger sync
+    void complaintsRepository
+      .retryComplaint(complaintId)
+      .then(() => syncService.triggerSync(user.id))
+      .finally(() => {
+        setIsSyncing(false);
+        void loadLocalComplaints();
+      });
+  };
 
   const confirmSignOut = (): void => {
     Alert.alert('Sign out?', 'You will need your employee ID and PIN to sign back in.', [
@@ -73,9 +154,21 @@ export default function ComplaintHistoryScreen(): ReactElement {
   };
 
   const rawRows = complaints.data?.data ?? [];
-  const total = complaints.data?.meta.total ?? 0;
+  const serverTotal = complaints.data?.meta.total ?? 0;
+  const totalCount = serverTotal + localComplaints.length;
 
-  const filteredRows = rawRows.filter((item) => {
+  const filteredLocalRows = localComplaints.filter((item) => {
+    if (statusFilter !== 'ALL' && statusFilter !== 'NEW') return false;
+    if (searchQuery.trim() !== '') {
+      const q = searchQuery.toLowerCase();
+      const titleMatch = item.title.toLowerCase().includes(q);
+      const descMatch = item.description.toLowerCase().includes(q);
+      return titleMatch || descMatch;
+    }
+    return true;
+  });
+
+  const filteredServerRows = rawRows.filter((item) => {
     if (statusFilter !== 'ALL' && item.status !== statusFilter) return false;
     if (searchQuery.trim() !== '') {
       const q = searchQuery.toLowerCase();
@@ -86,8 +179,10 @@ export default function ComplaintHistoryScreen(): ReactElement {
     return true;
   });
 
-  const canLoadMore = rawRows.length < total && pageSize < MAX_PAGE_SIZE;
-  const cappedOut = rawRows.length < total && pageSize >= MAX_PAGE_SIZE;
+  const canLoadMore = rawRows.length < serverTotal && pageSize < MAX_PAGE_SIZE;
+  const cappedOut = rawRows.length < serverTotal && pageSize >= MAX_PAGE_SIZE;
+
+  const unsyncedCount = localComplaints.length;
 
   return (
     <View style={styles.screen}>
@@ -96,15 +191,63 @@ export default function ComplaintHistoryScreen(): ReactElement {
         <View style={styles.headerLeft}>
           <Text style={styles.pageTitle}>Complaint History</Text>
           <View style={styles.badgeCount}>
-            <Text style={styles.badgeCountText}>{total}</Text>
+            <Text style={styles.badgeCountText}>{totalCount}</Text>
           </View>
         </View>
 
-        <Pressable onPress={confirmSignOut} style={styles.logoutButton} accessibilityLabel="Sign out">
+        <Pressable
+          onPress={confirmSignOut}
+          style={styles.logoutButton}
+          accessibilityLabel="Sign out"
+          accessibilityRole="button"
+        >
           <Ionicons name="log-out-outline" size={20} color="#DC2626" />
           <Text style={styles.logoutText}>Exit</Text>
         </Pressable>
       </View>
+
+      {/* Sync Status Banner */}
+      {unsyncedCount > 0 ? (
+        <View style={styles.syncBanner}>
+          <View style={styles.syncBannerLeft}>
+            <Ionicons
+              name={isSyncing ? 'sync' : isOnline ? 'cloud-upload-outline' : 'cloud-offline-outline'}
+              size={22}
+              color="#92400E"
+            />
+            <View style={{ marginLeft: 8, flex: 1 }}>
+              <Text style={styles.syncBannerTitle}>
+                {unsyncedCount === 1
+                  ? '1 complaint waiting to sync'
+                  : `${String(unsyncedCount)} complaints waiting to sync`}
+              </Text>
+              <Text style={styles.syncBannerSubtitle}>
+                {!isOnline
+                  ? 'Offline — will upload automatically when connected'
+                  : isSyncing
+                    ? 'Syncing in background…'
+                    : 'Tap to upload now'}
+              </Text>
+            </View>
+          </View>
+          <Pressable
+            style={[styles.syncNowButton, isSyncing && styles.syncNowButtonDisabled]}
+            onPress={handleManualSync}
+            disabled={isSyncing}
+            accessibilityLabel="Sync now"
+            accessibilityRole="button"
+          >
+            {isSyncing ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <>
+                <Ionicons name="refresh" size={16} color="#FFFFFF" style={{ marginRight: 4 }} />
+                <Text style={styles.syncNowButtonText}>Sync</Text>
+              </>
+            )}
+          </Pressable>
+        </View>
+      ) : null}
 
       {/* Filter and Search Bar */}
       <View style={styles.filterSection}>
@@ -146,27 +289,35 @@ export default function ComplaintHistoryScreen(): ReactElement {
         />
       </View>
 
-      {complaints.error ? (
+      {complaints.error && filteredLocalRows.length === 0 ? (
         <ErrorNotice error={complaints.error} onRetry={complaints.reload} />
       ) : null}
 
       <FlatList
-        data={filteredRows}
+        data={[...filteredLocalRows, ...filteredServerRows]}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         refreshControl={
           <RefreshControl
             refreshing={complaints.loading && complaints.data !== null}
-            onRefresh={() => complaints.reload()}
+            onRefresh={() => {
+              void loadLocalComplaints();
+              handleManualSync();
+              complaints.reload();
+            }}
             tintColor="#1D4ED8"
           />
         }
         ListEmptyComponent={
-          complaints.loading && complaints.data === null ? (
+          complaints.loading && complaints.data === null && filteredLocalRows.length === 0 ? (
             <SkeletonCardList count={4} />
           ) : (
             <EmptyState
-              title={searchQuery || statusFilter !== 'ALL' ? 'No matching complaints' : 'No complaints filed yet'}
+              title={
+                searchQuery || statusFilter !== 'ALL'
+                  ? 'No matching complaints'
+                  : 'No complaints filed yet'
+              }
               hint={
                 searchQuery || statusFilter !== 'ALL'
                   ? 'Try clearing filters or search terms'
@@ -175,9 +326,17 @@ export default function ComplaintHistoryScreen(): ReactElement {
             />
           )
         }
-        renderItem={({ item }) => (
-          <ComplaintCard item={item} />
-        )}
+        renderItem={({ item }) => {
+          if ('syncStatus' in item) {
+            return (
+              <LocalComplaintCard
+                item={item as PendingComplaintRecord}
+                onRetry={() => handleRetrySingle(item.id)}
+              />
+            );
+          }
+          return <ComplaintCard item={item as ComplaintPublic} />;
+        }}
         ListFooterComponent={
           canLoadMore ? (
             <View style={styles.footer}>
@@ -196,6 +355,99 @@ export default function ComplaintHistoryScreen(): ReactElement {
         }
       />
     </View>
+  );
+}
+
+function LocalComplaintCard({
+  item,
+  onRetry,
+}: {
+  item: PendingComplaintRecord;
+  onRetry: () => void;
+}): ReactElement {
+  let badgeLabel = 'Waiting to sync';
+  let badgeBg = '#FEF3C7';
+  let badgeColor = '#92400E';
+  let badgeBorder = '#FDE68A';
+  let iconName: 'cloud-upload-outline' | 'sync-outline' | 'alert-circle-outline' = 'cloud-upload-outline';
+
+  if (item.syncStatus === 'SYNCING') {
+    badgeLabel = 'Syncing…';
+    badgeBg = '#DBEAFE';
+    badgeColor = '#1E40AF';
+    badgeBorder = '#BFDBFE';
+    iconName = 'sync-outline';
+  } else if (item.syncStatus === 'FAILED_TRANSIENT' || item.syncStatus === 'FAILED_PERMANENT') {
+    badgeLabel = item.syncStatus === 'FAILED_PERMANENT' ? 'Needs Attention' : 'Sync Failed';
+    badgeBg = '#FEE2E2';
+    badgeColor = '#991B1B';
+    badgeBorder = '#FECACA';
+    iconName = 'alert-circle-outline';
+  }
+
+  return (
+    <Pressable
+      onPress={() => router.push(`/complaint/${item.id}`)}
+      style={({ pressed }) => [styles.cardWrapper, pressed && styles.cardPressed]}
+    >
+      <Card>
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardTitle} numberOfLines={1}>
+            {item.title}
+          </Text>
+          <View style={[styles.localBadge, { backgroundColor: badgeBg, borderColor: badgeBorder }]}>
+            <Ionicons name={iconName} size={14} color={badgeColor} style={{ marginRight: 4 }} />
+            <Text style={[styles.localBadgeText, { color: badgeColor }]}>{badgeLabel}</Text>
+          </View>
+        </View>
+
+        <Text style={styles.cardDescription} numberOfLines={2}>
+          {item.description}
+        </Text>
+
+        {item.lastFailureReason ? (
+          <View style={styles.failureBox}>
+            <Ionicons name="warning-outline" size={14} color="#B91C1C" />
+            <Text style={styles.failureText} numberOfLines={2}>
+              {item.lastFailureReason}
+            </Text>
+          </View>
+        ) : null}
+
+        <View style={styles.cardFooter}>
+          <View style={styles.cardMeta}>
+            <PriorityBadge priority={item.priority as Priority} />
+            {item.vehicleNumber ? (
+              <View style={styles.vehiclePill}>
+                <Ionicons name="bus-outline" size={12} color="#64748B" />
+                <Text style={styles.vehiclePillText}>{item.vehicleNumber}</Text>
+              </View>
+            ) : null}
+            {item.attachments.length > 0 ? (
+              <View style={styles.attachmentPill}>
+                <Ionicons name="attach" size={12} color="#64748B" />
+                <Text style={styles.attachmentPillText}>{item.attachments.length}</Text>
+              </View>
+            ) : null}
+          </View>
+          <Text style={styles.cardDate}>{formatDateTime(item.createdAt)}</Text>
+        </View>
+
+        {(item.syncStatus === 'FAILED_TRANSIENT' || item.syncStatus === 'FAILED_PERMANENT') && (
+          <View style={styles.retryActionRow}>
+            <Pressable
+              style={styles.retryButton}
+              onPress={onRetry}
+              accessibilityLabel="Retry syncing complaint"
+              accessibilityRole="button"
+            >
+              <Ionicons name="refresh" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+              <Text style={styles.retryButtonText}>Retry Sync</Text>
+            </Pressable>
+          </View>
+        )}
+      </Card>
+    </Pressable>
   );
 }
 
@@ -219,7 +471,7 @@ function ComplaintCard({ item }: { item: ComplaintPublic }): ReactElement {
 
         <View style={styles.cardFooter}>
           <View style={styles.cardMeta}>
-            <PriorityBadge priority={item.priority} />
+            <PriorityBadge priority={item.priority as Priority} />
           </View>
           <Text style={styles.cardDate}>{formatDateTime(item.createdAt)}</Text>
         </View>
@@ -266,7 +518,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
+    minHeight: 48,
+    justifyContent: 'center',
     borderRadius: radius.md,
     backgroundColor: '#FEF2F2',
   },
@@ -274,6 +527,49 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: '#DC2626',
+  },
+  syncBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FEF3C7',
+    borderBottomWidth: 1,
+    borderBottomColor: '#FDE68A',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+  },
+  syncBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  syncBannerTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#92400E',
+  },
+  syncBannerSubtitle: {
+    fontSize: 11,
+    color: '#B45309',
+    marginTop: 1,
+  },
+  syncNowButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#D97706',
+    paddingHorizontal: 14,
+    minHeight: 48,
+    borderRadius: radius.md,
+    marginLeft: spacing.sm,
+  },
+  syncNowButtonDisabled: {
+    opacity: 0.6,
+  },
+  syncNowButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   filterSection: {
     backgroundColor: '#FFFFFF',
@@ -348,6 +644,34 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     lineHeight: 20,
   },
+  localBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+  },
+  localBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  failureBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: radius.sm,
+    padding: 8,
+    gap: 6,
+    marginBottom: spacing.sm,
+  },
+  failureText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#991B1B',
+  },
   cardFooter: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -363,9 +687,57 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
     flexShrink: 1,
   },
+  vehiclePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radius.sm,
+  },
+  vehiclePillText: {
+    fontSize: 11,
+    color: '#475569',
+    fontWeight: '600',
+  },
+  attachmentPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radius.sm,
+  },
+  attachmentPillText: {
+    fontSize: 11,
+    color: '#475569',
+    fontWeight: '600',
+  },
   cardDate: {
     fontSize: 12,
     color: '#94A3B8',
+  },
+  retryActionRow: {
+    marginTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+    paddingTop: spacing.sm,
+  },
+  retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#DC2626',
+    borderRadius: radius.md,
+    minHeight: 48,
+    paddingHorizontal: 16,
+  },
+  retryButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   loadingContainer: {
     paddingVertical: spacing.xxl,

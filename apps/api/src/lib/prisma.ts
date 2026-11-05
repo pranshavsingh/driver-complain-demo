@@ -107,15 +107,18 @@ export type ExtendedPrismaClient = typeof extendedPrisma;
 export const prisma: ExtendedPrismaClient = new Proxy(extendedPrisma, {
   get(target, prop, receiver) {
     if (prop === '$transaction') {
+      const origTransaction = typeof target.$transaction === 'function'
+        ? target.$transaction
+        : (basePrisma as any).$transaction;
       return async (...args: Parameters<typeof target.$transaction>) => {
         const firstArg = args[0];
         // Case A — Interactive transaction callback: execute directly without callback retry
         // to prevent duplicate side-effects (complaints, updates, notifications).
         if (typeof firstArg === 'function') {
-          return Reflect.apply(target.$transaction, target, args);
+          return Reflect.apply(origTransaction, target, args);
         }
         // Case B — Batch array or options transaction: safe to retry connection errors.
-        return withDbRetry(() => Reflect.apply(target.$transaction, target, args));
+        return withDbRetry(async () => Reflect.apply(origTransaction, target, args));
       };
     }
     return Reflect.get(target, prop, receiver);

@@ -22,6 +22,7 @@ export const CreateComplaintSchema = z.object({
   latitude: z.coerce.number().optional(),
   longitude: z.coerce.number().optional(),
   locationName: z.string().optional(),
+  idempotencyKey: z.string().min(1).max(100).optional(),
 });
 export type CreateComplaint = z.infer<typeof CreateComplaintSchema>;
 
@@ -94,6 +95,7 @@ export const ComplaintPublicSchema = z.object({
   pendingAssigneeId: z.string().nullable().optional(),
   assignmentStatus: AssignmentStatusSchema.optional(),
   resolvedAt: z.string().nullable().optional(),
+  idempotencyKey: z.string().nullable().optional(),
   wasAppended: z.boolean().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),

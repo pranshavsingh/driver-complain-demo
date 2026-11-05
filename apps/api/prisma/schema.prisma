@@ -211,6 +211,7 @@ model Complaint {
   assignmentStatus  AssignmentStatus  @default(NONE)
   resolvedAt        DateTime?
   lastSlaEscalatedAt DateTime?
+  idempotencyKey    String?
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
@@ -220,6 +221,8 @@ model Complaint {
   loadingRecords        LoadingRecord[]
   linkedSupportMessages SupportMessage[]      @relation("LinkedMessages")
 
+  @@unique([driverId, idempotencyKey])
+  @@index([idempotencyKey])
   @@index([status])
   @@index([driverId])
   @@index([assignedToId])

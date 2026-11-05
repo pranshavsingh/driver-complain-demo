@@ -259,6 +259,7 @@ export function toComplaintPublic(complaint: Complaint & {
     pendingAssigneeId: c.pendingAssigneeId ?? null,
     assignmentStatus: c.assignmentStatus ?? 'NONE',
     resolvedAt: iso(complaint.resolvedAt),
+    idempotencyKey: (c as any).idempotencyKey ?? null,
     createdAt: complaint.createdAt.toISOString(),
     updatedAt: complaint.updatedAt.toISOString(),
   };

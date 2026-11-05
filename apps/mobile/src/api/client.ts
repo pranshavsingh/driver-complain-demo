@@ -17,14 +17,16 @@ export class ApiClientError extends Error {
   readonly code: string;
   readonly details: unknown;
   readonly requestId: string | undefined;
+  readonly retryAfter: number | undefined;
 
-  constructor(status: number, payload: ApiErrorPayload) {
+  constructor(status: number, payload: ApiErrorPayload, retryAfter?: number) {
     super(payload.message);
     this.name = 'ApiClientError';
     this.status = status;
     this.code = payload.code;
     this.details = payload.details;
     this.requestId = payload.requestId;
+    this.retryAfter = retryAfter;
   }
 }
 
@@ -55,6 +57,7 @@ export interface RequestOptions {
   /** Auth endpoints opt out: they carry no access token and must not trigger a refresh. */
   anonymous?: boolean;
   timeoutMs?: number;
+  signal?: AbortSignal;
 }
 
 /**
@@ -88,7 +91,25 @@ async function readError(res: Response): Promise<ApiClientError> {
     // Not JSON — a captive-portal login page, a proxy error, or a dropped connection. Keep
     // the generic message rather than masking the status code.
   }
-  return new ApiClientError(res.status, payload);
+  let retryAfterSeconds: number | undefined;
+  try {
+    const rawHeader = res.headers.get('Retry-After');
+    if (rawHeader) {
+      const parsedSec = parseInt(rawHeader, 10);
+      if (!isNaN(parsedSec) && parsedSec >= 0) {
+        retryAfterSeconds = parsedSec;
+      } else {
+        const parsedDate = Date.parse(rawHeader);
+        if (!isNaN(parsedDate)) {
+          retryAfterSeconds = Math.max(0, Math.ceil((parsedDate - Date.now()) / 1000));
+        }
+      }
+    }
+  } catch {
+    // Header parsing graceful fallback
+  }
+
+  return new ApiClientError(res.status, payload, retryAfterSeconds);
 }
 
 /**
@@ -205,13 +226,6 @@ async function sendOnce(
     if (token) headers.Authorization = `Bearer ${token}`;
   }
 
-  const controller = new AbortController();
-  let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    controller.abort();
-  }, timeoutMs);
-
   console.log(`[NET-REQ] ${opts.method ?? 'GET'} ${url}`);
   if (isMultipart && opts.body && typeof opts.body === 'object' && '_parts' in (opts.body as Record<string, unknown>)) {
     const parts = (opts.body as { _parts: [string, unknown][] })._parts;
@@ -225,12 +239,69 @@ async function sendOnce(
     // which natively streams `{ uri, name, type }` files from disk without reading into JS memory!
     return await new Promise<Response>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
+      let settled = false;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+
+      const cleanup = () => {
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
+        if (opts.signal) {
+          opts.signal.removeEventListener('abort', onAbort);
+        }
+        xhr.onload = null;
+        xhr.onerror = null;
+        xhr.ontimeout = null;
+        xhr.onabort = null;
+      };
+
+      const onAbort = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        try {
+          xhr.abort();
+        } catch {
+          // ignore abort error
+        }
+        reject(new ApiClientError(0, { code: 'ABORTED', message: 'Request aborted' }));
+      };
+
+      // Check if already aborted before sending
+      if (opts.signal?.aborted) {
+        onAbort();
+        return;
+      }
+
+      if (opts.signal) {
+        opts.signal.addEventListener('abort', onAbort, { once: true });
+      }
+
       xhr.open(opts.method ?? 'POST', url);
       xhr.timeout = timeoutMs;
       for (const [k, v] of Object.entries(headers)) {
         xhr.setRequestHeader(k, v);
       }
+
+      // Safety timeout timer in addition to xhr.timeout
+      timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        try {
+          xhr.abort();
+        } catch {
+          // Ignore errors on aborting already-timed-out request
+        }
+        reject(networkError(new Error('Upload timed out'), true));
+      }, timeoutMs);
+
       xhr.onload = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+
         const responseHeaders = new Headers();
         const allHeaders = xhr.getAllResponseHeaders() || '';
         allHeaders.split('\r\n').forEach((line) => {
@@ -245,16 +316,66 @@ async function sendOnce(
         console.log(`[NET-RES] ${res.status} ${opts.method ?? 'POST'} ${url}`);
         resolve(res);
       };
+
       xhr.onerror = (e) => {
-        console.warn(`[NET-ERR] XHR error on ${url}:`, e);
-        reject(networkError(e, false));
+        if (settled) return;
+        settled = true;
+        cleanup();
+        if (opts.signal?.aborted) {
+          reject(new ApiClientError(0, { code: 'ABORTED', message: 'Request aborted' }));
+        } else {
+          console.warn(`[NET-ERR] XHR error on ${url}:`, e);
+          reject(networkError(e, false));
+        }
       };
+
       xhr.ontimeout = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
         console.warn(`[NET-ERR] XHR timeout on ${url}`);
         reject(networkError(new Error('Upload timed out'), true));
       };
-      xhr.send(opts.body as FormData);
+
+      xhr.onabort = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(new ApiClientError(0, { code: 'ABORTED', message: 'Request aborted' }));
+      };
+
+      try {
+        xhr.send(opts.body as FormData);
+      } catch (err) {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        if (opts.signal?.aborted) {
+          reject(new ApiClientError(0, { code: 'ABORTED', message: 'Request aborted' }));
+        } else {
+          reject(networkError(err, false));
+        }
+      }
     });
+  }
+
+  // Fetch path for JSON requests
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+
+  const onAbort = () => {
+    controller.abort();
+  };
+  if (opts.signal) {
+    if (opts.signal.aborted) {
+      clearTimeout(timer);
+      throw new ApiClientError(0, { code: 'ABORTED', message: 'Request aborted' });
+    }
+    opts.signal.addEventListener('abort', onAbort, { once: true });
   }
 
   try {
@@ -267,10 +388,16 @@ async function sendOnce(
     console.log(`[NET-RES] ${res.status} ${opts.method ?? 'GET'} ${url}`);
     return res;
   } catch (err) {
+    if (opts.signal?.aborted) {
+      throw new ApiClientError(0, { code: 'ABORTED', message: 'Request aborted' });
+    }
     console.warn(`[NET-ERR] ${opts.method ?? 'GET'} ${url}:`, err);
     throw networkError(err, timedOut);
   } finally {
     clearTimeout(timer);
+    if (opts.signal) {
+      opts.signal.removeEventListener('abort', onAbort);
+    }
   }
 }
 
@@ -292,10 +419,16 @@ async function fetchRaw(path: string, opts: RequestOptions): Promise<Response> {
   // HTTP errors (4xx, 5xx) are NOT retried — those are definitive server responses.
   let lastErr: ApiClientError | null = null;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (opts.signal?.aborted) {
+      throw new ApiClientError(0, { code: 'ABORTED', message: 'Request aborted' });
+    }
     if (attempt > 0) {
       const delay = retryDelay(attempt - 1);
       console.log(`[api] Network reconnecting in ${String(delay / 1000)} s (attempt ${String(attempt)}/${String(maxRetries)})...`);
       await sleep(delay);
+      if (opts.signal?.aborted) {
+        throw new ApiClientError(0, { code: 'ABORTED', message: 'Request aborted' });
+      }
     }
     try {
       const res = await sendOnce(url, opts, isMultipart, timeoutMs);
@@ -318,6 +451,9 @@ async function fetchRaw(path: string, opts: RequestOptions): Promise<Response> {
       return replay;
     } catch (err) {
       if (err instanceof ApiClientError) {
+        if (err.code === 'ABORTED') {
+          throw err;
+        }
         // Only retry on transport-level failures (NETWORK_ERROR, NETWORK_TIMEOUT).
         // HTTP errors (ApiClientError with a real status) should not be retried.
         if (err.status === 0) {

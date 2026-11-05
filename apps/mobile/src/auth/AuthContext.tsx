@@ -10,9 +10,17 @@ import {
 } from 'react';
 import type { Role, UserPublic } from '@driver-complaint/shared-types';
 import * as api from '../api/endpoints';
-import { onSessionEnded, restoreTokens, setTokens } from '../api/tokens';
+import {
+  clearTokens,
+  getCachedUser,
+  onSessionEnded,
+  restoreTokens,
+  setCachedUser,
+  setTokens,
+} from '../api/tokens';
 import { refreshSession } from '../api/client';
 import { unregisterThisDevice } from '../push/registration';
+import { syncService } from '../sync/syncService';
 
 const ADMIN_ROLES: Role[] = ['EXECUTIVE', 'ADMIN', 'SUPER_ADMIN'];
 
@@ -56,6 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactElemen
   // Resume the session on launch. The access token died with the process, but the refresh token
   // in the keychain mints a new one. `me()` then confirms the account is still valid.
   useEffect(() => {
+    syncService.init();
     let active = true;
 
     const restore = async (): Promise<void> => {
@@ -64,17 +73,39 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactElemen
         if (active) setStatus('anonymous');
         return;
       }
+      const cached = await getCachedUser();
       const refreshed = await refreshSession();
       if (!refreshed) {
+        if (cached && isAuthorizedUser(cached)) {
+          if (!active) return;
+          setUser(cached);
+          setStatus('authenticated');
+          syncService.setActiveUser(cached);
+          return;
+        }
         if (active) setStatus('anonymous');
         return;
       }
       try {
         const me = await api.users.me();
         if (!active) return;
+        await setCachedUser(me);
         setUser(me);
-        setStatus(isAuthorizedUser(me) ? 'authenticated' : 'anonymous');
+        const authorized = isAuthorizedUser(me);
+        setStatus(authorized ? 'authenticated' : 'anonymous');
+        if (authorized) {
+          syncService.setActiveUser(me);
+        } else {
+          syncService.setActiveUser(null);
+        }
       } catch {
+        if (cached && isAuthorizedUser(cached)) {
+          if (!active) return;
+          setUser(cached);
+          setStatus('authenticated');
+          syncService.setActiveUser(cached);
+          return;
+        }
         if (active) setStatus('anonymous');
       }
     };
@@ -89,6 +120,7 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactElemen
   useEffect(
     () =>
       onSessionEnded(() => {
+        syncService.setActiveUser(null);
         setUser(null);
         setStatus('anonymous');
       }),
@@ -98,6 +130,7 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactElemen
   const login = useCallback(async (employeeId: string, pin: string): Promise<void> => {
     const result = await api.auth.login({ employeeId, pin });
     await setTokens(result);
+    await setCachedUser(result.user);
 
     if (!isAuthorizedUser(result.user)) {
       await api.auth.logout();
@@ -105,14 +138,17 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactElemen
     }
 
     setUser(result.user);
+    syncService.setActiveUser(result.user);
     setStatus('authenticated');
   }, []);
 
   const logout = useCallback(async (): Promise<void> => {
+    syncService.setActiveUser(null);
     // De-register the push token BEFORE revoking the session — the DELETE needs a valid access
     // token. Both calls are best-effort and neither can trap the driver in a session.
     await unregisterThisDevice();
     await api.auth.logout();
+    await clearTokens();
     setUser(null);
     setStatus('anonymous');
   }, []);

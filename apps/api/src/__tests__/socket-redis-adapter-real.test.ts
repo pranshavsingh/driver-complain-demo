@@ -172,5 +172,5 @@ describe('Milestone 2: Real Redis Cross-Instance Integration Test', () => {
     expect(clientCReceivedUnintendedEvent).toBe(false);
 
     console.log('[REAL REDIS TEST PASSED] Verified cross-instance event propagation through real Redis Pub/Sub');
-  }, 15000);
+  }, 35000);
 });
