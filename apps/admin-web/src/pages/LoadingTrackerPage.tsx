@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState, type ReactElement } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import type { LoadingRecord } from '@driver-complaint/shared-types';
 import * as api from '../api/endpoints';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { useApiResource } from '../hooks/useApiResource';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { formatDateTime } from '../lib/format';
 import { useRealtime } from '../realtime/RealtimeProvider';
 import { SkeletonTable } from '../components/LoadingSystem';
@@ -64,22 +65,26 @@ export function LoadingTrackerPage(): ReactElement {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(15);
   const [searchQuery, setSearchQuery] = useState('');
+  const debouncedSearch = useDebouncedValue(searchQuery, 300);
   const [activeTab, setActiveTab] = useState<TabFilter>('ALL');
   const [selectedMonth, setSelectedMonth] = useState<number | ''>('');
   const [selectedYear, setSelectedYear] = useState<number | ''>('');
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const loadingResource = useApiResource('api:loading:list', () => api.loading.list());
+  const loadingResource = useApiResource('api:loading:list', () => api.loading.list({ limit: 50 }));
   const { subscribe } = useRealtime();
+
+  const loadingRef = useRef(loadingResource);
+  loadingRef.current = loadingResource;
 
   // Reload on realtime socket events
   useEffect(() => {
     return subscribe(({ event }) => {
       if (event === 'loading:reached' || event === 'loading:completed') {
-        loadingResource.reload();
+        loadingRef.current.reload();
       }
     });
-  }, [subscribe, loadingResource]);
+  }, [subscribe]);
 
   const rawRecords: LoadingRecord[] = loadingResource.data?.data ?? [];
 
@@ -141,8 +146,8 @@ export function LoadingTrackerPage(): ReactElement {
       if (activeTab === 'BREACHED' && !isBreached) return false;
 
       // Search filter
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
+      if (debouncedSearch.trim()) {
+        const q = debouncedSearch.toLowerCase();
         const matchDriver = (r.driverName || '').toLowerCase().includes(q);
         const matchPlate = (r.vehiclePlate || '').toLowerCase().includes(q);
         const matchId = (r.id || '').toLowerCase().includes(q);
@@ -151,7 +156,7 @@ export function LoadingTrackerPage(): ReactElement {
 
       return true;
     });
-  }, [monthFilteredRecords, activeTab, searchQuery, now]);
+  }, [monthFilteredRecords, activeTab, debouncedSearch, now]);
 
   const totalFiltered = filteredRecords.length;
   const totalPages = Math.ceil(totalFiltered / pageSize) || 1;

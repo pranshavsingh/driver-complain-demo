@@ -57,6 +57,16 @@ export async function list(req: Request, res: Response): Promise<void> {
   sendSuccess(res, result);
 }
 
+export async function getSummary(req: Request, res: Response): Promise<void> {
+  if (!req.user) throw ApiError.unauthorized();
+  const query = (res.locals.query ?? req.query) as Partial<ComplaintListQuery>;
+  const summary = await complaintsService.getSummary(
+    { id: req.user.id, role: req.user.role },
+    query,
+  );
+  sendSuccess(res, summary);
+}
+
 /** Re-yield an already-pulled first batch, then the remainder of the generator. */
 async function* prepend(
   first: IteratorResult<ComplaintExportRow[]>,

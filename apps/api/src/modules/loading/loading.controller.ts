@@ -7,6 +7,7 @@ import {
   completeTrip,
   completeUnloading,
   getActiveLoadingRecord,
+  getDelayedLoadingCount,
   listLoadingRecords,
   listTripRecords,
   iterateTripRecords,
@@ -155,6 +156,11 @@ export async function handleGetActiveLoading(req: Request, res: Response): Promi
 
   const { active, stats } = await getActiveLoadingRecord(userId);
   sendSuccess(res, { active, stats });
+}
+
+export async function handleGetDelayedCount(_req: Request, res: Response): Promise<void> {
+  const delayedCount = await getDelayedLoadingCount();
+  sendSuccess(res, { delayedCount });
 }
 
 export async function handleListLoadingRecords(req: Request, res: Response): Promise<void> {

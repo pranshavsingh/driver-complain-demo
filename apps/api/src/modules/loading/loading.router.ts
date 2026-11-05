@@ -6,6 +6,7 @@ import {
   handleCompleteTrip,
   handleCompleteUnloading,
   handleGetActiveLoading,
+  handleGetDelayedCount,
   handleListLoadingRecords,
   handleExportTrips,
   handleGetMonthlyTripSummaries,
@@ -44,6 +45,7 @@ loadingRouter.patch('/:id/complete-unloading', validateUuidParam('id'), singlePh
 loadingRouter.post('/complete-unloading', singlePhotoUpload, handleCompleteUnloading);
 
 loadingRouter.get('/active', handleGetActiveLoading);
+loadingRouter.get('/delayed-count', requireRole('ADMIN', 'SUPER_ADMIN', 'EXECUTIVE'), handleGetDelayedCount);
 
 // Admin & Operations dashboard listing endpoint
 loadingRouter.get('/monthly-summary', requireRole('ADMIN', 'SUPER_ADMIN', 'EXECUTIVE'), handleGetMonthlyTripSummaries);

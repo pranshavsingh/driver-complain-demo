@@ -521,6 +521,21 @@ export async function getActiveLoadingRecord(userId: string): Promise<{
   };
 }
 
+export async function getDelayedLoadingCount(): Promise<number> {
+  const threeHoursAgo = new Date(Date.now() - 180 * 60 * 1000);
+  const count = await prisma.loadingRecord.count({
+    where: {
+      OR: [
+        { waitingTimeMinutes: { gt: 180 } },
+        { unloadingDurationMinutes: { gt: 180 } },
+        { status: 'REACHED', reachedAt: { lte: threeHoursAgo } },
+        { status: 'UNLOADING', tripCompletedAt: { lte: threeHoursAgo } },
+      ],
+    },
+  });
+  return count;
+}
+
 export async function listLoadingRecords(opts: {
   driverId?: string;
   status?: LoadingStatus;

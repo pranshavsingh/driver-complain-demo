@@ -16,5 +16,26 @@ export default defineConfig({
     // Sourcemaps in production too: this dashboard is the only window into a live fleet, so
     // a stack trace from a real admin needs to point at real code.
     sourcemap: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('react') || id.includes('react-dom')) {
+              return 'vendor-react';
+            }
+            if (id.includes('react-router') || id.includes('@remix-run')) {
+              return 'vendor-router';
+            }
+            if (id.includes('socket.io-client') || id.includes('engine.io-client')) {
+              return 'vendor-socket';
+            }
+            if (id.includes('zod')) {
+              return 'vendor-zod';
+            }
+            return 'vendor-misc';
+          }
+        },
+      },
+    },
   },
 });

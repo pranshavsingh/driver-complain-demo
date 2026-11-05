@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, type ReactElement } from 'react';
+import { useMemo, useState, useEffect, useRef, useCallback, type ReactElement } from 'react';
 import { Link } from 'react-router-dom';
 import type {
   ComplaintPublic,
@@ -9,6 +9,7 @@ import type {
 } from '@driver-complaint/shared-types';
 import * as api from '../api/endpoints';
 import { useApiResource } from '../hooks/useApiResource';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { computeSlaInfo } from '../lib/format';
 import { useAuth, isSuperAdmin } from '../auth/AuthContext';
 import { getUserCategories, canAccessPath } from '../auth/permissions';
@@ -31,6 +32,7 @@ export function DashboardPage(): ReactElement {
   const [activeTab, setActiveTab] = useState<DashboardTab>('complaints');
   const [selectedCategory, setSelectedCategory] = useState<ComplaintCategory | 'ALL'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
+  const debouncedSearch = useDebouncedValue(searchQuery, 300);
   const [page, setPage] = useState(1);
   const pageSize = 8;
 
@@ -39,7 +41,7 @@ export function DashboardPage(): ReactElement {
     api.complaints.list(api.EMPTY_FILTER, 1, 100),
   );
   const vehiclesResource = useApiResource('api:vehicles:list', () => api.vehicles.list());
-  const loadingResource = useApiResource('api:loading:list', () => api.loading.list());
+  const loadingResource = useApiResource('api:loading:list', () => api.loading.list({ limit: 15 }));
   const sparePartsResource = useApiResource('dashboard:spare-parts', () =>
     api.spareParts.list({ limit: 25 }),
   );
@@ -57,22 +59,33 @@ export function DashboardPage(): ReactElement {
   const sitesList = sitesResource.data ?? [];
   const driversList = driversResource.data ?? [];
 
+  const complaintsRef = useRef(complaintsResource);
+  complaintsRef.current = complaintsResource;
+  const vehiclesRef = useRef(vehiclesResource);
+  vehiclesRef.current = vehiclesResource;
+  const loadingRef = useRef(loadingResource);
+  loadingRef.current = loadingResource;
+  const sparePartsRef = useRef(sparePartsResource);
+  sparePartsRef.current = sparePartsResource;
+  const usersRef = useRef(usersResource);
+  usersRef.current = usersResource;
+
   // Realtime Subscriptions
   useEffect(() => {
     const handleUpdate = () => {
-      void complaintsResource.reload();
-      void loadingResource.reload();
+      void complaintsRef.current.reload();
+      void loadingRef.current.reload();
     };
 
     const unsubC1 = subscribeCustom('complaint:created', handleUpdate);
     const unsubC2 = subscribeCustom('complaint:status-changed', handleUpdate);
     const unsubC3 = subscribeCustom('complaint:assigned', handleUpdate);
-    const unsubU1 = subscribeCustom('user:approval-requested', () => void usersResource.reload());
-    const unsubU2 = subscribeCustom('user:approved', () => void usersResource.reload());
-    const unsubSP1 = subscribeCustom('spare-part:created', () => void sparePartsResource.reload());
-    const unsubSP2 = subscribeCustom('spare-part:updated', () => void sparePartsResource.reload());
-    const unsubL1 = subscribeCustom('loading:reached', () => void loadingResource.reload());
-    const unsubL2 = subscribeCustom('loading:completed', () => void loadingResource.reload());
+    const unsubU1 = subscribeCustom('user:approval-requested', () => void usersRef.current.reload());
+    const unsubU2 = subscribeCustom('user:approved', () => void usersRef.current.reload());
+    const unsubSP1 = subscribeCustom('spare-part:created', () => void sparePartsRef.current.reload());
+    const unsubSP2 = subscribeCustom('spare-part:updated', () => void sparePartsRef.current.reload());
+    const unsubL1 = subscribeCustom('loading:reached', () => void loadingRef.current.reload());
+    const unsubL2 = subscribeCustom('loading:completed', () => void loadingRef.current.reload());
 
     return () => {
       unsubC1();
@@ -85,22 +98,22 @@ export function DashboardPage(): ReactElement {
       unsubL1();
       unsubL2();
     };
-  }, [subscribeCustom, complaintsResource, loadingResource, usersResource, sparePartsResource]);
+  }, [subscribeCustom]);
 
-  const handleSyncNow = () => {
-    void complaintsResource.reload();
-    void vehiclesResource.reload();
-    void loadingResource.reload();
-    void sparePartsResource.reload();
-    void usersResource.reload();
-  };
+  const handleSyncNow = useCallback(() => {
+    void complaintsRef.current.reload();
+    void vehiclesRef.current.reload();
+    void loadingRef.current.reload();
+    void sparePartsRef.current.reload();
+    void usersRef.current.reload();
+  }, []);
 
   // Sync listener from global header
   useEffect(() => {
     const onSync = () => handleSyncNow();
     window.addEventListener('fleetops:sync', onSync);
     return () => window.removeEventListener('fleetops:sync', onSync);
-  }, [complaintsResource, vehiclesResource, loadingResource, sparePartsResource, usersResource]);
+  }, [handleSyncNow]);
 
   // Active Complaints Metrics
   const activeComplaints = complaintsList.filter(
@@ -203,8 +216,8 @@ export function DashboardPage(): ReactElement {
       if (selectedCategory !== 'ALL' && item.category !== selectedCategory) {
         return false;
       }
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
+      if (debouncedSearch.trim()) {
+        const q = debouncedSearch.toLowerCase();
         const matchTitle = item.title?.toLowerCase().includes(q);
         const matchNo = item.complaintNo?.toLowerCase().includes(q);
         const matchDriver = item.driverName?.toLowerCase().includes(q);
@@ -213,7 +226,7 @@ export function DashboardPage(): ReactElement {
       }
       return true;
     });
-  }, [complaintsList, isDeptAdmin, userCategories, selectedCategory, searchQuery]);
+  }, [complaintsList, isDeptAdmin, userCategories, selectedCategory, debouncedSearch]);
 
   const paginatedComplaints = useMemo(() => {
     const start = (page - 1) * pageSize;

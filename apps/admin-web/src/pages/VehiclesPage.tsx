@@ -22,6 +22,7 @@ import {
 import * as api from '../api/endpoints';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { useApiResource } from '../hooks/useApiResource';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { useAuth, isSuperAdmin } from '../auth/AuthContext';
 import { useRealtime } from '../realtime/RealtimeProvider';
 import { SkeletonTable } from '../components/LoadingSystem';
@@ -438,6 +439,7 @@ export function VehiclesPage(): ReactElement {
   const { user } = useAuth();
   const canAddVehicle = isSuperAdmin(user);
   const [searchQuery, setSearchQuery] = useState('');
+  const debouncedSearch = useDebouncedValue(searchQuery, 300);
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [wheelFilter, setWheelFilter] = useState('ALL');
   const [assignmentFilter, setAssignmentFilter] = useState<'ALL' | 'ASSIGNED' | 'FREE'>('ALL');
@@ -469,36 +471,43 @@ export function VehiclesPage(): ReactElement {
   const usersResource = useApiResource('api:users:list', () => api.users.list());
   const { subscribeCustom } = useRealtime();
 
+  const vehiclesRef = useRef(vehiclesResource);
+  vehiclesRef.current = vehiclesResource;
+  const driversRef = useRef(driversResource);
+  driversRef.current = driversResource;
+  const usersRef = useRef(usersResource);
+  usersRef.current = usersResource;
+
   // Live Realtime Subscriptions for Vehicle Add/Edit/Delete/Assign & Driver updates
   useEffect(() => {
     const unsubCreated = subscribeCustom('vehicle:created', () => {
-      void vehiclesResource.reload();
-      void driversResource.reload();
+      void vehiclesRef.current.reload();
+      void driversRef.current.reload();
     });
     const unsubUpdated = subscribeCustom('vehicle:updated', () => {
-      void vehiclesResource.reload();
-      void driversResource.reload();
+      void vehiclesRef.current.reload();
+      void driversRef.current.reload();
     });
     const unsubDeleted = subscribeCustom('vehicle:deleted', () => {
-      void vehiclesResource.reload();
-      void driversResource.reload();
+      void vehiclesRef.current.reload();
+      void driversRef.current.reload();
     });
     const unsubAssigned = subscribeCustom('vehicle:assigned', () => {
-      void vehiclesResource.reload();
-      void driversResource.reload();
+      void vehiclesRef.current.reload();
+      void driversRef.current.reload();
     });
     const unsubUserCreated = subscribeCustom('user:created', () => {
-      void driversResource.reload();
-      void usersResource.reload();
+      void driversRef.current.reload();
+      void usersRef.current.reload();
     });
     const unsubUserApproved = subscribeCustom('user:approved', () => {
-      void driversResource.reload();
-      void usersResource.reload();
+      void driversRef.current.reload();
+      void usersRef.current.reload();
     });
     const unsubUserUpdated = subscribeCustom('user:updated', () => {
-      void driversResource.reload();
-      void usersResource.reload();
-      void vehiclesResource.reload();
+      void driversRef.current.reload();
+      void usersRef.current.reload();
+      void vehiclesRef.current.reload();
     });
     return () => {
       unsubCreated();
@@ -509,7 +518,7 @@ export function VehiclesPage(): ReactElement {
       unsubUserApproved();
       unsubUserUpdated();
     };
-  }, [subscribeCustom, vehiclesResource, driversResource, usersResource]);
+  }, [subscribeCustom]);
 
   const rawVehicles: VehiclePublic[] = vehiclesResource.data ?? [];
   const vehiclesList: VehiclePublic[] = useMemo(() => {
@@ -570,8 +579,8 @@ export function VehiclesPage(): ReactElement {
       if (assignmentFilter === 'FREE' && Boolean(v.driverId)) {
         return false;
       }
-      if (!searchQuery.trim()) return true;
-      const q = searchQuery.toLowerCase();
+      if (!debouncedSearch.trim()) return true;
+      const q = debouncedSearch.toLowerCase();
       const plateMatch = v.plateNumber.toLowerCase().includes(q);
       const modelMatch = v.model ? v.model.toLowerCase().includes(q) : false;
       const makeMatch = v.make ? v.make.toLowerCase().includes(q) : false;
@@ -583,7 +592,7 @@ export function VehiclesPage(): ReactElement {
       const yearMatch = v.year ? v.year.toString().includes(q) : false;
       return plateMatch || modelMatch || makeMatch || modelNoMatch || chassisMatch || vinMatch || driverMatch || siteInchargeMatch || yearMatch;
     });
-  }, [vehiclesList, statusFilter, wheelFilter, assignmentFilter, searchQuery]);
+  }, [vehiclesList, statusFilter, wheelFilter, assignmentFilter, debouncedSearch]);
 
   const totalItems = filteredVehicles.length;
   const totalPages = Math.ceil(totalItems / pageSize) || 1;

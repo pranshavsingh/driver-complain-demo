@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, type ReactElement } from 'react';
+import { useState, useEffect, useMemo, useRef, type ReactElement } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { UserPublic, Role, ComplaintCategory, ApprovalStatus } from '@driver-complaint/shared-types';
 import {
@@ -21,6 +21,7 @@ import { useAuth } from '../auth/AuthContext';
 import { useRealtime } from '../realtime/RealtimeProvider';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { useApiResource } from '../hooks/useApiResource';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { SkeletonTable } from '../components/LoadingSystem';
 
 export const APP_CATEGORY_OPTIONS: { value: ComplaintCategory; label: string; icon: string }[] = [
@@ -136,16 +137,52 @@ export function UsersPage(): ReactElement {
   const [emailStatus, setEmailStatus] = useState<{ checking: boolean; available?: boolean; message?: string }>({ checking: false });
   const [dlStatus, setDlStatus] = useState<{ checking: boolean; available?: boolean; message?: string }>({ checking: false });
 
-  const usersResource = useApiResource('api:users:list', () => api.users.list());
-  const usersList: UserPublic[] = usersResource.data ?? [];
+  const debouncedSearch = useDebouncedValue(searchQuery, 300);
+
+  // Reset page when debounced search or filters change
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch]);
+
+  const usersResource = useApiResource(
+    `api:users:paginated:${activeTab}:${roleFilter}:${debouncedSearch}:${page}:${pageSize}`,
+    () =>
+      api.users.listPaginated({
+        role: roleFilter !== 'ALL' ? (roleFilter as Role) : undefined,
+        approvalStatus: activeTab === 'pending' ? 'PENDING_APPROVAL' : undefined,
+        search: debouncedSearch.trim() || undefined,
+        page,
+        pageSize,
+        excludeRejected: activeTab === 'directory',
+      }),
+  );
+
+  const pendingCountResource = useApiResource('api:users:pendingCount', () => api.users.pendingCount());
+  const pendingCount = pendingCountResource.data?.pendingCount ?? 0;
+
+  const adminsResource = useApiResource('api:users:admins', () => api.users.admins());
+  const adminsList = adminsResource.data ?? [];
+  const adminMap = useMemo(() => {
+    const map = new Map<string, { firstName: string; lastName: string; employeeId: string }>();
+    for (const a of adminsList) {
+      map.set(a.id, a);
+    }
+    return map;
+  }, [adminsList]);
 
   const sitesResource = useApiResource('api:sites:list', () => api.sites.list());
   const sitesList = sitesResource.data ?? [];
 
+  const usersRef = useRef(usersResource);
+  usersRef.current = usersResource;
+  const pendingRef = useRef(pendingCountResource);
+  pendingRef.current = pendingCountResource;
+
   // Realtime live update on any user creation / approval / rejection / deletion
   useEffect(() => {
     const handleUserEvent = () => {
-      void usersResource.reload();
+      void usersRef.current.reload();
+      void pendingRef.current.reload();
     };
 
     const unsubReq = subscribeCustom('user:approval-requested', handleUserEvent);
@@ -163,41 +200,12 @@ export function UsersPage(): ReactElement {
       unsubUpdate();
       unsubDel();
     };
-  }, [subscribeCustom, usersResource]);
+  }, [subscribeCustom]);
 
-  const pendingUsers = useMemo(() => {
-    return usersList.filter((u) => u.approvalStatus === 'PENDING_APPROVAL');
-  }, [usersList]);
-
-  const filteredUsers = useMemo(() => {
-    return usersList.filter((u) => {
-      if (activeTab === 'pending') return u.approvalStatus === 'PENDING_APPROVAL';
-
-      // Do NOT show rejected drivers / users in User Directory
-      if (u.approvalStatus === 'REJECTED') return false;
-
-      if (roleFilter !== 'ALL' && u.role !== roleFilter) return false;
-
-      if (!searchQuery.trim()) return true;
-      const q = searchQuery.toLowerCase();
-      const nameMatch = `${u.firstName} ${u.lastName}`.toLowerCase().includes(q);
-      const empMatch = u.employeeId.toLowerCase().includes(q);
-      const emailMatch = u.email ? u.email.toLowerCase().includes(q) : false;
-      const phoneMatch = u.phone ? u.phone.toLowerCase().includes(q) : false;
-      const siteMatch = u.site ? u.site.toLowerCase().includes(q) : false;
-      const categoryMatch = u.category ? u.category.toLowerCase().includes(q) : false;
-      const licenseMatch = u.licenseNumber ? u.licenseNumber.toLowerCase().includes(q) : false;
-      return nameMatch || empMatch || emailMatch || phoneMatch || siteMatch || categoryMatch || licenseMatch;
-    });
-  }, [usersList, activeTab, roleFilter, searchQuery]);
-
-  // Pagination calculations
-  const totalUsersCount = filteredUsers.length;
-  const totalPages = Math.max(1, Math.ceil(totalUsersCount / pageSize));
-  const paginatedUsers = useMemo(() => {
-    const startIndex = (page - 1) * pageSize;
-    return filteredUsers.slice(startIndex, startIndex + pageSize);
-  }, [filteredUsers, page, pageSize]);
+  const usersList: UserPublic[] = usersResource.data?.data ?? [];
+  const totalUsersCount = usersResource.data?.pagination?.total ?? usersList.length;
+  const totalPages = Math.max(1, usersResource.data?.pagination?.totalPages ?? 1);
+  const paginatedUsers = usersList;
 
   // Debounced Employee ID Check
   useEffect(() => {
@@ -389,6 +397,7 @@ export function UsersPage(): ReactElement {
 
       setShowCreateModal(false);
       void usersResource.reload();
+      void pendingCountResource.reload();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       setModalError(msg || 'Failed to create user ID');
@@ -401,6 +410,7 @@ export function UsersPage(): ReactElement {
     try {
       await api.users.approve(userId);
       void usersResource.reload();
+      void pendingCountResource.reload();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       alert(msg || 'Failed to approve user');
@@ -412,6 +422,7 @@ export function UsersPage(): ReactElement {
     try {
       await api.users.reject(userId);
       void usersResource.reload();
+      void pendingCountResource.reload();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       alert(msg || 'Failed to reject user');
@@ -452,6 +463,7 @@ export function UsersPage(): ReactElement {
     try {
       await api.users.remove(targetUser.id);
       void usersResource.reload();
+      void pendingCountResource.reload();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       alert(msg || 'Failed to delete user');
@@ -524,6 +536,7 @@ export function UsersPage(): ReactElement {
       setEditingUser(null);
       setEditPin('');
       void usersResource.reload();
+      void pendingCountResource.reload();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       alert(msg || 'Failed to update user');
@@ -739,7 +752,9 @@ export function UsersPage(): ReactElement {
             onClick={() => handleTabChange('directory')}
           >
             <span>{isSuperAdmin ? 'All Users Directory' : 'Drivers Directory'}</span>
-            <span className="fo-users-tab-counter">{usersList.length}</span>
+            <span className="fo-users-tab-counter">
+              {activeTab === 'directory' ? totalUsersCount : '•'}
+            </span>
           </button>
 
           {(isSuperAdmin || currentUser?.role === 'ADMIN') && (
@@ -749,9 +764,9 @@ export function UsersPage(): ReactElement {
               onClick={() => handleTabChange('pending')}
             >
               <span>Pending Approvals</span>
-              {pendingUsers.length > 0 ? (
+              {pendingCount > 0 ? (
                 <span className={`fo-users-tab-counter ${activeTab === 'pending' ? '' : 'amber'}`}>
-                  {pendingUsers.length} Pending
+                  {pendingCount} Pending
                 </span>
               ) : (
                 <span className="fo-users-tab-counter">0</span>
@@ -787,7 +802,7 @@ export function UsersPage(): ReactElement {
                   border: '1px solid #1f3e68',
                 }}
               >
-                {filteredUsers.length}
+                {totalUsersCount}
               </span>
             </div>
 
@@ -877,7 +892,7 @@ export function UsersPage(): ReactElement {
             <div style={{ padding: 16 }}>
               <SkeletonTable rows={7} columns={6} />
             </div>
-          ) : filteredUsers.length === 0 ? (
+          ) : usersList.length === 0 ? (
             <div style={{ padding: 48, textAlign: 'center', color: '#8c909f', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
               <Users size={36} color="#8c909f" />
               <div style={{ color: '#ffffff', fontWeight: 600, fontSize: 14 }}>No user accounts match your criteria</div>
@@ -900,7 +915,7 @@ export function UsersPage(): ReactElement {
                 </thead>
                 <tbody>
                   {paginatedUsers.map((u) => {
-                    const supervisingAdmin = u.createdByAdminId ? usersList.find((a) => a.id === u.createdByAdminId) : null;
+                    const supervisingAdmin = u.createdByAdminId ? adminMap.get(u.createdByAdminId) || usersList.find((a) => a.id === u.createdByAdminId) : null;
                     return (
                       <tr key={u.id}>
                         {/* 1. EMPLOYEE ID */}
@@ -1115,7 +1130,7 @@ export function UsersPage(): ReactElement {
           {/* ===================================================================
               4. PAGINATION FOOTER
              =================================================================== */}
-          {filteredUsers.length > 0 && (
+          {totalUsersCount > 0 && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 18px', borderTop: '1px solid #142844', background: '#061325' }}>
               <div style={{ fontSize: 12, color: '#8c909f', fontFamily: 'var(--fo-font-mono)' }}>
                 Showing <strong style={{ color: '#ffffff' }}>{totalUsersCount === 0 ? 0 : (page - 1) * pageSize + 1}-{Math.min(page * pageSize, totalUsersCount)}</strong> of <strong style={{ color: '#ffffff' }}>{totalUsersCount}</strong> total users

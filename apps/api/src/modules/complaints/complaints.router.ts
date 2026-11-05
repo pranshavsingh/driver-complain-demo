@@ -3,6 +3,7 @@ import {
   CreateComplaintSchema,
   UpdateComplaintStatusSchema,
   AssignComplaintSchema,
+  ComplaintFilterSchema,
   ComplaintListQuerySchema,
   ComplaintExportQuerySchema,
   RejectAssignmentSchema,
@@ -32,6 +33,12 @@ complaintsRouter.post(
   complaintsController.create,
 );
 complaintsRouter.get('/', validate(ComplaintListQuerySchema, 'query'), complaintsController.list);
+
+complaintsRouter.get(
+  '/summary',
+  validate(ComplaintFilterSchema, 'query'),
+  complaintsController.getSummary,
+);
 
 // MUST precede '/:id' — otherwise "export" is captured as a complaint id.
 complaintsRouter.get(

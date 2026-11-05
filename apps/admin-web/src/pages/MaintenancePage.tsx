@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import * as api from '../api/endpoints';
 import { useAuth } from '../auth/AuthContext';
 import { useApiResource } from '../hooks/useApiResource';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { Pagination } from '../components/Pagination';
 import { splitDateTime, formatDateTime } from '../lib/format';
@@ -80,11 +81,15 @@ export function MaintenancePage(): ReactElement {
   const driversRes = useApiResource('api:drivers:list', () => api.drivers.list());
   const drivers = driversRes.data ?? [];
 
+  const isReplacements = activeTab === 'replacements';
+  const isFuel = activeTab === 'fuel';
+
   // =========================================================================
   // 1. TYRE & BATTERY REPLACEMENTS TAB STATE & DATA
   // =========================================================================
   const [maintTypeFilter, setMaintTypeFilter] = useState<string>('');
   const [maintSearch, setMaintSearch] = useState<string>('');
+  const debouncedMaintSearch = useDebouncedValue(maintSearch, 300);
   const [maintVehicleId, setMaintVehicleId] = useState<string>('');
   const [maintStartDate, setMaintStartDate] = useState<string>('');
   const [maintEndDate, setMaintEndDate] = useState<string>('');
@@ -92,26 +97,31 @@ export function MaintenancePage(): ReactElement {
   const [maintPageSize, setMaintPageSize] = useState(15);
 
   const maintStatsRes = useApiResource(
-    `admin:maintenance:stats:${maintStartDate}:${maintEndDate}:${maintVehicleId}`,
+    isReplacements ? `admin:maintenance:stats:${maintStartDate}:${maintEndDate}:${maintVehicleId}` : null,
     () =>
       api.maintenance.stats({
         startDate: maintStartDate || undefined,
         endDate: maintEndDate || undefined,
         vehicleId: maintVehicleId || undefined,
       }),
+    { enabled: isReplacements },
   );
 
   const maintLogsRes = useApiResource(
-    `admin:maintenance:list:${maintTypeFilter}:${maintVehicleId}:${maintStartDate}:${maintEndDate}:${maintPage}:${maintPageSize}`,
+    isReplacements
+      ? `admin:maintenance:list:${maintTypeFilter}:${maintVehicleId}:${maintStartDate}:${maintEndDate}:${debouncedMaintSearch}:${maintPage}:${maintPageSize}`
+      : null,
     () =>
       api.maintenance.list({
         type: maintTypeFilter || undefined,
         vehicleId: maintVehicleId || undefined,
         startDate: maintStartDate || undefined,
         endDate: maintEndDate || undefined,
+        search: debouncedMaintSearch.trim() || undefined,
         page: maintPage,
         limit: maintPageSize,
       }),
+    { enabled: isReplacements },
   );
 
   const maintStats = maintStatsRes.data ?? {
@@ -126,29 +136,8 @@ export function MaintenancePage(): ReactElement {
   const totalMaintPages = maintLogsRes.data?.totalPages ?? 1;
 
   const filteredMaintLogs = useMemo(() => {
-    if (!maintSearch.trim()) return rawMaintLogs;
-    const term = maintSearch.toLowerCase();
-    return rawMaintLogs.filter((item: any) => {
-      const driverName = item.driver?.user
-        ? `${item.driver.user.firstName} ${item.driver.user.lastName}`.toLowerCase()
-        : '';
-      const empId = item.driver?.user?.employeeId?.toLowerCase() ?? '';
-      const plate = item.vehicle?.plateNumber?.toLowerCase() ?? '';
-      const itemNo = (item.itemNumber ?? '').toLowerCase();
-      const oldItemNo = (item.oldItemNumber ?? '').toLowerCase();
-      const brand = (item.brand ?? '').toLowerCase();
-      const notes = (item.notes ?? '').toLowerCase();
-      return (
-        driverName.includes(term) ||
-        empId.includes(term) ||
-        plate.includes(term) ||
-        itemNo.includes(term) ||
-        oldItemNo.includes(term) ||
-        brand.includes(term) ||
-        notes.includes(term)
-      );
-    });
-  }, [rawMaintLogs, maintSearch]);
+    return rawMaintLogs;
+  }, [rawMaintLogs]);
 
   const isMaintFiltered = Boolean(
     maintSearch || maintTypeFilter || maintVehicleId || maintStartDate || maintEndDate,
@@ -168,6 +157,7 @@ export function MaintenancePage(): ReactElement {
   // =========================================================================
   const [fuelTypeFilter, setFuelTypeFilter] = useState<string>('');
   const [fuelSearch, setFuelSearch] = useState<string>('');
+  const debouncedFuelSearch = useDebouncedValue(fuelSearch, 300);
   const [fuelVehicleId, setFuelVehicleId] = useState<string>('');
   const [fuelStartDate, setFuelStartDate] = useState<string>('');
   const [fuelEndDate, setFuelEndDate] = useState<string>('');
@@ -175,17 +165,20 @@ export function MaintenancePage(): ReactElement {
   const [fuelPageSize, setFuelPageSize] = useState(15);
 
   const fuelStatsRes = useApiResource(
-    `admin:fuel:stats:${fuelStartDate}:${fuelEndDate}:${fuelVehicleId}`,
+    isFuel ? `admin:fuel:stats:${fuelStartDate}:${fuelEndDate}:${fuelVehicleId}` : null,
     () =>
       api.fuel.stats({
         startDate: fuelStartDate || undefined,
         endDate: fuelEndDate || undefined,
         vehicleId: fuelVehicleId || undefined,
       }),
+    { enabled: isFuel },
   );
 
   const fuelLogsRes = useApiResource(
-    `admin:fuel:list:${fuelTypeFilter}:${fuelVehicleId}:${fuelStartDate}:${fuelEndDate}:${fuelPage}:${fuelPageSize}`,
+    isFuel
+      ? `admin:fuel:list:${fuelTypeFilter}:${fuelVehicleId}:${fuelStartDate}:${fuelEndDate}:${fuelPage}:${fuelPageSize}`
+      : null,
     () =>
       api.fuel.list({
         type: fuelTypeFilter || undefined,
@@ -195,6 +188,7 @@ export function MaintenancePage(): ReactElement {
         page: fuelPage,
         limit: fuelPageSize,
       }),
+    { enabled: isFuel },
   );
 
   const fuelStats = fuelStatsRes.data ?? {
@@ -210,8 +204,8 @@ export function MaintenancePage(): ReactElement {
   const totalFuelPages = fuelLogsRes.data?.totalPages ?? 1;
 
   const filteredFuelLogs = useMemo(() => {
-    if (!fuelSearch.trim()) return rawFuelLogs;
-    const term = fuelSearch.toLowerCase();
+    if (!debouncedFuelSearch.trim()) return rawFuelLogs;
+    const term = debouncedFuelSearch.toLowerCase();
     return rawFuelLogs.filter((item: any) => {
       const driverName = item.driver?.user
         ? `${item.driver.user.firstName} ${item.driver.user.lastName}`.toLowerCase()
@@ -226,7 +220,7 @@ export function MaintenancePage(): ReactElement {
         notes.includes(term)
       );
     });
-  }, [rawFuelLogs, fuelSearch]);
+  }, [rawFuelLogs, debouncedFuelSearch]);
 
   const isFuelFiltered = Boolean(
     fuelSearch || fuelTypeFilter || fuelVehicleId || fuelStartDate || fuelEndDate,
@@ -650,7 +644,10 @@ export function MaintenancePage(): ReactElement {
                 <input
                   placeholder="Search serial no, driver, vehicle plate, brand..."
                   value={maintSearch}
-                  onChange={(e) => setMaintSearch(e.target.value)}
+                  onChange={(e) => {
+                    setMaintSearch(e.target.value);
+                    setMaintPage(1);
+                  }}
                 />
               </div>
 
@@ -1105,7 +1102,10 @@ export function MaintenancePage(): ReactElement {
                 <input
                   placeholder="Search driver, employee ID, vehicle plate, notes..."
                   value={fuelSearch}
-                  onChange={(e) => setFuelSearch(e.target.value)}
+                  onChange={(e) => {
+                    setFuelSearch(e.target.value);
+                    setFuelPage(1);
+                  }}
                 />
               </div>
 

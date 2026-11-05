@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, type ReactElement } from 'react';
+import { useState, useEffect, useRef, useMemo, Suspense, type ReactElement } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Truck, ClipboardList, Bell, Menu, X, Trash2, CheckCircle2 } from './Icons';
 
@@ -7,6 +7,7 @@ import { canAccessPath } from '../auth/permissions';
 import { useRealtime } from '../realtime/RealtimeProvider';
 import { ThemeSwitcher } from './ThemeSwitcher';
 import { PageErrorBoundary } from './ErrorBoundary';
+import { PageModuleSkeleton } from './LoadingSystem';
 import { fullName } from '../lib/format';
 import * as api from '../api/endpoints';
 import { useApiResource } from '../hooks/useApiResource';
@@ -119,26 +120,10 @@ export function Layout(): ReactElement {
     }
   }, [complaintsUnreadResource.data?.unreadCount]);
 
-  const loadingResource = useApiResource('api:loading:list', () =>
-    canAccessPath(user, '/loading') ? api.loading.list() : Promise.resolve({ data: [] }),
+  const delayedLoadingResource = useApiResource('api:loading:delayedCount', () =>
+    canAccessPath(user, '/loading') ? api.loading.delayedCount() : Promise.resolve({ delayedCount: 0 }),
   );
-  const loadingDelayedCount = useMemo(() => {
-    const list = loadingResource.data?.data ?? [];
-    const now = Date.now();
-    return list.filter((r) => {
-      if (r.waitingTimeMinutes && r.waitingTimeMinutes > 180) return true;
-      if (r.unloadingDurationMinutes && r.unloadingDurationMinutes > 180) return true;
-      if (!r.completedAt && r.reachedAt) {
-        const diffMins = Math.floor((now - new Date(r.reachedAt).getTime()) / 60000);
-        return diffMins > 180;
-      }
-      if (r.tripCompletedAt && !r.unloadingCompletedAt) {
-        const diffMins = Math.floor((now - new Date(r.tripCompletedAt).getTime()) / 60000);
-        return diffMins > 180;
-      }
-      return false;
-    }).length;
-  }, [loadingResource.data]);
+  const loadingDelayedCount = delayedLoadingResource.data?.delayedCount ?? 0;
 
   const sparePartsResource = useApiResource('api:spareParts:stats', () =>
     canAccessPath(user, '/spare-parts')
@@ -190,8 +175,8 @@ export function Layout(): ReactElement {
   const complaintsRef = useRef(complaintsUnreadResource);
   complaintsRef.current = complaintsUnreadResource;
 
-  const loadingRef = useRef(loadingResource);
-  loadingRef.current = loadingResource;
+  const loadingRef = useRef(delayedLoadingResource);
+  loadingRef.current = delayedLoadingResource;
 
   const sparePartsRef = useRef(sparePartsResource);
   sparePartsRef.current = sparePartsResource;
@@ -888,7 +873,9 @@ export function Layout(): ReactElement {
 
         <div className={`workspace-body ${isFleetOpsRoute ? 'fleetops-body' : ''}`}>
           <PageErrorBoundary routeKey={location.pathname}>
-            <Outlet />
+            <Suspense fallback={<PageModuleSkeleton title="Loading view..." subtitle="Rendering fleet operational console…" />}>
+              <Outlet />
+            </Suspense>
           </PageErrorBoundary>
         </div>
       </main>
