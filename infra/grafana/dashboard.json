@@ -503,10 +503,14 @@
       "targets": [
         {
           "expr": "sse_connect_outbox_pending_events",
-          "legendFormat": "Pending Events"
+          "legendFormat": "Total Pending"
+        },
+        {
+          "expr": "sse_connect_outbox_overdue_events",
+          "legendFormat": "Overdue (Eligible)"
         }
       ],
-      "title": "Pending Outbox Events",
+      "title": "Pending & Overdue Outbox Events",
       "type": "stat"
     },
     {
@@ -590,3 +594,4 @@
   "uid": "sse-connect-api-fleet",
   "version": 1
 }
+

@@ -13,7 +13,7 @@
  * measurable CPU overhead on hot event loops and can destabilize BullMQ's multi-key atomic
  * Lua scripts. Ping latency is used as the safe, standardized responsiveness measurement.
  */
-import { redis, isRedisAvailable, pingRedis } from './redis';
+import { getRedisClient, isRedisAvailable, pingRedis } from './redis';
 import {
   redisUpGauge,
   redisPingLatencySeconds,
@@ -22,9 +22,17 @@ import {
 } from './metrics';
 import { logger } from './logger';
 
+export function markRedisUnavailable(): void {
+  redisUpGauge.set(0);
+  redisPingLatencySeconds.remove();
+  redisConnectedClients.remove();
+  redisUsedMemoryBytes.remove();
+}
+
 export async function collectRedisMetrics(): Promise<void> {
-  if (!redis || !isRedisAvailable()) {
-    redisUpGauge.set(0);
+  const client = getRedisClient();
+  if (!client || !isRedisAvailable()) {
+    markRedisUnavailable();
     return;
   }
 
@@ -35,32 +43,40 @@ export async function collectRedisMetrics(): Promise<void> {
       redisUpGauge.set(1);
       redisPingLatencySeconds.set(pingResult.latencyMs / 1000);
     } else {
-      redisUpGauge.set(0);
+      markRedisUnavailable();
       return;
     }
 
     // 2. Safe, section-scoped INFO queries (INFO clients, INFO memory)
     // Section-scoped INFO is computationally O(1) in Redis compared to full INFO.
     const [clientsInfo, memoryInfo] = await Promise.all([
-      redis.info('clients').catch(() => null),
-      redis.info('memory').catch(() => null),
+      client.info('clients').catch(() => null),
+      client.info('memory').catch(() => null),
     ]);
 
     if (clientsInfo) {
       const matchClients = clientsInfo.match(/connected_clients:(\d+)/);
       if (matchClients && matchClients[1]) {
         redisConnectedClients.set(parseInt(matchClients[1], 10));
+      } else {
+        redisConnectedClients.remove();
       }
+    } else {
+      redisConnectedClients.remove();
     }
 
     if (memoryInfo) {
       const matchMemory = memoryInfo.match(/used_memory:(\d+)/);
       if (matchMemory && matchMemory[1]) {
         redisUsedMemoryBytes.set(parseInt(matchMemory[1], 10));
+      } else {
+        redisUsedMemoryBytes.remove();
       }
+    } else {
+      redisUsedMemoryBytes.remove();
     }
   } catch (err) {
-    redisUpGauge.set(0);
+    markRedisUnavailable();
     logger.debug({ err }, 'Error collecting Redis metrics (handled safely)');
   }
 }

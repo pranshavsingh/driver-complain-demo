@@ -75,14 +75,35 @@ export async function withDbRetry<T>(fn: () => Promise<T>, maxRetries = 3): Prom
 }
 
 /**
- * NOTE ON PRISMA CONNECTION POOL METRICS:
- * Prisma Client executes queries using an internal compiled Rust query engine.
- * The Rust engine does not export active/idle/waiting pool metrics to JavaScript
- * runtime without previewFeatures metrics (which emits raw Prometheus text rather
- * than programmatic counters).
- * Furthermore, in this architecture, PgBouncer (infra/pgbouncer.ini) acts as the
- * true transaction-pooling proxy. Recommended production pool instrumentation
- * is the standard pgbouncer_exporter scraping SHOW POOLS and SHOW STATS.
+ * Fast, non-retrying connectivity probe for readiness checks and metric scrapers.
+ * Guarantees a bounded execution time (default 1500ms) without triggering multi-attempt retry loops.
+ */
+export async function pingDatabase(timeoutMs = 1500): Promise<boolean> {
+  try {
+    const probePromise = basePrisma.$queryRaw`SELECT 1`;
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`Database ping timed out after ${timeoutMs}ms`)), timeoutMs).unref(),
+    );
+    await Promise.race([probePromise, timeoutPromise]);
+    dbUpGauge.set(1);
+    return true;
+  } catch (_err) {
+    dbUpGauge.set(0);
+    return false;
+  }
+}
+
+/**
+ * NOTE ON DATABASE OBSERVABILITY & POOL METRICS:
+ * 1. Model queries ($allModels) only intercept high-level model operations.
+ *    Raw operations ($queryRaw, $executeRaw) are instrumented via the client proxy below
+ *    to ensure comprehensive coverage across both model and raw database traffic.
+ * 2. Prisma Client executes queries using an internal compiled Rust query engine.
+ *    The Rust engine does not export active/idle/waiting pool metrics to JavaScript
+ *    runtime without previewFeatures metrics.
+ * 3. In this production architecture, PgBouncer (infra/pgbouncer.ini) acts as the
+ *    true transaction-pooling proxy. Standard production pool instrumentation
+ *    is performed via pgbouncer_exporter scraping SHOW POOLS and SHOW STATS.
  */
 const extendedPrisma = basePrisma.$extends({
   query: {
@@ -118,7 +139,7 @@ const extendedPrisma = basePrisma.$extends({
 
 export type ExtendedPrismaClient = typeof extendedPrisma;
 
-// Proxy extendedPrisma to wrap batch $transaction automatically with retry logic,
+// Proxy extendedPrisma to wrap batch $transaction, $queryRaw, and $executeRaw with metrics and retry logic,
 // while executing interactive transaction callbacks exactly once without callback retry replay.
 export const prisma: ExtendedPrismaClient = new Proxy(extendedPrisma, {
   get(target, prop, receiver) {
@@ -137,6 +158,38 @@ export const prisma: ExtendedPrismaClient = new Proxy(extendedPrisma, {
         return withDbRetry(async () => Reflect.apply(origTransaction, target, args));
       };
     }
+
+    if (prop === '$queryRaw' || prop === '$executeRaw') {
+      const orig = typeof (target as any)[prop] === 'function'
+        ? (target as any)[prop]
+        : (basePrisma as any)[prop];
+      return async (...args: any[]) => {
+        return withDbRetry(async () => {
+          const start = process.hrtime();
+          try {
+            const res = await orig.apply(target, args);
+            const [seconds, nanoseconds] = process.hrtime(start);
+            dbQueryDurationSeconds.observe(
+              { model: 'raw', operation: String(prop) },
+              seconds + nanoseconds / 1e9,
+            );
+            dbUpGauge.set(1);
+            return res;
+          } catch (e: any) {
+            const [seconds, nanoseconds] = process.hrtime(start);
+            dbQueryDurationSeconds.observe(
+              { model: 'raw', operation: String(prop) },
+              seconds + nanoseconds / 1e9,
+            );
+            if (isConnectionError(e)) {
+              dbUpGauge.set(0);
+            }
+            throw e;
+          }
+        });
+      };
+    }
+
     return Reflect.get(target, prop, receiver);
   },
 }) as ExtendedPrismaClient;

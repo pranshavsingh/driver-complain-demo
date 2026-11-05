@@ -136,13 +136,19 @@ export const socketioRoomsCount = new Gauge({
 
 export const outboxPendingEvents = new Gauge({
   name: 'sse_connect_outbox_pending_events',
-  help: 'Number of pending events in the transactional outbox',
+  help: 'Total number of pending events in the transactional outbox (including future scheduled)',
+  registers: [register],
+});
+
+export const outboxOverdueEvents = new Gauge({
+  name: 'sse_connect_outbox_overdue_events',
+  help: 'Number of overdue pending events in the transactional outbox eligible for immediate dispatch',
   registers: [register],
 });
 
 export const outboxDispatchLagSeconds = new Gauge({
   name: 'sse_connect_outbox_dispatch_lag_seconds',
-  help: 'Age in seconds of the oldest pending transactional outbox event',
+  help: 'Age in seconds of the oldest overdue pending transactional outbox event (0 if none overdue)',
   registers: [register],
 });
 
@@ -220,6 +226,8 @@ export function getRouteLabel(req: Request): string {
 
 /**
  * Express middleware to track HTTP metrics per request.
+ * Strictly guarantees that every in-flight increment receives exactly one decrement,
+ * whether the response completes normally or the client connection closes prematurely.
  */
 export function metricsMiddleware(req: Request, res: Response, next: NextFunction): void {
   // Skip metrics collection on health and metrics probes themselves to avoid polluting data
@@ -229,9 +237,13 @@ export function metricsMiddleware(req: Request, res: Response, next: NextFunctio
 
   httpRequestsInFlight.inc();
   const start = process.hrtime();
+  let completed = false;
 
-  res.on('finish', () => {
+  const onComplete = () => {
+    if (completed) return;
+    completed = true;
     httpRequestsInFlight.dec();
+
     const [seconds, nanoseconds] = process.hrtime(start);
     const duration = seconds + nanoseconds / 1e9;
     const route = getRouteLabel(req);
@@ -252,7 +264,10 @@ export function metricsMiddleware(req: Request, res: Response, next: NextFunctio
       },
       duration,
     );
-  });
+  };
+
+  res.once('finish', onComplete);
+  res.once('close', onComplete);
 
   next();
 }
@@ -299,7 +314,7 @@ export function verifyMetricsAuth(req: Request, res: Response, next: NextFunctio
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// System Metrics Scrape Collector (Redis, BullMQ, Outbox, Socket.IO)
+// System Metrics Scrape Collector (Database, Redis, BullMQ, Outbox, Socket.IO)
 // Throttled with a 15-second TTL cache to prevent database or Redis thrashing.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -313,7 +328,15 @@ export async function collectSystemMetrics(): Promise<void> {
   }
   lastCollectTime = now;
 
-  // 1. Collect Redis Metrics
+  // 1. Collect Database Connectivity Metric (cached 15s TTL, non-blocking)
+  try {
+    const { collectDbMetrics } = await import('./db-metrics');
+    await collectDbMetrics();
+  } catch (err) {
+    logger.debug({ err }, 'Safe non-blocking error collecting Database metrics');
+  }
+
+  // 2. Collect Redis Metrics (cached 15s TTL, non-blocking)
   try {
     const { collectRedisMetrics } = await import('./redis-metrics');
     await collectRedisMetrics();
@@ -321,7 +344,7 @@ export async function collectSystemMetrics(): Promise<void> {
     logger.debug({ err }, 'Safe non-blocking error collecting Redis metrics');
   }
 
-  // 2. Collect BullMQ Queue Metrics
+  // 3. Collect BullMQ Queue Metrics
   try {
     const { collectBullmqMetrics } = await import('../jobs/queue-metrics');
     await collectBullmqMetrics();
@@ -329,7 +352,7 @@ export async function collectSystemMetrics(): Promise<void> {
     logger.debug({ err }, 'Safe non-blocking error collecting BullMQ metrics');
   }
 
-  // 3. Collect Socket.IO Metrics
+  // 4. Collect Socket.IO Metrics
   try {
     const { getIo } = await import('../realtime/socket');
     const io = getIo();
@@ -340,7 +363,7 @@ export async function collectSystemMetrics(): Promise<void> {
     logger.debug({ err }, 'Safe non-blocking error collecting Socket.IO metrics');
   }
 
-  // 4. Collect Outbox Metrics
+  // 5. Collect Outbox Metrics
   try {
     const { collectOutboxMetrics } = await import('../modules/outbox/outbox.metrics');
     await collectOutboxMetrics();

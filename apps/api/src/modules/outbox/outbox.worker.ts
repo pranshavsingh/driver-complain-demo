@@ -5,10 +5,11 @@ import { dispatchPendingOutboxEvents, startDispatcherScheduler, stopDispatcherSc
 import { processDeliveryForConsumer } from './consumer.service';
 import { startWatchdogScheduler, stopWatchdogScheduler } from './watchdog.service';
 import { instrumentWorker } from '../../jobs/queue-metrics';
+import { QUEUES } from '../../jobs/queue';
 
 export const OUTBOX_QUEUES = {
-  DISPATCH: 'outbox-dispatch',
-  DELIVERY: 'outbox-delivery',
+  DISPATCH: QUEUES.OUTBOX_DISPATCH,
+  DELIVERY: QUEUES.OUTBOX_DELIVERY,
 } as const;
 
 let dispatchQueue: Queue | null = null;

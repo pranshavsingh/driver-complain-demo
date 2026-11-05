@@ -51,3 +51,4 @@ This directory contains the production Grafana dashboard model for monitoring th
 2. Upload `infra/grafana/dashboard.json` or paste the file contents.
 3. Select your Prometheus data source from the dropdown.
 4. Click **Import**.
+

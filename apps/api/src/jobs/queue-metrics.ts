@@ -4,10 +4,19 @@
  * Exposes:
  * - sse_connect_bullmq_queue_jobs (Gauge: waiting, active, delayed, failed, completed)
  * - sse_connect_bullmq_job_duration_seconds (Histogram: execution duration by queue and status)
+ *
+ * Queue Visibility Architecture:
+ * - Queues are governed by a canonical allowlist (`QUEUES`).
+ * - To ensure queues existing in Redis are immediately visible even before the first application
+ *   enqueue event, `collectBullmqMetrics` checks and registers allowlisted queues via the
+ *   internal singleton cache in `getQueue()`.
+ * - This guarantees that singleton queue instances are reused without instantiating duplicates.
+ * - Any arbitrary queue existing in Redis outside the application domain is strictly ignored
+ *   to maintain bounded label cardinality and protect Prometheus.
  */
 import { bullmqQueueJobs, bullmqJobDurationSeconds } from '../lib/metrics';
-import { getRegisteredQueues, QUEUES } from './queue';
-import { getOutboxQueues, OUTBOX_QUEUES } from '../modules/outbox/outbox.worker';
+import { getRegisteredQueues, getQueue, QUEUES } from './queue';
+import { isRedisAvailable } from '../lib/redis';
 import { logger } from '../lib/logger';
 
 export const ALLOWED_QUEUES = new Set<string>([
@@ -15,8 +24,8 @@ export const ALLOWED_QUEUES = new Set<string>([
   QUEUES.LOADING_PHOTO,
   QUEUES.TOKEN_CLEANUP,
   QUEUES.SLA_ESCALATION,
-  OUTBOX_QUEUES.DISPATCH,
-  OUTBOX_QUEUES.DELIVERY,
+  QUEUES.OUTBOX_DISPATCH,
+  QUEUES.OUTBOX_DELIVERY,
 ]);
 
 /**
@@ -53,16 +62,38 @@ export function instrumentWorker(worker: any, queueName: string): void {
 }
 
 /**
- * Polls existing, active BullMQ queues and updates job count gauges.
+ * Polls active BullMQ queues and updates job count gauges.
+ * Ensures allowlisted queues in Redis are visible without creating duplicate instances.
  * Tolerates uninitialized queues and Redis connection issues.
  */
 export async function collectBullmqMetrics(): Promise<void> {
+  if (!isRedisAvailable()) {
+    return;
+  }
+
   const queueMap = new Map<string, any>();
 
-  // 1. Collect from registered general queues
+  // 1. Ensure general allowlisted queues are registered (reuses singleton instances in queue.ts)
+  const generalQueueNames = [
+    QUEUES.COMPLAINT_MEDIA,
+    QUEUES.LOADING_PHOTO,
+    QUEUES.TOKEN_CLEANUP,
+    QUEUES.SLA_ESCALATION,
+  ];
+
+  for (const name of generalQueueNames) {
+    try {
+      const q = await getQueue(name);
+      if (q) queueMap.set(name, q);
+    } catch {
+      // Non-blocking
+    }
+  }
+
+  // 2. Collect from already registered queues
   try {
-    const generalQueues = getRegisteredQueues();
-    for (const [name, q] of generalQueues.entries()) {
+    const registered = getRegisteredQueues();
+    for (const [name, q] of registered.entries()) {
       if (ALLOWED_QUEUES.has(name)) {
         queueMap.set(name, q);
       }
@@ -71,16 +102,17 @@ export async function collectBullmqMetrics(): Promise<void> {
     // Non-blocking
   }
 
-  // 2. Collect from outbox queues
+  // 3. Dynamically collect from outbox queues (avoids circular module dependencies)
   try {
+    const { getOutboxQueues } = await import('../modules/outbox/outbox.worker');
     const { dispatchQueue, deliveryQueue } = getOutboxQueues();
-    if (dispatchQueue) queueMap.set(OUTBOX_QUEUES.DISPATCH, dispatchQueue);
-    if (deliveryQueue) queueMap.set(OUTBOX_QUEUES.DELIVERY, deliveryQueue);
+    if (dispatchQueue) queueMap.set(QUEUES.OUTBOX_DISPATCH, dispatchQueue);
+    if (deliveryQueue) queueMap.set(QUEUES.OUTBOX_DELIVERY, deliveryQueue);
   } catch {
     // Non-blocking
   }
 
-  // 3. For each active queue instance, read job counts
+  // 4. For each active queue instance, read job counts
   for (const [queueName, queue] of queueMap.entries()) {
     if (!queue || typeof queue.getJobCounts !== 'function') continue;
 

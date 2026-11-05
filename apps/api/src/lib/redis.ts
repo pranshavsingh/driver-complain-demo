@@ -121,6 +121,10 @@ export function getRedisStatus(): RedisStatus {
   return currentStatus;
 }
 
+export function getRedisClient(): Redis | null {
+  return redis;
+}
+
 export function isRedisAvailable(): boolean {
   return redisAvailable && currentStatus === 'HEALTHY';
 }

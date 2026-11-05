@@ -138,3 +138,4 @@ spec:
           annotations:
             summary: "Transactional outbox dispatch is STALLED (> 5 minutes)"
             description: "Outbox dispatch lag has reached {{ $value | printf \"%.0f\" }} seconds. Events are not being fanned out to downstream consumers."
+
