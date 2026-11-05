@@ -18,6 +18,9 @@ vi.mock('../../../lib/prisma', () => ({
     user: {
       findUnique: vi.fn(),
     },
+    categorySla: {
+      findMany: vi.fn().mockResolvedValue([]),
+    },
   },
 }));
 
@@ -333,5 +336,93 @@ describe('GET /complaints/summary - Security & Role Scoping', () => {
     expect(orClauses).toBeDefined();
     const siteMatches = orClauses.filter((c: any) => c.vehicle?.siteIncharge?.site);
     expect(siteMatches[0].vehicle.siteIncharge.site.equals).toBe('North-Depot');
+  });
+
+  describe('SLA threshold verification and canonical rules', () => {
+    it('uses canonical SLA configuration (BREAKDOWN: 2h, TYRE_ISSUE: 4h, FUEL_DEF: 4h, LOADING: 12h, UNLOADING: 12h, VEHICLE_MAINTENANCE: 24h, ACCOUNTS: 24h)', async () => {
+      vi.mocked(resolveUserScope).mockResolvedValue({
+        role: 'SUPER_ADMIN',
+        categories: [],
+        site: null,
+      });
+      vi.mocked(prisma.categorySla.findMany).mockResolvedValue([]); // Canonical defaults
+      vi.mocked(prisma.complaint.groupBy).mockResolvedValue([]);
+      vi.mocked(prisma.complaint.count).mockResolvedValue(0);
+
+      const beforeCall = Date.now();
+      await getSummary({ id: 'super-admin', role: 'SUPER_ADMIN' });
+      const afterCall = Date.now();
+
+      // Find the overSla count call (the 4th count call)
+      const overSlaCall = vi.mocked(prisma.complaint.count).mock.calls[3]![0] as any;
+      expect(overSlaCall.where.AND).toBeDefined();
+
+      const overSlaFilter = overSlaCall.where.AND.find((clause: any) => clause.status && clause.OR);
+      expect(overSlaFilter.status).toEqual({ in: ['NEW', 'IN_PROGRESS'] });
+
+      const conditions = overSlaFilter.OR as Array<{ category: string; createdAt: { lte: Date } }>;
+      expect(conditions).toHaveLength(7);
+
+      const conditionMap = new Map(conditions.map((c) => [c.category, c.createdAt.lte.getTime()]));
+
+      // Canonical expected hours:
+      // BREAKDOWN: 2h, TYRE_ISSUE: 4h, FUEL_DEF: 4h, LOADING: 12h, UNLOADING: 12h, VEHICLE_MAINTENANCE: 24h, ACCOUNTS: 24h
+      const expectedHours: Record<string, number> = {
+        BREAKDOWN: 2,
+        TYRE_ISSUE: 4,
+        FUEL_DEF: 4,
+        LOADING: 12,
+        UNLOADING: 12,
+        VEHICLE_MAINTENANCE: 24,
+        ACCOUNTS: 24,
+      };
+
+      for (const [cat, hours] of Object.entries(expectedHours)) {
+        const timestamp = conditionMap.get(cat);
+        expect(timestamp).toBeDefined();
+        const expectedMin = beforeCall - hours * 3600 * 1000;
+        const expectedMax = afterCall - hours * 3600 * 1000;
+        expect(timestamp).toBeGreaterThanOrEqual(expectedMin - 100);
+        expect(timestamp).toBeLessThanOrEqual(expectedMax + 100);
+      }
+    });
+
+    it('dynamically respects custom SLA overrides configured in database', async () => {
+      vi.mocked(resolveUserScope).mockResolvedValue({
+        role: 'SUPER_ADMIN',
+        categories: [],
+        site: null,
+      });
+      // Database has custom overrides: BREAKDOWN set to 6h, FUEL_DEF set to 8h
+      vi.mocked(prisma.categorySla.findMany).mockResolvedValue([
+        { id: '1', category: 'BREAKDOWN', slaHours: 6, updatedAt: new Date() },
+        { id: '2', category: 'FUEL_DEF', slaHours: 8, updatedAt: new Date() },
+      ] as any);
+
+      vi.mocked(prisma.complaint.groupBy).mockResolvedValue([]);
+      vi.mocked(prisma.complaint.count).mockResolvedValue(0);
+
+      const beforeCall = Date.now();
+      await getSummary({ id: 'super-admin', role: 'SUPER_ADMIN' });
+
+      const overSlaCall = vi.mocked(prisma.complaint.count).mock.calls[3]![0] as any;
+      const overSlaFilter = overSlaCall.where.AND.find((clause: any) => clause.status && clause.OR);
+      const conditions = overSlaFilter.OR as Array<{ category: string; createdAt: { lte: Date } }>;
+      const conditionMap = new Map(conditions.map((c) => [c.category, c.createdAt.lte.getTime()]));
+
+      // BREAKDOWN should use overridden 6h instead of default 2h
+      const breakdownTime = conditionMap.get('BREAKDOWN')!;
+      expect(breakdownTime).toBeLessThanOrEqual(beforeCall - 6 * 3600 * 1000 + 100);
+      expect(breakdownTime).toBeGreaterThanOrEqual(beforeCall - 6 * 3600 * 1000 - 1000);
+
+      // FUEL_DEF should use overridden 8h instead of default 4h
+      const fuelTime = conditionMap.get('FUEL_DEF')!;
+      expect(fuelTime).toBeLessThanOrEqual(beforeCall - 8 * 3600 * 1000 + 100);
+      expect(fuelTime).toBeGreaterThanOrEqual(beforeCall - 8 * 3600 * 1000 - 1000);
+
+      // Unchanged category (e.g. TYRE_ISSUE) retains canonical default 4h
+      const tyreTime = conditionMap.get('TYRE_ISSUE')!;
+      expect(tyreTime).toBeLessThanOrEqual(beforeCall - 4 * 3600 * 1000 + 100);
+    });
   });
 });

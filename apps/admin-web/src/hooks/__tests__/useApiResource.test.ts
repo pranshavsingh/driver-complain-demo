@@ -195,7 +195,7 @@ describe('useApiResource Cache & Session Behavior', () => {
 
       // Recent keys (e.g. query:250) should be present
       expect(internals.keyVersions.has('user-1:api:unique:query:250')).toBe(true);
-      expect(internals.getKeyVersion('user-1:api:unique:query:250')).toBe(1);
+      expect(internals.getKeyVersion('user-1:api:unique:query:250')).toBeGreaterThan(0);
     });
 
     it('protects active in-flight requests from premature keyVersion eviction', () => {
@@ -205,7 +205,8 @@ describe('useApiResource Cache & Session Behavior', () => {
       // Set up an active in-flight request
       internals.activeRequests.set(activeKey, Promise.resolve({ ok: true }));
       internals.bumpKeyVersion(activeKey);
-      expect(internals.getKeyVersion(activeKey)).toBe(1);
+      const activeVer = internals.getKeyVersion(activeKey);
+      expect(activeVer).toBeGreaterThan(0);
 
       // Invalidate 120 other unique keys to trigger multiple rounds of eviction
       for (let i = 1; i <= 120; i++) {
@@ -216,10 +217,158 @@ describe('useApiResource Cache & Session Behavior', () => {
 
       // The active key MUST still be preserved because activeRequests.has(activeKey) is true!
       expect(internals.keyVersions.has(activeKey)).toBe(true);
-      expect(internals.getKeyVersion(activeKey)).toBe(1);
+      expect(internals.getKeyVersion(activeKey)).toBe(activeVer);
 
       // Cleanup
       internals.activeRequests.delete(activeKey);
+    });
+
+    it('simulates >100 invalidations while request remains in flight without invalidating the key, and late response is accepted', async () => {
+      const internals = _getInternalCacheForTesting();
+      const key = 'user-1:api:resilient-fetch';
+
+      internals.markRequestStart(key);
+      const requestVer = internals.getKeyVersion(key);
+
+      let resolveFetch!: (val: any) => void;
+      const fetchPromise = new Promise((resolve) => {
+        resolveFetch = resolve;
+      });
+
+      // Invalidate 150 unrelated keys
+      for (let i = 1; i <= 150; i++) {
+        internals.bumpKeyVersion(`user-1:unrelated:${i}`);
+      }
+
+      // Memory bound maintained
+      expect(internals.keyVersions.size).toBe(100);
+      // Key with in-flight request was NEVER evicted
+      expect(internals.keyVersions.has(key)).toBe(true);
+      expect(internals.hasInFlightRequests(key)).toBe(true);
+
+      // Late response arrives and is validated
+      resolveFetch({ payload: 'fresh-data' });
+      const data = await fetchPromise;
+
+      expect(internals.isValidKeyVersion(key, requestVer)).toBe(true);
+      internals.setCacheEntry(key, data);
+      internals.markRequestEnd(key);
+
+      expect(internals.hasInFlightRequests(key)).toBe(false);
+      expect(internals.getCacheEntry(key)?.data).toEqual({ payload: 'fresh-data' });
+    });
+
+    it('simulates >100 invalidations after key was invalidated, and late response is safely discarded', async () => {
+      const internals = _getInternalCacheForTesting();
+      const key = 'user-1:api:invalidated-race';
+
+      internals.markRequestStart(key);
+      const requestVer = internals.getKeyVersion(key);
+
+      let resolveFetch!: (val: any) => void;
+      const fetchPromise = new Promise((resolve) => {
+        resolveFetch = resolve;
+      });
+
+      // Invalidate the key itself
+      internals.bumpKeyVersion(key);
+
+      // Invalidate 150 other keys under heavy pressure
+      for (let i = 1; i <= 150; i++) {
+        internals.bumpKeyVersion(`user-1:unrelated:${i}`);
+      }
+
+      // Key is preserved while in-flight
+      expect(internals.keyVersions.has(key)).toBe(true);
+      expect(internals.hasInFlightRequests(key)).toBe(true);
+
+      // Late response arrives with the OLD requestVer
+      resolveFetch({ payload: 'stale-data' });
+      await fetchPromise;
+
+      // Must be rejected because current version does not match requestVer
+      expect(internals.isValidKeyVersion(key, requestVer)).toBe(false);
+
+      // Safe cleanup
+      internals.markRequestEnd(key);
+      expect(internals.cache.has(key)).toBe(false);
+    });
+
+    it('proves evicted inactive key can never accept late response even if recreated later', () => {
+      const internals = _getInternalCacheForTesting();
+      const key = 'user-1:api:evicted-key';
+
+      const ancientVer = internals.getKeyVersion(key);
+      // Key is not in flight
+      expect(internals.hasInFlightRequests(key)).toBe(false);
+
+      // Invalidate 120 other keys to force eviction of 'user-1:api:evicted-key'
+      for (let i = 1; i <= 120; i++) {
+        internals.bumpKeyVersion(`user-1:other:${i}`);
+      }
+
+      // Key has been safely evicted
+      expect(internals.keyVersions.has(key)).toBe(false);
+
+      // Late response arrives: rejected because key is not in keyVersions
+      expect(internals.isValidKeyVersion(key, ancientVer)).toBe(false);
+
+      // Key is recreated later with new version
+      const newVer = internals.getKeyVersion(key);
+      expect(newVer).toBeGreaterThan(ancientVer);
+
+      // Ancient response is STILL rejected
+      expect(internals.isValidKeyVersion(key, ancientVer)).toBe(false);
+      expect(internals.isValidKeyVersion(key, newVer)).toBe(true);
+    });
+
+    it('never evicts active keys: permits temporary growth past 100 when >100 active requests exist and cleans up upon settlement', () => {
+      const internals = _getInternalCacheForTesting();
+
+      // Start 105 active requests
+      for (let i = 1; i <= 105; i++) {
+        const k = `user-1:active-request:${i}`;
+        internals.markRequestStart(k);
+        internals.bumpKeyVersion(k);
+      }
+
+      // None of the 105 active keys were evicted by an unsafe fallback!
+      expect(internals.keyVersions.size).toBe(105);
+
+      // Settle 15 active requests
+      for (let i = 1; i <= 15; i++) {
+        internals.markRequestEnd(`user-1:active-request:${i}`);
+      }
+
+      // Cleanup immediately prunes down to MAX_KEY_VERSIONS = 100
+      expect(internals.keyVersions.size).toBe(100);
+    });
+
+    it('verifies logout/login session isolation drops all in-flight requests', async () => {
+      const internals = _getInternalCacheForTesting();
+      const key = 'user-1:api:session-data';
+
+      internals.markRequestStart(key);
+      const initialGen = internals.sessionGeneration;
+      const initialVer = internals.getKeyVersion(key);
+
+      let resolveFetch!: (val: any) => void;
+      const fetchPromise = new Promise((resolve) => {
+        resolveFetch = resolve;
+      });
+
+      // Logout occurs before fetch resolves
+      clearApiCache();
+      expect(internals.sessionGeneration).toBe(initialGen + 1);
+      expect(internals.keyVersions.size).toBe(0);
+
+      resolveFetch({ secret: 'user-1-data' });
+      await fetchPromise;
+
+      // Session gen mismatch and cleared keyVersions prevent acceptance
+      expect(internals.sessionGeneration === initialGen).toBe(false);
+      expect(internals.isValidKeyVersion(key, initialVer)).toBe(false);
+      expect(internals.cache.has(key)).toBe(false);
     });
 
     it('discards completed response if key version was bumped after fetch was initiated', async () => {

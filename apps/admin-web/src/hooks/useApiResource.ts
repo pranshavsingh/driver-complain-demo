@@ -17,48 +17,78 @@ const MAX_KEY_VERSIONS = 100;
 const cache = new Map<string, { data: any; timestamp: number }>();
 const activeRequests = new Map<string, Promise<any>>();
 const keyVersions = new Map<string, number>();
+const inFlightCounts = new Map<string, number>();
 
 const STALE_TIME = 10_000; // 10 seconds: completely fresh, return immediately without revalidation
 const CACHE_TTL = 30_000;  // 30 seconds: total cache retention, between 10s and 30s it returns stale data + background revalidates
 
+let globalVersionSeq = 0;
 let sessionGeneration = 0;
 
-function getKeyVersion(key: string): number {
-  return keyVersions.get(key) || 0;
+function hasInFlightRequests(key: string): boolean {
+  return (inFlightCounts.get(key) || 0) > 0 || activeRequests.has(key);
 }
 
-function bumpKeyVersion(key: string) {
-  const nextVer = (keyVersions.get(key) || 0) + 1;
-  if (keyVersions.has(key)) {
-    // Refresh LRU position
-    keyVersions.delete(key);
-  } else if (keyVersions.size >= MAX_KEY_VERSIONS) {
-    // Evict oldest version entry, protecting keys that currently have active in-flight requests
-    let evicted = false;
-    for (const k of keyVersions.keys()) {
-      if (!activeRequests.has(k)) {
-        keyVersions.delete(k);
-        evicted = true;
-        break;
-      }
+function markRequestStart(key: string) {
+  inFlightCounts.set(key, (inFlightCounts.get(key) || 0) + 1);
+}
+
+function markRequestEnd(key: string) {
+  const current = inFlightCounts.get(key) || 1;
+  if (current <= 1) {
+    inFlightCounts.delete(key);
+  } else {
+    inFlightCounts.set(key, current - 1);
+  }
+  pruneKeyVersions();
+}
+
+function pruneKeyVersions() {
+  if (keyVersions.size <= MAX_KEY_VERSIONS) {
+    return;
+  }
+  // Safely prune older inactive keys, NEVER evicting a key with active in-flight requests
+  for (const k of Array.from(keyVersions.keys())) {
+    if (keyVersions.size <= MAX_KEY_VERSIONS) {
+      break;
     }
-    // Fallback if all are in activeRequests
-    if (!evicted) {
-      const oldestKey = keyVersions.keys().next().value;
-      if (oldestKey !== undefined) {
-        keyVersions.delete(oldestKey);
-      }
+    if (!hasInFlightRequests(k)) {
+      keyVersions.delete(k);
     }
   }
+}
+
+function getKeyVersion(key: string): number {
+  let ver = keyVersions.get(key);
+  if (ver === undefined) {
+    ver = ++globalVersionSeq;
+    keyVersions.set(key, ver);
+    pruneKeyVersions();
+  }
+  return ver;
+}
+
+function bumpKeyVersion(key: string): number {
+  const nextVer = ++globalVersionSeq;
+  keyVersions.delete(key); // Refresh LRU position
   keyVersions.set(key, nextVer);
+  pruneKeyVersions();
+  return nextVer;
+}
+
+function isValidKeyVersion(key: string, expectedVersion: number): boolean {
+  const current = keyVersions.get(key);
+  return current !== undefined && current === expectedVersion;
 }
 
 /** Wipes the ENTIRE cache (all users). Used during logout/session expiry. */
 export function clearApiCache() {
   sessionGeneration++;
+  globalVersionSeq = 0;
   cache.clear();
   activeRequests.clear();
   keyVersions.clear();
+  inFlightCounts.clear();
 }
 
 /**
@@ -214,27 +244,27 @@ export function useApiResource<T>(
 
     let promise = activeRequests.get(key);
     if (!promise) {
-      promise = loadRef.current().then(
-        (data) => {
-          // Discard if session ended, key was invalidated, or user changed while request was in-flight
-          if (
-            sessionGeneration === requestGen &&
-            userId === requestUserId &&
-            getKeyVersion(key) === requestKeyVer &&
-            activeRequests.has(key)
-          ) {
-            setCacheEntry(key, data);
-            activeRequests.delete(key);
-          }
-          return data;
-        },
-        (error) => {
-          if (sessionGeneration === requestGen && getKeyVersion(key) === requestKeyVer) {
-            activeRequests.delete(key);
-          }
-          throw error;
-        },
-      );
+      markRequestStart(key);
+      promise = Promise.resolve()
+        .then(() => loadRef.current())
+        .then(
+          (data) => {
+            // Discard if session ended, key was invalidated, or user changed while request was in-flight
+            if (
+              sessionGeneration === requestGen &&
+              userId === requestUserId &&
+              isValidKeyVersion(key, requestKeyVer) &&
+              activeRequests.has(key)
+            ) {
+              setCacheEntry(key, data);
+            }
+            return data;
+          },
+        )
+        .finally(() => {
+          activeRequests.delete(key);
+          markRequestEnd(key);
+        });
       activeRequests.set(key, promise);
     }
 
@@ -245,7 +275,7 @@ export function useApiResource<T>(
           active &&
           sessionGeneration === requestGen &&
           userId === requestUserId &&
-          getKeyVersion(key) === requestKeyVer
+          isValidKeyVersion(key, requestKeyVer)
         ) {
           setState({ data: data as T, error: null, loading: false });
         }
@@ -255,7 +285,7 @@ export function useApiResource<T>(
           active &&
           sessionGeneration === requestGen &&
           userId === requestUserId &&
-          getKeyVersion(key) === requestKeyVer
+          isValidKeyVersion(key, requestKeyVer)
         ) {
           setState((prev) => ({ data: prev.data, error, loading: false }));
         }
@@ -291,12 +321,21 @@ export function _getInternalCacheForTesting() {
     cache,
     activeRequests,
     keyVersions,
+    inFlightCounts,
     get sessionGeneration() {
       return sessionGeneration;
+    },
+    get globalVersionSeq() {
+      return globalVersionSeq;
     },
     setCacheEntry,
     getCacheEntry,
     bumpKeyVersion,
     getKeyVersion,
+    isValidKeyVersion,
+    hasInFlightRequests,
+    markRequestStart,
+    markRequestEnd,
+    pruneKeyVersions,
   };
 }

@@ -23,10 +23,15 @@ export async function getSummary(actor?: Actor): Promise<DriverSummary> {
     driverWhere.vehicles = { some: { siteInchargeId: actor.id } };
   }
 
-  const [total, assignedCount] = await Promise.all([
+  const [total, assignedGroups] = await Promise.all([
     prisma.driver.count({ where: driverWhere }),
-    prisma.vehicle.count({ where: vehicleWhere }),
+    prisma.vehicle.groupBy({
+      by: ['driverId'],
+      where: vehicleWhere,
+    }),
   ]);
+
+  const assignedCount = assignedGroups.filter((g) => g.driverId !== null).length;
 
   return {
     total,

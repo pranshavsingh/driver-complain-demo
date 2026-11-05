@@ -134,6 +134,16 @@ describe('getDelayedLoadingCount - Authorization & Scoping', () => {
     expect(prisma.loadingRecord.count).not.toHaveBeenCalled();
   });
 
+  it('absent or invalid actor: fails closed and returns 0 without querying database', async () => {
+    const countNull = await getDelayedLoadingCount(null as any);
+    expect(countNull).toBe(0);
+    const countUndefined = await getDelayedLoadingCount(undefined as any);
+    expect(countUndefined).toBe(0);
+    const countNoRole = await getDelayedLoadingCount({ id: 'bad-user' } as any);
+    expect(countNoRole).toBe(0);
+    expect(prisma.loadingRecord.count).not.toHaveBeenCalled();
+  });
+
   describe('handleGetDelayedCount Controller', () => {
     it('passes authenticated actor to service and does not trust client-supplied site query', async () => {
       vi.mocked(resolveUserScope).mockResolvedValue({

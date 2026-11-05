@@ -528,7 +528,11 @@ export async function getActiveLoadingRecord(userId: string): Promise<{
   };
 }
 
-export async function getDelayedLoadingCount(actor?: Actor): Promise<number> {
+export async function getDelayedLoadingCount(actor: Actor): Promise<number> {
+  if (!actor || !actor.role) {
+    return 0; // Fail-closed: missing or unauthenticated actor cannot receive global count
+  }
+
   const threeHoursAgo = new Date(Date.now() - 180 * 60 * 1000);
   const delayCondition: Prisma.LoadingRecordWhereInput = {
     OR: [
@@ -540,7 +544,7 @@ export async function getDelayedLoadingCount(actor?: Actor): Promise<number> {
   };
 
   // ADMIN and SUPER_ADMIN receive authorized global count
-  if (!actor || actor.role === 'ADMIN' || actor.role === 'SUPER_ADMIN') {
+  if (actor.role === 'ADMIN' || actor.role === 'SUPER_ADMIN') {
     return prisma.loadingRecord.count({
       where: delayCondition,
     });

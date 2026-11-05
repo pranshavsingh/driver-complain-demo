@@ -24,6 +24,7 @@ import { logger } from '../../lib/logger';
 import { ApiError } from '../../errors/api-error';
 import { emitToRoles, emitEventToUsers } from '../../realtime/socket';
 import { resolveUserScope } from '../../lib/user-scope';
+import { getCategorySlaList, DEFAULT_SLA_HOURS } from '../settings/settings.service';
 
 async function findLeastLoadedAdmin(
   category: string,
@@ -993,17 +994,10 @@ export async function getSummary(
   const andBase = where.AND ? (Array.isArray(where.AND) ? where.AND : [where.AND]) : [];
 
   const now = Date.now();
-  const categorySlaEntries = [
-    { category: 'BREAKDOWN', hours: 4 },
-    { category: 'FUEL_DEF', hours: 2 },
-    { category: 'TYRE_ISSUE', hours: 3 },
-    { category: 'LOADING', hours: 6 },
-    { category: 'ACCOUNTS', hours: 12 },
-    { category: 'VEHICLE_MAINTENANCE', hours: 8 },
-  ] as const;
-  const overSlaConditions = categorySlaEntries.map(({ category, hours }) => ({
+  const categorySlas = await getCategorySlaList();
+  const overSlaConditions = categorySlas.map(({ category, slaHours }) => ({
     category: category as import('@prisma/client').ComplaintCategory,
-    createdAt: { lte: new Date(now - hours * 3600 * 1000) },
+    createdAt: { lte: new Date(now - (slaHours || DEFAULT_SLA_HOURS[category] || 12) * 3600 * 1000) },
   }));
 
   const [statusGroups, needsActionCount, escalatedCount, todayCount, categoryGroups, overSlaCount] = await Promise.all([

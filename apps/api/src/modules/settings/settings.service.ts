@@ -4,7 +4,7 @@ import { prisma } from '../../lib/prisma';
 import { emitToRoles } from '../../realtime/socket';
 
 /** Default SLA durations in hours for categories requiring SLA */
-const DEFAULT_SLA_HOURS: Record<string, number> = {
+export const DEFAULT_SLA_HOURS: Record<string, number> = {
   BREAKDOWN: 2,
   TYRE_ISSUE: 4,
   FUEL_DEF: 4,
