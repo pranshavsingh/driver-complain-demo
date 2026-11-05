@@ -53,7 +53,7 @@ describe('Vehicles Service - Scoping & Pagination', () => {
       });
 
       // Verify no siteInchargeId restriction in count calls
-      const firstCountCall = vi.mocked(prisma.vehicle.count).mock.calls[0][0];
+      const firstCountCall = vi.mocked(prisma.vehicle.count).mock.calls[0]![0];
       expect(firstCountCall?.where?.siteInchargeId).toBeUndefined();
     });
 
@@ -84,7 +84,7 @@ describe('Vehicles Service - Scoping & Pagination', () => {
         expect(call[0]?.where?.siteInchargeId).toBe('exec-123');
       }
 
-      const findManyCall = vi.mocked(prisma.vehicle.findMany).mock.calls[0][0];
+      const findManyCall = vi.mocked(prisma.vehicle.findMany).mock.calls[0]![0];
       expect(findManyCall?.where?.siteInchargeId).toBe('exec-123');
     });
   });
@@ -108,7 +108,7 @@ describe('Vehicles Service - Scoping & Pagination', () => {
         hasPrevPage: true,
       });
 
-      const findManyCall = vi.mocked(prisma.vehicle.findMany).mock.calls[0][0] as any;
+      const findManyCall = vi.mocked(prisma.vehicle.findMany).mock.calls[0]![0] as any;
       expect(findManyCall.skip).toBe(10);
       expect(findManyCall.take).toBe(10);
       expect(findManyCall.where.driverId).toEqual({ not: null });
@@ -124,7 +124,7 @@ describe('Vehicles Service - Scoping & Pagination', () => {
         { id: 'exec-site-incharge', role: 'EXECUTIVE' },
       );
 
-      const findManyCall = vi.mocked(prisma.vehicle.findMany).mock.calls[0][0] as any;
+      const findManyCall = vi.mocked(prisma.vehicle.findMany).mock.calls[0]![0] as any;
       expect(findManyCall.where.siteInchargeId).toBe('exec-site-incharge');
       expect(findManyCall.where.driverId).toBeNull();
     });
