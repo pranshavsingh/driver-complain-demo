@@ -15,15 +15,27 @@ export interface Resource<T> extends ResourceState<T> {
 const MAX_CACHE_ENTRIES = 50;
 const cache = new Map<string, { data: any; timestamp: number }>();
 const activeRequests = new Map<string, Promise<any>>();
-const CACHE_TTL = 30_000; // 30 seconds
+const keyVersions = new Map<string, number>();
+
+const STALE_TIME = 10_000; // 10 seconds: completely fresh, return immediately without revalidation
+const CACHE_TTL = 30_000;  // 30 seconds: total cache retention, between 10s and 30s it returns stale data + background revalidates
 
 let sessionGeneration = 0;
+
+function getKeyVersion(key: string): number {
+  return keyVersions.get(key) || 0;
+}
+
+function bumpKeyVersion(key: string) {
+  keyVersions.set(key, (keyVersions.get(key) || 0) + 1);
+}
 
 /** Wipes the ENTIRE cache (all users). Used during logout/session expiry. */
 export function clearApiCache() {
   sessionGeneration++;
   cache.clear();
   activeRequests.clear();
+  keyVersions.clear();
 }
 
 /**
@@ -33,9 +45,16 @@ export function clearApiCache() {
  */
 export function invalidateApiCache(userId: string | undefined, rawKey: string, prefix = false) {
   const scopedKey = `${userId || 'anonymous'}:${rawKey}`;
-  for (const key of cache.keys()) {
+  for (const key of Array.from(cache.keys())) {
     if (prefix ? key.startsWith(scopedKey) : key === scopedKey) {
       cache.delete(key);
+      bumpKeyVersion(key);
+    }
+  }
+  for (const key of Array.from(activeRequests.keys())) {
+    if (prefix ? key.startsWith(scopedKey) : key === scopedKey) {
+      activeRequests.delete(key);
+      bumpKeyVersion(key);
     }
   }
 }
@@ -52,17 +71,21 @@ function setCacheEntry(key: string, data: any) {
   cache.set(key, { data, timestamp: Date.now() });
 }
 
-function getCacheEntry<T>(key: string): T | undefined {
+function getCacheEntry<T>(key: string): { data: T; isStale: boolean } | undefined {
   const entry = cache.get(key);
   if (!entry) return undefined;
-  if (Date.now() - entry.timestamp >= CACHE_TTL) {
+  const age = Date.now() - entry.timestamp;
+  if (age >= CACHE_TTL) {
     cache.delete(key);
     return undefined;
   }
   // Refresh LRU position on access
   cache.delete(key);
   cache.set(key, entry);
-  return entry.data as T;
+  return {
+    data: entry.data as T,
+    isStale: age >= STALE_TIME,
+  };
 }
 
 /**
@@ -91,59 +114,90 @@ export function useApiResource<T>(
   loadRef.current = load;
 
   const [nonce, setNonce] = useState(0);
+
+  // Synchronous key tracking during render to prevent stale data frames across user/key changes
+  const [prevKey, setPrevKey] = useState<string | null>(key);
   const [state, setState] = useState<ResourceState<T>>(() => {
     if (!key) {
       return { data: null, error: null, loading: false };
     }
     const cached = getCacheEntry<T>(key);
     if (cached !== undefined) {
-      return { data: cached, error: null, loading: false };
+      return { data: cached.data, error: null, loading: false };
     }
     return { data: null, error: null, loading: true };
   });
 
-  const prevKeyRef = useRef(key);
+  // Adjust state during render if key changed (logout, account switch, route/filter change)
+  if (key !== prevKey) {
+    setPrevKey(key);
+    const cached = key ? getCacheEntry<T>(key) : undefined;
+    setState({
+      data: cached ? cached.data : null,
+      error: null,
+      loading: Boolean(key && !cached),
+    });
+  }
+
+  const prevEffectKeyRef = useRef(key);
 
   useEffect(() => {
     if (!key) {
       setState({ data: null, error: null, loading: false });
-      prevKeyRef.current = null;
+      prevEffectKeyRef.current = null;
       return;
     }
 
     let active = true;
     const requestGen = sessionGeneration;
     const requestUserId = userId;
-    const keyChanged = prevKeyRef.current !== key;
-    prevKeyRef.current = key;
+    const requestKeyVer = getKeyVersion(key);
+    const keyChanged = prevEffectKeyRef.current !== key;
+    prevEffectKeyRef.current = key;
 
-    const cachedData = getCacheEntry<T>(key);
-    if (nonce === 0 && cachedData !== undefined) {
-      setState({ data: cachedData, error: null, loading: false });
+    const cached = getCacheEntry<T>(key);
+
+    // If data is in cache and still fresh, and not a manual reload: no fetch needed
+    if (nonce === 0 && cached && !cached.isStale && !keyChanged) {
+      setState({ data: cached.data, error: null, loading: false });
       return;
     }
 
-    // Stale-while-revalidate: if key didn't change (e.g. reload), preserve previous data.
-    // If key did change and is not in cache, clear data so old resource isn't shown under new key.
-    setState((prev) => ({
-      data: keyChanged ? (cachedData !== undefined ? cachedData : null) : prev.data,
-      error: null,
-      loading: true,
-    }));
+    // Stale-while-revalidate:
+    // If cached data exists (even if stale): display cached data immediately with loading: false
+    // If no cached data exists: set loading: true (show skeleton/spinner)
+    if (cached) {
+      setState(() => ({
+        data: cached.data,
+        error: null,
+        loading: false,
+      }));
+    } else {
+      setState((prev) => ({
+        data: keyChanged ? null : prev.data,
+        error: null,
+        loading: true,
+      }));
+    }
 
     let promise = activeRequests.get(key);
     if (!promise) {
       promise = loadRef.current().then(
         (data) => {
-          // Discard if session ended or user changed while request was in-flight
-          if (sessionGeneration === requestGen && activeRequests.has(key)) {
+          // Discard if session ended, key was invalidated, or user changed while request was in-flight
+          if (
+            sessionGeneration === requestGen &&
+            userId === requestUserId &&
+            getKeyVersion(key) === requestKeyVer &&
+            activeRequests.has(key)
+          ) {
             setCacheEntry(key, data);
             activeRequests.delete(key);
           }
           return data;
         },
         (error) => {
-          if (sessionGeneration === requestGen) {
+          if (sessionGeneration === requestGen && getKeyVersion(key) === requestKeyVer) {
             activeRequests.delete(key);
           }
           throw error;
@@ -154,13 +208,23 @@ export function useApiResource<T>(
 
     promise.then(
       (data) => {
-        // Only set state if component is still mounted AND user session has not changed
-        if (active && sessionGeneration === requestGen && userId === requestUserId) {
+        // Only set state if component is still mounted AND user session has not changed AND key was not invalidated
+        if (
+          active &&
+          sessionGeneration === requestGen &&
+          userId === requestUserId &&
+          getKeyVersion(key) === requestKeyVer
+        ) {
           setState({ data: data as T, error: null, loading: false });
         }
       },
       (error: unknown) => {
-        if (active && sessionGeneration === requestGen && userId === requestUserId) {
+        if (
+          active &&
+          sessionGeneration === requestGen &&
+          userId === requestUserId &&
+          getKeyVersion(key) === requestKeyVer
+        ) {
           setState((prev) => ({ data: prev.data, error, loading: false }));
         }
       },
@@ -174,6 +238,8 @@ export function useApiResource<T>(
   const reload = useCallback(() => {
     if (!key) return;
     cache.delete(key);
+    activeRequests.delete(key);
+    bumpKeyVersion(key);
     setNonce((n) => n + 1);
   }, [key]);
 
@@ -186,4 +252,19 @@ export function useApiResource<T>(
     }),
     [state.data, state.error, state.loading, reload],
   );
+}
+
+export function _getInternalCacheForTesting() {
+  return {
+    cache,
+    activeRequests,
+    keyVersions,
+    get sessionGeneration() {
+      return sessionGeneration;
+    },
+    setCacheEntry,
+    getCacheEntry,
+    bumpKeyVersion,
+    getKeyVersion,
+  };
 }

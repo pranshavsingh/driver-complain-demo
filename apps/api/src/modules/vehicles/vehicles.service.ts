@@ -114,12 +114,13 @@ export interface VehicleSummary {
   freeCount: number;
   activeAgreementsCount: number;
   utilizationPct: number;
-  assignedDrivers: {
-    vehicleId: string;
-    plateNumber: string;
-    driverId: string;
-    driverName: string;
-  }[];
+}
+
+export interface DriverAssignment {
+  vehicleId: string;
+  plateNumber: string;
+  driverId: string;
+  driverName: string;
 }
 
 export async function getSummary(actor?: { id: string; role: string }): Promise<VehicleSummary> {
@@ -128,7 +129,7 @@ export async function getSummary(actor?: { id: string; role: string }): Promise<
     where.siteInchargeId = actor.id;
   }
 
-  const [total, assignedCount, activeCount, assignedVehicles] = await Promise.all([
+  const [total, assignedCount, activeCount] = await Promise.all([
     prisma.vehicle.count({ where }),
     prisma.vehicle.count({ where: { ...where, driverId: { not: null } } }),
     prisma.vehicle.count({
@@ -141,35 +142,10 @@ export async function getSummary(actor?: { id: string; role: string }): Promise<
         ],
       },
     }),
-    prisma.vehicle.findMany({
-      where: { ...where, driverId: { not: null } },
-      select: {
-        id: true,
-        plateNumber: true,
-        driverId: true,
-        driver: {
-          select: {
-            user: {
-              select: {
-                firstName: true,
-                lastName: true,
-              },
-            },
-          },
-        },
-      },
-    }),
   ]);
 
   const freeCount = Math.max(0, total - assignedCount);
   const utilizationPct = total > 0 ? Math.round((assignedCount / total) * 100) : 0;
-
-  const assignedDrivers = assignedVehicles.map((v) => ({
-    vehicleId: v.id,
-    plateNumber: v.plateNumber,
-    driverId: v.driverId!,
-    driverName: v.driver?.user ? `${v.driver.user.firstName} ${v.driver.user.lastName}`.trim() : 'Driver',
-  }));
 
   return {
     total,
@@ -177,8 +153,53 @@ export async function getSummary(actor?: { id: string; role: string }): Promise<
     freeCount,
     activeAgreementsCount: activeCount,
     utilizationPct,
-    assignedDrivers,
   };
+}
+
+/** Separate bounded lookup for driver-to-vehicle assignments with role scoping. */
+export async function getAssignments(
+  query?: { driverId?: string; driverIds?: string[]; limit?: number },
+  actor?: { id: string; role: string },
+): Promise<DriverAssignment[]> {
+  const where: any = { driverId: { not: null } };
+  if (actor?.role === 'EXECUTIVE') {
+    where.siteInchargeId = actor.id;
+  }
+
+  if (query?.driverId) {
+    where.driverId = query.driverId;
+  } else if (query?.driverIds && query.driverIds.length > 0) {
+    where.driverId = { in: query.driverIds.slice(0, 100) };
+  }
+
+  const limit = Math.min(Math.max(1, query?.limit ?? 50), 100);
+
+  const vehicles = await prisma.vehicle.findMany({
+    where,
+    select: {
+      id: true,
+      plateNumber: true,
+      driverId: true,
+      driver: {
+        select: {
+          user: {
+            select: {
+              firstName: true,
+              lastName: true,
+            },
+          },
+        },
+      },
+    },
+    take: limit,
+  });
+
+  return vehicles.map((v) => ({
+    vehicleId: v.id,
+    plateNumber: v.plateNumber,
+    driverId: v.driverId!,
+    driverName: v.driver?.user ? `${v.driver.user.firstName} ${v.driver.user.lastName}`.trim() : 'Driver',
+  }));
 }
 
 /** Vehicles assigned to the calling user's driver profile ("my vehicles"). */

@@ -5,9 +5,21 @@ import { ApiError } from '../../errors/api-error';
 import { sendSuccess } from '../../lib/http';
 import { setPaginationHeaders } from '../../lib/pagination';
 
-/** Admin: vehicle fleet summary metrics and assigned driver map. */
+/** Admin: vehicle fleet summary metrics. */
 export async function summary(req: Request, res: Response): Promise<void> {
   const result = await vehiclesService.getSummary(req.user);
+  sendSuccess(res, result);
+}
+
+/** Admin: lookup driver-to-vehicle assignments (bounded & scoped). */
+export async function assignments(req: Request, res: Response): Promise<void> {
+  const driverId = typeof req.query.driverId === 'string' ? req.query.driverId : undefined;
+  const driverIds = typeof req.query.driverIds === 'string'
+    ? req.query.driverIds.split(',').map((s) => s.trim()).filter(Boolean)
+    : undefined;
+  const limit = typeof req.query.limit === 'string' ? parseInt(req.query.limit, 10) : undefined;
+
+  const result = await vehiclesService.getAssignments({ driverId, driverIds, limit }, req.user);
   sendSuccess(res, result);
 }
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { getSummary, list } from '../vehicles.service';
+import { getSummary, getAssignments, list } from '../vehicles.service';
 import { prisma } from '../../../lib/prisma';
 
 vi.mock('../../../lib/prisma', () => ({
@@ -19,20 +19,11 @@ describe('Vehicles Service - Scoping & Pagination', () => {
   });
 
   describe('getSummary', () => {
-    it('SUPER_ADMIN: sees fleet-wide metrics without siteInchargeId filter', async () => {
+    it('SUPER_ADMIN: sees lightweight fleet-wide metrics without unbounded driver lists or siteInchargeId filter', async () => {
       vi.mocked(prisma.vehicle.count)
         .mockResolvedValueOnce(50)  // total
         .mockResolvedValueOnce(35)  // assignedCount
         .mockResolvedValueOnce(45); // activeAgreementsCount
-
-      vi.mocked(prisma.vehicle.findMany).mockResolvedValueOnce([
-        {
-          id: 'v1',
-          plateNumber: 'WB-01-1111',
-          driverId: 'd1',
-          driver: { user: { firstName: 'John', lastName: 'Doe' } },
-        } as any,
-      ]);
 
       const res = await getSummary({ id: 'sa-1', role: 'SUPER_ADMIN' });
 
@@ -42,15 +33,10 @@ describe('Vehicles Service - Scoping & Pagination', () => {
         freeCount: 15,
         activeAgreementsCount: 45,
         utilizationPct: 70,
-        assignedDrivers: [
-          {
-            vehicleId: 'v1',
-            plateNumber: 'WB-01-1111',
-            driverId: 'd1',
-            driverName: 'John Doe',
-          },
-        ],
       });
+
+      // Verify no findMany call made during summary (strictly O(1) lightweight counts)
+      expect(prisma.vehicle.findMany).not.toHaveBeenCalled();
 
       // Verify no siteInchargeId restriction in count calls
       const firstCountCall = vi.mocked(prisma.vehicle.count).mock.calls[0]![0];
@@ -63,29 +49,55 @@ describe('Vehicles Service - Scoping & Pagination', () => {
         .mockResolvedValueOnce(8)
         .mockResolvedValueOnce(9);
 
-      vi.mocked(prisma.vehicle.findMany).mockResolvedValueOnce([
-        {
-          id: 'v2',
-          plateNumber: 'WB-02-2222',
-          driverId: 'd2',
-          driver: { user: { firstName: 'Jane', lastName: 'Smith' } },
-        } as any,
-      ]);
-
       const res = await getSummary({ id: 'exec-123', role: 'EXECUTIVE' });
 
       expect(res.total).toBe(10);
       expect(res.assignedCount).toBe(8);
       expect(res.freeCount).toBe(2);
 
-      // Verify strict role scoping
+      // Verify strict role scoping across all count calls
       const countCalls = vi.mocked(prisma.vehicle.count).mock.calls;
       for (const call of countCalls) {
         expect(call[0]?.where?.siteInchargeId).toBe('exec-123');
       }
+    });
+  });
 
-      const findManyCall = vi.mocked(prisma.vehicle.findMany).mock.calls[0]![0];
-      expect(findManyCall?.where?.siteInchargeId).toBe('exec-123');
+  describe('getAssignments', () => {
+    it('SUPER_ADMIN: returns driver assignments without siteInchargeId restriction', async () => {
+      vi.mocked(prisma.vehicle.findMany).mockResolvedValueOnce([
+        {
+          id: 'v1',
+          plateNumber: 'WB-01-1111',
+          driverId: 'd1',
+          driver: { user: { firstName: 'John', lastName: 'Doe' } },
+        } as any,
+      ]);
+
+      const res = await getAssignments({ driverIds: ['d1', 'd2'] }, { id: 'sa-1', role: 'SUPER_ADMIN' });
+
+      expect(res).toEqual([
+        {
+          vehicleId: 'v1',
+          plateNumber: 'WB-01-1111',
+          driverId: 'd1',
+          driverName: 'John Doe',
+        },
+      ]);
+
+      const findManyCall = vi.mocked(prisma.vehicle.findMany).mock.calls[0]![0] as any;
+      expect(findManyCall.where.driverId).toEqual({ in: ['d1', 'd2'] });
+      expect(findManyCall.where.siteInchargeId).toBeUndefined();
+    });
+
+    it('EXECUTIVE: strictly enforces siteInchargeId in assignments lookup', async () => {
+      vi.mocked(prisma.vehicle.findMany).mockResolvedValueOnce([]);
+
+      await getAssignments({ driverId: 'd-target' }, { id: 'exec-site', role: 'EXECUTIVE' });
+
+      const findManyCall = vi.mocked(prisma.vehicle.findMany).mock.calls[0]![0] as any;
+      expect(findManyCall.where.siteInchargeId).toBe('exec-site');
+      expect(findManyCall.where.driverId).toBe('d-target');
     });
   });
 

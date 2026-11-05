@@ -50,19 +50,18 @@ const AGREEMENT_STATUS_OPTIONS = [
 function InlineDriverSelect({
   vehicle,
   driversList,
-  driverAssignedVehicleMap,
   onAssign,
   isUpdating,
 }: {
   vehicle: VehiclePublic;
   driversList: DriverListItem[];
-  driverAssignedVehicleMap: Map<string, { vehicleId: string; plateNumber: string; driverName: string }>;
   onAssign: (vehicleId: string, driverId: string | null) => Promise<void>;
   isUpdating: boolean;
 }): ReactElement {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [coords, setCoords] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  const [assignmentsMap, setAssignmentsMap] = useState<Map<string, api.DriverAssignment>>(new Map());
   const buttonRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
 
@@ -86,6 +85,28 @@ function InlineDriverSelect({
       setIsOpen(false);
     }
   };
+
+  // Fetch driver assignments on demand only when popover opens
+  useEffect(() => {
+    if (!isOpen) return;
+    let active = true;
+    const ids = driversList.slice(0, 100).map((d) => d.id);
+    if (ids.length === 0) return;
+    api.vehicles
+      .assignments({ driverIds: ids })
+      .then((res) => {
+        if (!active) return;
+        const map = new Map<string, api.DriverAssignment>();
+        for (const item of res) {
+          map.set(item.driverId, item);
+        }
+        setAssignmentsMap(map);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [isOpen, driversList]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -132,7 +153,17 @@ function InlineDriverSelect({
 
   const handleSelect = async (dId: string | null) => {
     if (dId) {
-      const assigned = driverAssignedVehicleMap.get(dId);
+      let assigned = assignmentsMap.get(dId);
+      if (!assigned) {
+        try {
+          const directCheck = await api.vehicles.assignments({ driverId: dId });
+          if (directCheck.length > 0) {
+            assigned = directCheck[0];
+          }
+        } catch {
+          // Fall back to server-side 1:1 exclusivity validation on submit
+        }
+      }
       if (assigned && assigned.vehicleId !== vehicle.id) {
         const driverObj = driversList.find((d) => d.id === dId);
         const dName = driverObj ? `${driverObj.firstName} ${driverObj.lastName}` : 'Driver';
@@ -331,7 +362,7 @@ function InlineDriverSelect({
               ) : (
                 filteredDrivers.map((driver) => {
                   const isSelected = vehicle.driverId === driver.id;
-                  const assignedInfo = driverAssignedVehicleMap.get(driver.id);
+                  const assignedInfo = assignmentsMap.get(driver.id);
                   const isAssignedToOther = Boolean(assignedInfo && assignedInfo.vehicleId !== vehicle.id);
 
                   return (
@@ -557,18 +588,24 @@ export function VehiclesPage(): ReactElement {
       .sort((a, b) => a.firstName.localeCompare(b.firstName));
   }, [allUsers]);
 
-  // Map of driverId -> assigned vehicle details (for 1:1 driver assignment enforcement)
-  const driverAssignedVehicleMap = useMemo(() => {
-    const map = new Map<string, { vehicleId: string; plateNumber: string; driverName: string }>();
-    if (summaryData?.assignedDrivers) {
-      for (const a of summaryData.assignedDrivers) {
+  // Bounded assignments resource enabled only when the modal is open
+  const assignmentsResource = useApiResource(
+    'api:vehicles:assignments',
+    () => api.vehicles.assignments({ limit: 100 }),
+    { enabled: showModal },
+  );
+
+  const modalAssignmentsMap = useMemo(() => {
+    const map = new Map<string, api.DriverAssignment>();
+    if (assignmentsResource.data) {
+      for (const a of assignmentsResource.data) {
         map.set(a.driverId, a);
       }
     }
     return map;
-  }, [summaryData]);
+  }, [assignmentsResource.data]);
 
-  // KPI Metrics
+  // KPI Metrics (pure scalar metrics, zero unbounded fleet payload)
   const totalFleetCount = summaryData?.total ?? totalItems;
   const activeAgreementsCount = summaryData?.activeAgreementsCount ?? 0;
   const freeVehiclesCount = summaryData?.freeCount ?? 0;
@@ -663,7 +700,15 @@ export function VehiclesPage(): ReactElement {
     // 3. Driver 1:1 Assignment Validation
     const trimmedDriverId = driverId.trim();
     if (trimmedDriverId) {
-      const assigned = driverAssignedVehicleMap.get(trimmedDriverId);
+      let assigned = modalAssignmentsMap.get(trimmedDriverId);
+      if (!assigned) {
+        try {
+          const directCheck = await api.vehicles.assignments({ driverId: trimmedDriverId });
+          if (directCheck.length > 0) assigned = directCheck[0];
+        } catch {
+          // Fall back to server-side 1:1 exclusivity validation on submit
+        }
+      }
       if (assigned && assigned.vehicleId !== editingVehicle?.id) {
         const driverObj = driversList.find((d) => d.id === trimmedDriverId);
         const dName = driverObj ? `${driverObj.firstName} ${driverObj.lastName}` : 'Driver';
@@ -1418,7 +1463,6 @@ export function VehiclesPage(): ReactElement {
                           <InlineDriverSelect
                             vehicle={vehicle}
                             driversList={driversList}
-                            driverAssignedVehicleMap={driverAssignedVehicleMap}
                             onAssign={handleInlineAssignDriver}
                             isUpdating={updatingDriverVehicleId === vehicle.id}
                           />
@@ -1936,7 +1980,7 @@ export function VehiclesPage(): ReactElement {
                     onChange={(e) => {
                       const selectedVal = e.target.value;
                       if (selectedVal) {
-                        const assignedInfo = driverAssignedVehicleMap.get(selectedVal);
+                        const assignedInfo = modalAssignmentsMap.get(selectedVal);
                         if (assignedInfo && assignedInfo.vehicleId !== editingVehicle?.id) {
                           const driverObj = driversList.find((d) => d.id === selectedVal);
                           const dName = driverObj ? `${driverObj.firstName} ${driverObj.lastName}` : 'This driver';
@@ -1967,7 +2011,7 @@ export function VehiclesPage(): ReactElement {
                   >
                     <option value="">-- No Driver (Free / Unassigned Vehicle) --</option>
                     {driversList.map((d) => {
-                      const assignedInfo = driverAssignedVehicleMap.get(d.id);
+                      const assignedInfo = modalAssignmentsMap.get(d.id);
                       const isAssignedElsewhere = Boolean(assignedInfo && assignedInfo.vehicleId !== editingVehicle?.id);
                       const isAssignedHere = Boolean(assignedInfo && assignedInfo.vehicleId === editingVehicle?.id);
 
