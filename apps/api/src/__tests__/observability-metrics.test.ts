@@ -15,7 +15,10 @@ import {
   redisUsedMemoryBytes,
   redisPingLatencySeconds,
   dbUpGauge,
+  dbQueryDurationSeconds,
   socketioConnectedClients,
+  collectSystemMetrics,
+  _resetCollectThrottleForTesting,
 } from '../lib/metrics';
 import { collectRedisMetrics, markRedisUnavailable } from '../lib/redis-metrics';
 import { collectBullmqMetrics, instrumentWorker } from '../jobs/queue-metrics';
@@ -305,17 +308,19 @@ describe('Observability & Metrics Hardening (M8 Phase 2)', () => {
     });
   });
 
-  describe('Database Connectivity Metric (db_up)', () => {
-    it('sets dbUpGauge to 1 on successful query', async () => {
+  describe('Database Connectivity Metric (db_up) & Raw SQL Instrumentation', () => {
+    it('sets dbUpGauge to 1 and observes duration on successful $queryRaw', async () => {
       const querySpy = vi.spyOn(prisma, '$queryRaw').mockResolvedValue([{ '?column?': 1 }]);
 
       await prisma.$queryRaw`SELECT 1`;
 
       expect((await dbUpGauge.get()).values[0]?.value).toBe(1);
+      const hist = (await dbQueryDurationSeconds.get()) as any;
+      expect(hist.values.some((v: any) => v.labels.model === 'raw' && v.labels.operation === '$queryRaw')).toBe(true);
       querySpy.mockRestore();
     });
 
-    it('sets dbUpGauge to 0 on database connection drop', async () => {
+    it('sets dbUpGauge to 0 on $queryRaw database connection drop', async () => {
       const err = new Error("Can't reach database server");
       (err as any).code = 'P1001';
 
@@ -325,6 +330,74 @@ describe('Observability & Metrics Hardening (M8 Phase 2)', () => {
 
       expect((await dbUpGauge.get()).values[0]?.value).toBe(0);
       querySpy.mockRestore();
+    });
+
+    it('instruments $executeRaw with duration and dbUpGauge updates', async () => {
+      const execSpy = vi.spyOn(prisma, '$executeRaw').mockResolvedValue(1);
+
+      const affected = await prisma.$executeRaw`UPDATE "User" SET "updatedAt" = NOW() WHERE false`;
+      expect(affected).toBe(1);
+
+      expect((await dbUpGauge.get()).values[0]?.value).toBe(1);
+      const hist = (await dbQueryDurationSeconds.get()) as any;
+      expect(hist.values.some((v: any) => v.labels.model === 'raw' && v.labels.operation === '$executeRaw')).toBe(true);
+      execSpy.mockRestore();
+
+      // Test connection error drop
+      const err = new Error("Connection reset by peer");
+      (err as any).code = 'P1017';
+      const failSpy = vi.spyOn(prisma, '$executeRaw').mockRejectedValue(err);
+      await expect(prisma.$executeRaw`SELECT 1`).rejects.toThrow();
+      expect((await dbUpGauge.get()).values[0]?.value).toBe(0);
+      failSpy.mockRestore();
+    });
+
+    it('instruments $queryRawUnsafe with parameter pass-through and duration metrics', async () => {
+      const unsafeQuerySpy = vi.spyOn(prisma, '$queryRawUnsafe').mockImplementation((async (sql: string, ...values: any[]) => {
+        expect(sql).toBe('SELECT * FROM "User" WHERE id = $1');
+        expect(values).toEqual(['test-id-123']);
+        return [{ id: 'test-id-123' }];
+      }) as any);
+
+      const res = await prisma.$queryRawUnsafe('SELECT * FROM "User" WHERE id = $1', 'test-id-123');
+      expect(res).toEqual([{ id: 'test-id-123' }]);
+      expect((await dbUpGauge.get()).values[0]?.value).toBe(1);
+
+      const hist = (await dbQueryDurationSeconds.get()) as any;
+      expect(hist.values.some((v: any) => v.labels.model === 'raw' && v.labels.operation === '$queryRawUnsafe')).toBe(true);
+      unsafeQuerySpy.mockRestore();
+
+      // Test connection error drop
+      const err = new Error("Closed connection");
+      (err as any).code = 'P1001';
+      const failSpy = vi.spyOn(prisma, '$queryRawUnsafe').mockRejectedValue(err);
+      await expect(prisma.$queryRawUnsafe('SELECT 1')).rejects.toThrow();
+      expect((await dbUpGauge.get()).values[0]?.value).toBe(0);
+      failSpy.mockRestore();
+    });
+
+    it('instruments $executeRawUnsafe with parameter pass-through and duration metrics', async () => {
+      const unsafeExecSpy = vi.spyOn(prisma, '$executeRawUnsafe').mockImplementation((async (sql: string, ...values: any[]) => {
+        expect(sql).toBe('DELETE FROM "TransactionalOutbox" WHERE status = $1');
+        expect(values).toEqual(['ARCHIVED']);
+        return 5;
+      }) as any);
+
+      const count = await prisma.$executeRawUnsafe('DELETE FROM "TransactionalOutbox" WHERE status = $1', 'ARCHIVED');
+      expect(count).toBe(5);
+      expect((await dbUpGauge.get()).values[0]?.value).toBe(1);
+
+      const hist = (await dbQueryDurationSeconds.get()) as any;
+      expect(hist.values.some((v: any) => v.labels.model === 'raw' && v.labels.operation === '$executeRawUnsafe')).toBe(true);
+      unsafeExecSpy.mockRestore();
+
+      // Test connection error drop
+      const err = new Error("terminating connection due to administrator command");
+      (err as any).code = 'E57P01';
+      const failSpy = vi.spyOn(prisma, '$executeRawUnsafe').mockRejectedValue(err);
+      await expect(prisma.$executeRawUnsafe('DELETE FROM "User"')).rejects.toThrow();
+      expect((await dbUpGauge.get()).values[0]?.value).toBe(0);
+      failSpy.mockRestore();
     });
 
     it('initial state of dbUpGauge is a defined numeric value (0 or 1)', async () => {
@@ -371,6 +444,28 @@ describe('Observability & Metrics Hardening (M8 Phase 2)', () => {
 
       const metric = (await register.getSingleMetric('sse_connect_bullmq_job_duration_seconds')?.get()) as any;
       expect(metric?.values.some((v: any) => v.labels.queue === 'token-cleanup')).toBe(true);
+    });
+
+    it('attaches worker metrics instrumentation once only even if instrumentWorker is called multiple times', () => {
+      const mockWorker = new EventEmitter() as any;
+      expect(mockWorker.listenerCount('completed')).toBe(0);
+      expect(mockWorker.listenerCount('failed')).toBe(0);
+
+      instrumentWorker(mockWorker, 'token-cleanup');
+      expect(mockWorker.listenerCount('completed')).toBe(1);
+      expect(mockWorker.listenerCount('failed')).toBe(1);
+
+      // Re-invoke instrumentWorker on the same instance
+      instrumentWorker(mockWorker, 'token-cleanup');
+      expect(mockWorker.listenerCount('completed')).toBe(1);
+      expect(mockWorker.listenerCount('failed')).toBe(1);
+    });
+
+    it('rejects instrumentation for non-allowlisted queue names', () => {
+      const mockWorker = new EventEmitter() as any;
+      instrumentWorker(mockWorker, 'arbitrary-untrusted-queue');
+      expect(mockWorker.listenerCount('completed')).toBe(0);
+      expect(mockWorker.listenerCount('failed')).toBe(0);
     });
   });
 
@@ -447,6 +542,41 @@ describe('Observability & Metrics Hardening (M8 Phase 2)', () => {
       recordOutboxDelivery('failure', 1);
 
       expect(true).toBe(true);
+    });
+  });
+
+  describe('Metrics Collection Concurrency & Throttle Resilience', () => {
+    beforeEach(() => {
+      _resetCollectThrottleForTesting();
+    });
+
+    it('deduplicates concurrent calls to collectSystemMetrics into a single in-flight execution', async () => {
+      // Multiple concurrent calls share the in-flight collection promise
+      const call1 = collectSystemMetrics();
+      const call2 = collectSystemMetrics();
+      const call3 = collectSystemMetrics();
+
+      await expect(Promise.all([call1, call2, call3])).resolves.toBeDefined();
+    });
+
+    it('throttles collection calls made within the 15-second TTL window', async () => {
+      _resetCollectThrottleForTesting();
+
+      // First run executes collection
+      await collectSystemMetrics();
+
+      // Second immediate run returns without starting collection
+      const promise = collectSystemMetrics();
+      await expect(promise).resolves.toBeUndefined();
+    });
+
+    it('allows a subsequent collection after throttle timestamp is reset or TTL expires', async () => {
+      _resetCollectThrottleForTesting();
+      await collectSystemMetrics();
+
+      // Simulate TTL expiration
+      _resetCollectThrottleForTesting();
+      await expect(collectSystemMetrics()).resolves.not.toThrow();
     });
   });
 });

@@ -28,13 +28,23 @@ export const ALLOWED_QUEUES = new Set<string>([
   QUEUES.OUTBOX_DELIVERY,
 ]);
 
+const instrumentedWorkers = new WeakSet<object>();
+
 /**
  * Attaches metrics listeners to a BullMQ Worker instance.
+ * Strictly idempotent: guarantees listeners are attached once only per worker instance.
  * Does not alter worker execution or error handling logic.
  */
 export function instrumentWorker(worker: any, queueName: string): void {
   if (!worker || typeof worker.on !== 'function') return;
   if (!ALLOWED_QUEUES.has(queueName)) return;
+
+  if (typeof worker === 'object') {
+    if (instrumentedWorkers.has(worker)) {
+      return;
+    }
+    instrumentedWorkers.add(worker);
+  }
 
   worker.on('completed', (job: any) => {
     try {

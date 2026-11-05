@@ -96,8 +96,8 @@ export async function pingDatabase(timeoutMs = 1500): Promise<boolean> {
 /**
  * NOTE ON DATABASE OBSERVABILITY & POOL METRICS:
  * 1. Model queries ($allModels) only intercept high-level model operations.
- *    Raw operations ($queryRaw, $executeRaw) are instrumented via the client proxy below
- *    to ensure comprehensive coverage across both model and raw database traffic.
+ *    Raw operations ($queryRaw, $executeRaw, $queryRawUnsafe, $executeRawUnsafe) are instrumented via the client proxy below
+ *    to ensure comprehensive coverage across both model and raw database traffic without double-counting.
  * 2. Prisma Client executes queries using an internal compiled Rust query engine.
  *    The Rust engine does not export active/idle/waiting pool metrics to JavaScript
  *    runtime without previewFeatures metrics.
@@ -139,8 +139,8 @@ const extendedPrisma = basePrisma.$extends({
 
 export type ExtendedPrismaClient = typeof extendedPrisma;
 
-// Proxy extendedPrisma to wrap batch $transaction, $queryRaw, and $executeRaw with metrics and retry logic,
-// while executing interactive transaction callbacks exactly once without callback retry replay.
+// Proxy extendedPrisma to wrap batch $transaction, $queryRaw, $executeRaw, $queryRawUnsafe, and $executeRawUnsafe
+// with metrics and retry logic, while executing interactive transaction callbacks exactly once without callback retry replay.
 export const prisma: ExtendedPrismaClient = new Proxy(extendedPrisma, {
   get(target, prop, receiver) {
     if (prop === '$transaction') {
@@ -159,7 +159,12 @@ export const prisma: ExtendedPrismaClient = new Proxy(extendedPrisma, {
       };
     }
 
-    if (prop === '$queryRaw' || prop === '$executeRaw') {
+    if (
+      prop === '$queryRaw' ||
+      prop === '$executeRaw' ||
+      prop === '$queryRawUnsafe' ||
+      prop === '$executeRawUnsafe'
+    ) {
       const orig = typeof (target as any)[prop] === 'function'
         ? (target as any)[prop]
         : (basePrisma as any)[prop];

@@ -109,14 +109,14 @@ spec:
             description: "API instances report database connection failure. Core API functionality is failing."
 
         - alert: DatabaseQueryLatencyHigh
-          expr: histogram_quantile(0.95, sum(rate(sse_connect_db_query_duration_seconds_bucket[5m])) by (le, model)) > 0.5
+          expr: histogram_quantile(0.95, sum(rate(sse_connect_db_query_duration_seconds_bucket[5m])) by (le, model, operation)) > 0.5
           for: 5m
           labels:
             severity: warning
             app: driver-complaint-api
           annotations:
-            summary: "Prisma database query p95 latency exceeds 500ms"
-            description: "Queries on model {{ $labels.model }} have p95 latency of {{ $value | printf \"%.2f\" }}s over 5m. Check query execution plans and index usage."
+            summary: "Prisma database query p95 latency exceeds 500ms for {{ $labels.model }}.{{ $labels.operation }}"
+            description: "Queries on model {{ $labels.model }} operation {{ $labels.operation }} have p95 latency of {{ $value | printf \"%.2f\" }}s over 5m. Check query execution plans and index usage."
 
         # ── Transactional Outbox Lag Alerts ──────────────────────────────────
         - alert: OutboxDispatchLagHigh

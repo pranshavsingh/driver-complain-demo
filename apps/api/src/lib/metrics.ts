@@ -318,58 +318,86 @@ export function verifyMetricsAuth(req: Request, res: Response, next: NextFunctio
 // ─────────────────────────────────────────────────────────────────────────────
 // System Metrics Scrape Collector (Database, Redis, BullMQ, Outbox, Socket.IO)
 // Throttled with a 15-second TTL cache to prevent database or Redis thrashing.
+// Protected with single-flight mutex to prevent duplicate concurrent collections.
 // ─────────────────────────────────────────────────────────────────────────────
 
 let lastCollectTime = 0;
+let inFlightCollectPromise: Promise<void> | null = null;
 const COLLECT_TTL_MS = 15000;
 
+/**
+ * Resets collector throttle timestamp for deterministic unit testing.
+ */
+export function _resetCollectThrottleForTesting(): void {
+  lastCollectTime = 0;
+  inFlightCollectPromise = null;
+}
+
 export async function collectSystemMetrics(): Promise<void> {
+  // 1. If a collection is actively executing, share the existing promise (single-flight)
+  if (inFlightCollectPromise) {
+    return inFlightCollectPromise;
+  }
+
+  // 2. Preserve 15-second throttle between completed collections
   const now = Date.now();
   if (now - lastCollectTime < COLLECT_TTL_MS) {
     return;
   }
-  lastCollectTime = now;
 
-  // 1. Collect Database Connectivity Metric (cached 15s TTL, non-blocking)
-  try {
-    const { collectDbMetrics } = await import('./db-metrics');
-    await collectDbMetrics();
-  } catch (err) {
-    logger.debug({ err }, 'Safe non-blocking error collecting Database metrics');
-  }
+  inFlightCollectPromise = (async () => {
+    try {
+      // 1. Collect Database Connectivity Metric (cached 15s TTL, non-blocking)
+      try {
+        const { collectDbMetrics } = await import('./db-metrics');
+        await collectDbMetrics();
+      } catch (err) {
+        logger.debug({ err }, 'Safe non-blocking error collecting Database metrics');
+      }
 
-  // 2. Collect Redis Metrics (cached 15s TTL, non-blocking)
-  try {
-    const { collectRedisMetrics } = await import('./redis-metrics');
-    await collectRedisMetrics();
-  } catch (err) {
-    logger.debug({ err }, 'Safe non-blocking error collecting Redis metrics');
-  }
+      // 2. Collect Redis Metrics (cached 15s TTL, non-blocking)
+      try {
+        const { collectRedisMetrics } = await import('./redis-metrics');
+        await collectRedisMetrics();
+      } catch (err) {
+        logger.debug({ err }, 'Safe non-blocking error collecting Redis metrics');
+      }
 
-  // 3. Collect BullMQ Queue Metrics
-  try {
-    const { collectBullmqMetrics } = await import('../jobs/queue-metrics');
-    await collectBullmqMetrics();
-  } catch (err) {
-    logger.debug({ err }, 'Safe non-blocking error collecting BullMQ metrics');
-  }
+      // 3. Collect BullMQ Queue Metrics
+      try {
+        const { collectBullmqMetrics } = await import('../jobs/queue-metrics');
+        await collectBullmqMetrics();
+      } catch (err) {
+        logger.debug({ err }, 'Safe non-blocking error collecting BullMQ metrics');
+      }
 
-  // 4. Collect Socket.IO Metrics
-  try {
-    const { getIo } = await import('../realtime/socket');
-    const io = getIo();
-    if (io && io.sockets && io.sockets.adapter && io.sockets.adapter.rooms) {
-      socketioRoomsCount.set(io.sockets.adapter.rooms.size);
+      // 4. Collect Socket.IO Metrics
+      try {
+        const { getIo } = await import('../realtime/socket');
+        const io = getIo();
+        if (io && io.sockets && io.sockets.adapter && io.sockets.adapter.rooms) {
+          socketioRoomsCount.set(io.sockets.adapter.rooms.size);
+        }
+      } catch (err) {
+        logger.debug({ err }, 'Safe non-blocking error collecting Socket.IO metrics');
+      }
+
+      // 5. Collect Outbox Metrics
+      try {
+        const { collectOutboxMetrics } = await import('../modules/outbox/outbox.metrics');
+        await collectOutboxMetrics();
+      } catch (err) {
+        logger.debug({ err }, 'Safe non-blocking error collecting Outbox metrics');
+      }
+
+      lastCollectTime = Date.now();
+    } catch (unexpectedErr) {
+      lastCollectTime = Date.now();
+      logger.error({ err: unexpectedErr }, 'Unexpected error in collectSystemMetrics');
+    } finally {
+      inFlightCollectPromise = null;
     }
-  } catch (err) {
-    logger.debug({ err }, 'Safe non-blocking error collecting Socket.IO metrics');
-  }
+  })();
 
-  // 5. Collect Outbox Metrics
-  try {
-    const { collectOutboxMetrics } = await import('../modules/outbox/outbox.metrics');
-    await collectOutboxMetrics();
-  } catch (err) {
-    logger.debug({ err }, 'Safe non-blocking error collecting Outbox metrics');
-  }
+  return inFlightCollectPromise;
 }

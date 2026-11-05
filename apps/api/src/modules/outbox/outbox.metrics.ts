@@ -51,7 +51,11 @@ export function computeOutboxMetricsFromRow(
 
 /**
  * Polls the TransactionalOutbox table for pending and overdue counts and the oldest overdue scheduledAt.
- * Uses the composite index on (status, scheduledAt) to ensure sub-millisecond execution.
+ * Queries with `WHERE status = 'PENDING'` leverage the composite index `TransactionalOutbox_status_scheduledAt_idx`
+ * on (status, scheduledAt). Because all evaluated expressions reference only status and scheduledAt, PostgreSQL
+ * can satisfy the query via an Index-Only Scan without reading the main table heap when pages are marked visible.
+ * Note: Query duration scales with the number of pending rows; the outbox table is continuously purged and archived
+ * by the background dispatcher and watchdog scheduler to maintain low pending-set cardinality.
  */
 export async function collectOutboxMetrics(): Promise<void> {
   try {

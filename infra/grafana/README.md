@@ -52,3 +52,60 @@ This directory contains the production Grafana dashboard model for monitoring th
 3. Select your Prometheus data source from the dropdown.
 4. Click **Import**.
 
+---
+
+## Production Monitoring Deployment Checklist
+
+> [!IMPORTANT]
+> **Repository Configuration vs. Live Cluster Verification**  
+> The manifests in `infra/k8s/` (`api-deployment.yaml`, `api-prometheusrules.yaml`, `api-servicemonitor.yaml`) and the dashboard in `infra/grafana/dashboard.json` represent declarative infrastructure-as-code configurations versioned within this repository. They are **not** currently deployed to an active Kubernetes cluster by local build scripts. When preparing for cluster deployment, verify each checklist item against the live target cluster before routing production traffic.
+
+### 1. Prometheus Operator & Custom Resource Definitions (CRDs)
+- [ ] Confirm Prometheus Operator is installed and running in the cluster (e.g., via `kube-prometheus-stack` Helm chart or Operator manifests).
+- [ ] Verify required CRDs are registered:
+  - `prometheusrules.monitoring.coreos.com`
+  - `servicemonitors.monitoring.coreos.com`
+- [ ] Apply the alerting rules:
+  ```bash
+  kubectl apply -f infra/k8s/api-prometheusrules.yaml -n <target-namespace>
+  ```
+- [ ] Confirm Prometheus Operator successfully reconciles `api-prometheus-rules` without syntax errors.
+
+### 2. ServiceMonitor Discovery & Label Selectors
+- [ ] Apply the ServiceMonitor manifest:
+  ```bash
+  kubectl apply -f infra/k8s/api-servicemonitor.yaml -n <target-namespace>
+  ```
+- [ ] Ensure the labels on `api-metrics-monitor` (specifically `release: prometheus` and `app: driver-complaint-api`) match the `serviceMonitorSelector` configured on your Prometheus instance.
+- [ ] Verify the target API `Service` exposes port name `http` (port 4000) with matching `app: driver-complaint-api` pod selectors.
+
+### 3. Namespace, Secrets & Scrape Authentication
+- [ ] Verify the existence of the Kubernetes Secret `api-secrets` in the same namespace where the API pods and ServiceMonitor reside:
+  ```bash
+  kubectl get secret api-secrets -n <target-namespace>
+  ```
+- [ ] Ensure the secret contains the key `metrics-auth-token`:
+  ```bash
+  kubectl get secret api-secrets -n <target-namespace> -o jsonpath='{.data.metrics-auth-token}'
+  ```
+- [ ] Confirm the decoded secret value matches the `METRICS_AUTH_TOKEN` environment variable passed to the API container in `infra/k8s/api-deployment.yaml`.
+- [ ] Verify Prometheus uses this secret for scrape authorization (`authorization.credentials.name: api-secrets`, `authorization.credentials.key: metrics-auth-token`). Unauthenticated scrapes to `/metrics` in production return HTTP 403/401.
+
+### 4. Prometheus Target Reachability
+- [ ] In Prometheus Web UI (`Status` $\rightarrow$ `Targets`), verify that all `driver-complaint-api` pods appear under target pool `serviceMonitor/<namespace>/api-metrics-monitor/0` with state **UP**.
+- [ ] Confirm the 15-second scrape interval is honored and scrape duration is consistently below 500ms.
+
+### 5. Grafana Datasource & Dashboard Import
+- [ ] Verify that a Prometheus data source is provisioned in Grafana and points to the cluster Prometheus server (e.g. `http://prometheus-k8s.monitoring.svc:9090`).
+- [ ] Import `infra/grafana/dashboard.json` following the instructions above.
+- [ ] Verify that template variable `${DS_PROMETHEUS}` binds to the active Prometheus datasource.
+- [ ] Check that all 22 panels populate metrics across the 7 rows.
+
+### 6. Alertmanager Routing & Notification Configuration
+- [ ] Verify that Prometheus is connected to Alertmanager instances (`Status` $\rightarrow$ `Runtime & Build Information`).
+- [ ] Configure Alertmanager routes (`alertmanager.yaml`) for receiver routing:
+  - Route alerts with `severity: critical` (e.g. `HighHttp5xxErrorRate`, `HighHttpP99Latency`, `RedisUnavailable`, `DatabaseUnavailable`, `OutboxDispatchStalled`) to real-time notification channels (PagerDuty, Opsgenie, critical on-call Slack channel).
+  - Route alerts with `severity: warning` (e.g. `HighHttpP95Latency`, `PodMemoryPressure`, `BullMQQueueBacklog`, `DatabaseQueryLatencyHigh`, `OutboxDispatchLagHigh`) to operational triage channels.
+- [ ] Test alert dispatch and verify resolution notifications cleanly clear when metrics recover.
+
+

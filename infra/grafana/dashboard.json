@@ -262,11 +262,11 @@
       "options": { "legend": { "displayMode": "table", "placement": "bottom" } },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum(rate(sse_connect_db_query_duration_seconds_bucket[5m])) by (le, model))",
-          "legendFormat": "p95 {{model}}"
+          "expr": "histogram_quantile(0.95, sum(rate(sse_connect_db_query_duration_seconds_bucket[5m])) by (le, model, operation))",
+          "legendFormat": "p95 {{model}}.{{operation}}"
         }
       ],
-      "title": "Database Query p95 Latency by Model",
+      "title": "Database Query p95 Latency by Model and Operation",
       "type": "timeseries"
     },
     {
