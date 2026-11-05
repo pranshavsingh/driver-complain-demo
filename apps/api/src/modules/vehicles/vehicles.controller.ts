@@ -13,11 +13,25 @@ export async function summary(req: Request, res: Response): Promise<void> {
 
 /** Admin: lookup driver-to-vehicle assignments (bounded & scoped). */
 export async function assignments(req: Request, res: Response): Promise<void> {
-  const driverId = typeof req.query.driverId === 'string' ? req.query.driverId : undefined;
+  const driverId = typeof req.query.driverId === 'string' && req.query.driverId.trim()
+    ? req.query.driverId.trim()
+    : undefined;
+
   const driverIds = typeof req.query.driverIds === 'string'
     ? req.query.driverIds.split(',').map((s) => s.trim()).filter(Boolean)
     : undefined;
-  const limit = typeof req.query.limit === 'string' ? parseInt(req.query.limit, 10) : undefined;
+
+  let limit: number | undefined = undefined;
+  if (req.query.limit !== undefined) {
+    if (typeof req.query.limit !== 'string' || !/^\d+$/.test(req.query.limit.trim())) {
+      throw ApiError.badRequest('Query parameter "limit" must be a positive integer between 1 and 100');
+    }
+    const parsed = Number(req.query.limit.trim());
+    if (!Number.isSafeInteger(parsed) || parsed < 1) {
+      throw ApiError.badRequest('Query parameter "limit" must be a positive integer between 1 and 100');
+    }
+    limit = Math.min(parsed, 100);
+  }
 
   const result = await vehiclesService.getAssignments({ driverId, driverIds, limit }, req.user);
   sendSuccess(res, result);

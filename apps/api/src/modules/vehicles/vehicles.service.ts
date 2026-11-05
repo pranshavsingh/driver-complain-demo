@@ -166,13 +166,31 @@ export async function getAssignments(
     where.siteInchargeId = actor.id;
   }
 
+  const requestedIds = query?.driverIds && query.driverIds.length > 0
+    ? query.driverIds.slice(0, 100)
+    : undefined;
+
   if (query?.driverId) {
     where.driverId = query.driverId;
-  } else if (query?.driverIds && query.driverIds.length > 0) {
-    where.driverId = { in: query.driverIds.slice(0, 100) };
+  } else if (requestedIds) {
+    where.driverId = { in: requestedIds };
   }
 
-  const limit = Math.min(Math.max(1, query?.limit ?? 50), 100);
+  // Determine appropriate default:
+  // - single driverId lookup -> 1
+  // - driverIds array lookup -> requested count (up to 100) so all requested IDs can be returned
+  // - generic lookup -> 50
+  const defaultLimit = query?.driverId ? 1 : requestedIds ? Math.min(requestedIds.length, 100) : 50;
+
+  let limit = defaultLimit;
+  if (query?.limit !== undefined) {
+    const rawLimit = Number(query.limit);
+    if (!Number.isFinite(rawLimit) || rawLimit <= 0) {
+      limit = defaultLimit;
+    } else {
+      limit = Math.min(Math.max(1, Math.floor(rawLimit)), 100);
+    }
+  }
 
   const vehicles = await prisma.vehicle.findMany({
     where,

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { getSummary, getAssignments, list } from '../vehicles.service';
+import { assignments } from '../vehicles.controller';
 import { prisma } from '../../../lib/prisma';
 
 vi.mock('../../../lib/prisma', () => ({
@@ -87,7 +88,64 @@ describe('Vehicles Service - Scoping & Pagination', () => {
 
       const findManyCall = vi.mocked(prisma.vehicle.findMany).mock.calls[0]![0] as any;
       expect(findManyCall.where.driverId).toEqual({ in: ['d1', 'd2'] });
+      expect(findManyCall.take).toBe(2);
       expect(findManyCall.where.siteInchargeId).toBeUndefined();
+    });
+
+    it('handles 100 requested driver IDs and sets take limit to 100', async () => {
+      vi.mocked(prisma.vehicle.findMany).mockResolvedValueOnce([]);
+
+      const driverIds = Array.from({ length: 100 }, (_, i) => `driver-${i + 1}`);
+      await getAssignments({ driverIds }, { id: 'admin-1', role: 'ADMIN' });
+
+      const findManyCall = vi.mocked(prisma.vehicle.findMany).mock.calls[0]![0] as any;
+      expect(findManyCall.where.driverId).toEqual({ in: driverIds });
+      expect(findManyCall.take).toBe(100);
+    });
+
+    it('caps requested IDs and limit at maximum 100 even if more are passed', async () => {
+      vi.mocked(prisma.vehicle.findMany).mockResolvedValueOnce([]);
+
+      const driverIds = Array.from({ length: 120 }, (_, i) => `driver-${i + 1}`);
+      await getAssignments({ driverIds, limit: 150 }, { id: 'admin-1', role: 'ADMIN' });
+
+      const findManyCall = vi.mocked(prisma.vehicle.findMany).mock.calls[0]![0] as any;
+      expect(findManyCall.where.driverId.in).toHaveLength(100);
+      expect(findManyCall.take).toBe(100);
+    });
+
+    it('single driver lookup sets default take limit to 1', async () => {
+      vi.mocked(prisma.vehicle.findMany).mockResolvedValueOnce([]);
+
+      await getAssignments({ driverId: 'd-single' }, { id: 'admin-1', role: 'ADMIN' });
+
+      const findManyCall = vi.mocked(prisma.vehicle.findMany).mock.calls[0]![0] as any;
+      expect(findManyCall.where.driverId).toBe('d-single');
+      expect(findManyCall.take).toBe(1);
+    });
+
+    it('service safely handles invalid/malformed limits (NaN, zero, negative, decimal)', async () => {
+      vi.mocked(prisma.vehicle.findMany).mockResolvedValue([]);
+
+      // NaN fallback to default
+      await getAssignments({ limit: NaN });
+      let call = vi.mocked(prisma.vehicle.findMany).mock.calls[0]![0] as any;
+      expect(call.take).toBe(50);
+
+      // Negative fallback to default
+      await getAssignments({ limit: -10 });
+      call = vi.mocked(prisma.vehicle.findMany).mock.calls[1]![0] as any;
+      expect(call.take).toBe(50);
+
+      // Zero fallback to default
+      await getAssignments({ limit: 0 });
+      call = vi.mocked(prisma.vehicle.findMany).mock.calls[2]![0] as any;
+      expect(call.take).toBe(50);
+
+      // Decimal floored to integer
+      await getAssignments({ limit: 12.8 });
+      call = vi.mocked(prisma.vehicle.findMany).mock.calls[3]![0] as any;
+      expect(call.take).toBe(12);
     });
 
     it('EXECUTIVE: strictly enforces siteInchargeId in assignments lookup', async () => {
@@ -139,6 +197,40 @@ describe('Vehicles Service - Scoping & Pagination', () => {
       const findManyCall = vi.mocked(prisma.vehicle.findMany).mock.calls[0]![0] as any;
       expect(findManyCall.where.siteInchargeId).toBe('exec-site-incharge');
       expect(findManyCall.where.driverId).toBeNull();
+    });
+  });
+
+  describe('assignments controller input validation', () => {
+    const mockRes = {
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn().mockReturnThis(),
+    };
+
+    it('rejects non-integer, negative, zero, or malformed limit queries with 400', async () => {
+      await expect(assignments({ query: { limit: '0' } } as any, mockRes as any)).rejects.toThrow('positive integer');
+      await expect(assignments({ query: { limit: '-5' } } as any, mockRes as any)).rejects.toThrow('positive integer');
+      await expect(assignments({ query: { limit: 'abc' } } as any, mockRes as any)).rejects.toThrow('positive integer');
+      await expect(assignments({ query: { limit: '12.5' } } as any, mockRes as any)).rejects.toThrow('positive integer');
+      await expect(assignments({ query: { limit: '' } } as any, mockRes as any)).rejects.toThrow('positive integer');
+    });
+
+    it('accepts valid positive integer limit and caps at 100 if > 100', async () => {
+      vi.mocked(prisma.vehicle.findMany).mockResolvedValue([]);
+
+      // Over 100 capped to 100
+      await assignments({ query: { limit: '150' } } as any, mockRes as any);
+      let call = vi.mocked(prisma.vehicle.findMany).mock.calls[0]![0] as any;
+      expect(call.take).toBe(100);
+
+      // Valid boundary 75
+      await assignments({ query: { limit: '75' } } as any, mockRes as any);
+      call = vi.mocked(prisma.vehicle.findMany).mock.calls[1]![0] as any;
+      expect(call.take).toBe(75);
+
+      // Valid boundary 100
+      await assignments({ query: { limit: '100' } } as any, mockRes as any);
+      call = vi.mocked(prisma.vehicle.findMany).mock.calls[2]![0] as any;
+      expect(call.take).toBe(100);
     });
   });
 });
