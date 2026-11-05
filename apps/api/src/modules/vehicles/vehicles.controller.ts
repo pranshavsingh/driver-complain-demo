@@ -5,6 +5,12 @@ import { ApiError } from '../../errors/api-error';
 import { sendSuccess } from '../../lib/http';
 import { setPaginationHeaders } from '../../lib/pagination';
 
+/** Admin: vehicle fleet summary metrics and assigned driver map. */
+export async function summary(req: Request, res: Response): Promise<void> {
+  const result = await vehiclesService.getSummary(req.user);
+  sendSuccess(res, result);
+}
+
 /** Admin: list all vehicles with search/filter. */
 export async function list(req: Request, res: Response): Promise<void> {
   const result = await vehiclesService.list(req.query as any, req.user);

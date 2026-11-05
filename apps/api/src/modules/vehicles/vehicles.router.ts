@@ -13,6 +13,7 @@ vehiclesRouter.use(authenticate);
 vehiclesRouter.get('/mine', vehiclesController.listMine);
 
 // Admin: every vehicle (filter dropdown & management table).
+vehiclesRouter.get('/summary', requireRole('ADMIN', 'SUPER_ADMIN', 'EXECUTIVE'), vehiclesController.summary);
 vehiclesRouter.get('/', requireRole('ADMIN', 'SUPER_ADMIN', 'EXECUTIVE'), vehiclesController.list);
 vehiclesRouter.post('/', requireRole('SUPER_ADMIN'), vehiclesController.create);
 vehiclesRouter.get('/:id', validateUuidParam('id'), requireRole('ADMIN', 'SUPER_ADMIN', 'EXECUTIVE'), vehiclesController.getById);

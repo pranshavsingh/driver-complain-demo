@@ -17,6 +17,7 @@ export interface VehicleFilterQuery extends PaginationParams {
   agreementStatus?: string;
   wheels?: string;
   driverId?: string;
+  assignmentFilter?: 'ALL' | 'ASSIGNED' | 'FREE';
 }
 
 /** All vehicles with optional search/filter — feeds admin vehicle management & dropdowns. */
@@ -31,6 +32,12 @@ export async function list(
     where.siteInchargeId = actor.id;
   }
 
+  if (query?.assignmentFilter === 'ASSIGNED') {
+    where.driverId = { not: null };
+  } else if (query?.assignmentFilter === 'FREE') {
+    where.driverId = null;
+  }
+
   if (query?.search?.trim()) {
     const q = query.search.trim();
     where.OR = [
@@ -42,11 +49,27 @@ export async function list(
       { make: { contains: q, mode: 'insensitive' } },
       { driver: { user: { firstName: { contains: q, mode: 'insensitive' } } } },
       { driver: { user: { lastName: { contains: q, mode: 'insensitive' } } } },
+      { siteIncharge: { firstName: { contains: q, mode: 'insensitive' } } },
+      { siteIncharge: { lastName: { contains: q, mode: 'insensitive' } } },
     ];
   }
 
   if (query?.agreementStatus && query.agreementStatus !== 'ALL') {
-    where.agreementStatus = query.agreementStatus;
+    if (query.agreementStatus.toUpperCase() === 'ACTIVE') {
+      const activeOr = [
+        { agreementStatus: { contains: 'ACTIVE', mode: 'insensitive' } },
+        { agreementStatus: { contains: 'FMS', mode: 'insensitive' } },
+        { agreementStatus: { contains: 'PLATINUM', mode: 'insensitive' } },
+      ];
+      if (where.OR) {
+        where.AND = [{ OR: where.OR }, { OR: activeOr }];
+        delete where.OR;
+      } else {
+        where.OR = activeOr;
+      }
+    } else {
+      where.agreementStatus = { equals: query.agreementStatus, mode: 'insensitive' };
+    }
   }
 
   if (query?.wheels && query.wheels !== 'ALL') {
@@ -82,6 +105,79 @@ export async function list(
   return {
     data: vehicles.map(toVehiclePublic),
     meta,
+  };
+}
+
+export interface VehicleSummary {
+  total: number;
+  assignedCount: number;
+  freeCount: number;
+  activeAgreementsCount: number;
+  utilizationPct: number;
+  assignedDrivers: {
+    vehicleId: string;
+    plateNumber: string;
+    driverId: string;
+    driverName: string;
+  }[];
+}
+
+export async function getSummary(actor?: { id: string; role: string }): Promise<VehicleSummary> {
+  const where: any = {};
+  if (actor?.role === 'EXECUTIVE') {
+    where.siteInchargeId = actor.id;
+  }
+
+  const [total, assignedCount, activeCount, assignedVehicles] = await Promise.all([
+    prisma.vehicle.count({ where }),
+    prisma.vehicle.count({ where: { ...where, driverId: { not: null } } }),
+    prisma.vehicle.count({
+      where: {
+        ...where,
+        OR: [
+          { agreementStatus: { contains: 'ACTIVE', mode: 'insensitive' } },
+          { agreementStatus: { contains: 'FMS', mode: 'insensitive' } },
+          { agreementStatus: { contains: 'PLATINUM', mode: 'insensitive' } },
+        ],
+      },
+    }),
+    prisma.vehicle.findMany({
+      where: { ...where, driverId: { not: null } },
+      select: {
+        id: true,
+        plateNumber: true,
+        driverId: true,
+        driver: {
+          select: {
+            user: {
+              select: {
+                firstName: true,
+                lastName: true,
+              },
+            },
+          },
+        },
+      },
+    }),
+  ]);
+
+  const freeCount = Math.max(0, total - assignedCount);
+  const utilizationPct = total > 0 ? Math.round((assignedCount / total) * 100) : 0;
+
+  const assignedDrivers = assignedVehicles.map((v) => ({
+    vehicleId: v.id,
+    plateNumber: v.plateNumber,
+    driverId: v.driverId!,
+    driverName: v.driver?.user ? `${v.driver.user.firstName} ${v.driver.user.lastName}`.trim() : 'Driver',
+  }));
+
+  return {
+    total,
+    assignedCount,
+    freeCount,
+    activeAgreementsCount: activeCount,
+    utilizationPct,
+    assignedDrivers,
   };
 }
 

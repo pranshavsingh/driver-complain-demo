@@ -466,13 +466,34 @@ export function VehiclesPage(): ReactElement {
   const [driverId, setDriverId] = useState<string>('');
   const [siteInchargeId, setSiteInchargeId] = useState<string>('');
 
-  const vehiclesResource = useApiResource('api:vehicles:list', () => api.vehicles.list());
+  // Reset page when debounced search or filters change
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, statusFilter, wheelFilter, assignmentFilter]);
+
+  const vehiclesResource = useApiResource(
+    `api:vehicles:paginated:${statusFilter}:${wheelFilter}:${assignmentFilter}:${debouncedSearch}:${page}:${pageSize}`,
+    () =>
+      api.vehicles.listPaginated({
+        agreementStatus: statusFilter !== 'ALL' ? statusFilter : undefined,
+        wheels: wheelFilter !== 'ALL' ? wheelFilter : undefined,
+        assignmentFilter: assignmentFilter as any,
+        search: debouncedSearch.trim() || undefined,
+        page,
+        pageSize,
+      }),
+  );
+  const summaryResource = useApiResource('api:vehicles:summary', () => api.vehicles.summary());
+  const summaryData = summaryResource.data;
+
   const driversResource = useApiResource('api:drivers:list', () => api.drivers.list());
   const usersResource = useApiResource('api:users:list', () => api.users.list());
   const { subscribeCustom } = useRealtime();
 
   const vehiclesRef = useRef(vehiclesResource);
   vehiclesRef.current = vehiclesResource;
+  const summaryRef = useRef(summaryResource);
+  summaryRef.current = summaryResource;
   const driversRef = useRef(driversResource);
   driversRef.current = driversResource;
   const usersRef = useRef(usersResource);
@@ -480,22 +501,16 @@ export function VehiclesPage(): ReactElement {
 
   // Live Realtime Subscriptions for Vehicle Add/Edit/Delete/Assign & Driver updates
   useEffect(() => {
-    const unsubCreated = subscribeCustom('vehicle:created', () => {
+    const handleVehicleChange = () => {
       void vehiclesRef.current.reload();
+      void summaryRef.current.reload();
       void driversRef.current.reload();
-    });
-    const unsubUpdated = subscribeCustom('vehicle:updated', () => {
-      void vehiclesRef.current.reload();
-      void driversRef.current.reload();
-    });
-    const unsubDeleted = subscribeCustom('vehicle:deleted', () => {
-      void vehiclesRef.current.reload();
-      void driversRef.current.reload();
-    });
-    const unsubAssigned = subscribeCustom('vehicle:assigned', () => {
-      void vehiclesRef.current.reload();
-      void driversRef.current.reload();
-    });
+    };
+
+    const unsubCreated = subscribeCustom('vehicle:created', handleVehicleChange);
+    const unsubUpdated = subscribeCustom('vehicle:updated', handleVehicleChange);
+    const unsubDeleted = subscribeCustom('vehicle:deleted', handleVehicleChange);
+    const unsubAssigned = subscribeCustom('vehicle:assigned', handleVehicleChange);
     const unsubUserCreated = subscribeCustom('user:created', () => {
       void driversRef.current.reload();
       void usersRef.current.reload();
@@ -508,6 +523,7 @@ export function VehiclesPage(): ReactElement {
       void driversRef.current.reload();
       void usersRef.current.reload();
       void vehiclesRef.current.reload();
+      void summaryRef.current.reload();
     });
     return () => {
       unsubCreated();
@@ -520,13 +536,9 @@ export function VehiclesPage(): ReactElement {
     };
   }, [subscribeCustom]);
 
-  const rawVehicles: VehiclePublic[] = vehiclesResource.data ?? [];
-  const vehiclesList: VehiclePublic[] = useMemo(() => {
-    if (user?.role === 'EXECUTIVE') {
-      return rawVehicles.filter((v) => v.siteInchargeId === user.id);
-    }
-    return rawVehicles;
-  }, [rawVehicles, user]);
+  const paginatedVehicles: VehiclePublic[] = vehiclesResource.data?.data ?? [];
+  const totalItems = vehiclesResource.data?.pagination?.total ?? paginatedVehicles.length;
+  const totalPages = Math.max(1, vehiclesResource.data?.pagination?.totalPages ?? 1);
   const driversList: DriverListItem[] = driversResource.data ?? [];
   const allUsers: UserPublic[] = usersResource.data ?? [];
   const adminMap = useMemo(() => {
@@ -548,68 +560,20 @@ export function VehiclesPage(): ReactElement {
   // Map of driverId -> assigned vehicle details (for 1:1 driver assignment enforcement)
   const driverAssignedVehicleMap = useMemo(() => {
     const map = new Map<string, { vehicleId: string; plateNumber: string; driverName: string }>();
-    for (const v of vehiclesList) {
-      if (v.driverId) {
-        map.set(v.driverId, {
-          vehicleId: v.id,
-          plateNumber: v.plateNumber,
-          driverName: v.driverName || 'Driver',
-        });
+    if (summaryData?.assignedDrivers) {
+      for (const a of summaryData.assignedDrivers) {
+        map.set(a.driverId, a);
       }
     }
     return map;
-  }, [vehiclesList]);
-
-  // Filter vehicles
-  const filteredVehicles = useMemo(() => {
-    return vehiclesList.filter((v) => {
-      if (statusFilter !== 'ALL') {
-        const vStatus = (v.agreementStatus || 'ACTIVE').toLowerCase();
-        const target = statusFilter.toLowerCase();
-        if (vStatus !== target && v.agreementStatus !== statusFilter) {
-          return false;
-        }
-      }
-      if (wheelFilter !== 'ALL' && (v.wheels || '') !== wheelFilter) {
-        return false;
-      }
-      if (assignmentFilter === 'ASSIGNED' && !v.driverId) {
-        return false;
-      }
-      if (assignmentFilter === 'FREE' && Boolean(v.driverId)) {
-        return false;
-      }
-      if (!debouncedSearch.trim()) return true;
-      const q = debouncedSearch.toLowerCase();
-      const plateMatch = v.plateNumber.toLowerCase().includes(q);
-      const modelMatch = v.model ? v.model.toLowerCase().includes(q) : false;
-      const makeMatch = v.make ? v.make.toLowerCase().includes(q) : false;
-      const modelNoMatch = v.modelNumber ? v.modelNumber.toLowerCase().includes(q) : false;
-      const chassisMatch = v.chassisNumber ? v.chassisNumber.toLowerCase().includes(q) : false;
-      const vinMatch = v.vin ? v.vin.toLowerCase().includes(q) : false;
-      const driverMatch = v.driverName ? v.driverName.toLowerCase().includes(q) : false;
-      const siteInchargeMatch = v.siteInchargeName ? v.siteInchargeName.toLowerCase().includes(q) : false;
-      const yearMatch = v.year ? v.year.toString().includes(q) : false;
-      return plateMatch || modelMatch || makeMatch || modelNoMatch || chassisMatch || vinMatch || driverMatch || siteInchargeMatch || yearMatch;
-    });
-  }, [vehiclesList, statusFilter, wheelFilter, assignmentFilter, debouncedSearch]);
-
-  const totalItems = filteredVehicles.length;
-  const totalPages = Math.ceil(totalItems / pageSize) || 1;
-
-  const paginatedVehicles = useMemo(() => {
-    const start = (page - 1) * pageSize;
-    return filteredVehicles.slice(start, start + pageSize);
-  }, [filteredVehicles, page, pageSize]);
+  }, [summaryData]);
 
   // KPI Metrics
-  const activeAgreementsCount = vehiclesList.filter((v) => {
-    const s = (v.agreementStatus || 'ACTIVE').toUpperCase();
-    return s === 'ACTIVE' || s.includes('FMS') || s.includes('PLATINUM');
-  }).length;
-  const freeVehiclesCount = vehiclesList.filter((v) => !v.driverId).length;
-  const assignedVehiclesCount = vehiclesList.filter((v) => Boolean(v.driverId)).length;
-  const fleetUtilizationPct = vehiclesList.length > 0 ? Math.round((assignedVehiclesCount / vehiclesList.length) * 100) : 0;
+  const totalFleetCount = summaryData?.total ?? totalItems;
+  const activeAgreementsCount = summaryData?.activeAgreementsCount ?? 0;
+  const freeVehiclesCount = summaryData?.freeCount ?? 0;
+  const assignedVehiclesCount = summaryData?.assignedCount ?? 0;
+  const fleetUtilizationPct = summaryData?.utilizationPct ?? 0;
 
   const handleOpenCreate = () => {
     setEditingVehicle(null);
@@ -651,6 +615,7 @@ export function VehiclesPage(): ReactElement {
       setUpdatingDriverVehicleId(vehicleId);
       await api.vehicles.update(vehicleId, { driverId: newDriverId ? newDriverId : null });
       void vehiclesResource.reload();
+      void summaryResource.reload();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       alert(msg || 'Failed to update driver assignment');
@@ -670,7 +635,7 @@ export function VehiclesPage(): ReactElement {
     }
 
     // 1. Uniqueness check for Vehicle Number (Plate)
-    const dupPlate = vehiclesList.find(
+    const dupPlate = paginatedVehicles.find(
       (v) => v.plateNumber.toUpperCase() === normPlate && v.id !== editingVehicle?.id
     );
     if (dupPlate) {
@@ -681,7 +646,7 @@ export function VehiclesPage(): ReactElement {
     // 2. Uniqueness check for Chassis No (VIN)
     const normChassis = chassisNumber.trim().toUpperCase();
     if (normChassis) {
-      const dupChassis = vehiclesList.find(
+      const dupChassis = paginatedVehicles.find(
         (v) =>
           ((v.chassisNumber && v.chassisNumber.toUpperCase() === normChassis) ||
             (v.vin && v.vin.toUpperCase() === normChassis)) &&
@@ -745,6 +710,7 @@ export function VehiclesPage(): ReactElement {
 
       setShowModal(false);
       void vehiclesResource.reload();
+      void summaryResource.reload();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       setModalError(msg || 'Failed to save vehicle entry');
@@ -761,6 +727,7 @@ export function VehiclesPage(): ReactElement {
     try {
       await api.vehicles.remove(vehicle.id);
       void vehiclesResource.reload();
+      void summaryResource.reload();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       alert(msg || 'Failed to delete vehicle');
@@ -901,7 +868,7 @@ export function VehiclesPage(): ReactElement {
               </div>
             </div>
             <div className="font-mono" style={{ fontSize: 28, fontWeight: 700, color: 'var(--fo-text)', margin: '10px 0 6px 0' }}>
-              {vehiclesList.length}
+              {totalFleetCount}
             </div>
             <button
               type="button"
@@ -1302,11 +1269,11 @@ export function VehiclesPage(): ReactElement {
           </div>
 
           {/* Table Body */}
-          {vehiclesResource.loading && vehiclesList.length === 0 ? (
+          {vehiclesResource.loading && paginatedVehicles.length === 0 ? (
             <div style={{ padding: 16 }}>
               <SkeletonTable rows={7} columns={7} />
             </div>
-          ) : filteredVehicles.length === 0 ? (
+          ) : paginatedVehicles.length === 0 ? (
             <div style={{ padding: 40, textAlign: 'center', color: 'var(--fo-text-muted)', fontSize: 13 }}>
               No fleet vehicles found matching your search or filters.
             </div>

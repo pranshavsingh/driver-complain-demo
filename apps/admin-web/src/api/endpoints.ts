@@ -209,9 +209,26 @@ export interface VehicleFilterQuery {
   agreementStatus?: string;
   wheels?: string;
   driverId?: string;
+  assignmentFilter?: 'ALL' | 'ASSIGNED' | 'FREE';
+}
+
+export interface VehicleSummaryResponse {
+  total: number;
+  assignedCount: number;
+  freeCount: number;
+  activeAgreementsCount: number;
+  utilizationPct: number;
+  assignedDrivers: {
+    vehicleId: string;
+    plateNumber: string;
+    driverId: string;
+    driverName: string;
+  }[];
 }
 
 export const vehicles = {
+  summary: (): Promise<VehicleSummaryResponse> =>
+    request(z.any(), '/vehicles/summary'),
   list: (query?: VehicleFilterQuery): Promise<VehiclePublic[]> =>
     request(z.array(VehiclePublicSchema), '/vehicles', { query: query as Record<string, QueryValue> }),
   listPaginated: (query?: VehicleFilterQuery & { page?: number; pageSize?: number }): Promise<{ data: VehiclePublic[]; pagination: { page: number; pageSize: number; total: number; totalPages: number } }> =>
