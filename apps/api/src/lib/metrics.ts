@@ -316,88 +316,190 @@ export function verifyMetricsAuth(req: Request, res: Response, next: NextFunctio
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// System Metrics Scrape Collector (Database, Redis, BullMQ, Outbox, Socket.IO)
-// Throttled with a 15-second TTL cache to prevent database or Redis thrashing.
+// System Metrics Lazy Scraper
+// Individual collectors are throttled with a 15-second TTL cache to prevent
+// database or Redis thrashing while allowing failed collectors to retry on the
+// very next scrape.
 // Protected with single-flight mutex to prevent duplicate concurrent collections.
 // ─────────────────────────────────────────────────────────────────────────────
 
-let lastCollectTime = 0;
+export const ALL_SYSTEM_COLLECTORS = ['db', 'redis', 'bullmq', 'socketio', 'outbox'] as const;
+export type SystemCollectorName = (typeof ALL_SYSTEM_COLLECTORS)[number];
+
+export interface CollectorStatus {
+  lastSuccessTime: number | null;
+  lastFailureTime: number | null;
+  lastError: string | null;
+  status: 'idle' | 'success' | 'failed';
+}
+
+const collectorStatus: Record<SystemCollectorName, CollectorStatus> = {
+  db: { lastSuccessTime: null, lastFailureTime: null, lastError: null, status: 'idle' },
+  redis: { lastSuccessTime: null, lastFailureTime: null, lastError: null, status: 'idle' },
+  bullmq: { lastSuccessTime: null, lastFailureTime: null, lastError: null, status: 'idle' },
+  socketio: { lastSuccessTime: null, lastFailureTime: null, lastError: null, status: 'idle' },
+  outbox: { lastSuccessTime: null, lastFailureTime: null, lastError: null, status: 'idle' },
+};
+
+let entireCollectionSucceeded = false;
+let lastEntireCollectionSuccessTime: number | null = null;
 let inFlightCollectPromise: Promise<void> | null = null;
-const COLLECT_TTL_MS = 15000;
+export const COLLECT_TTL_MS = 15000;
 
 /**
- * Resets collector throttle timestamp for deterministic unit testing.
+ * Checks whether a specific collector is due to run (either never succeeded, failed on last attempt,
+ * or 15 seconds have elapsed since its last success).
+ */
+export function isCollectorDue(name: SystemCollectorName, now: number = Date.now()): boolean {
+  const lastSuccess = collectorStatus[name].lastSuccessTime;
+  if (lastSuccess === null) {
+    return true;
+  }
+  return now - lastSuccess >= COLLECT_TTL_MS;
+}
+
+/**
+ * Helper to run a collector with safety and status tracking.
+ */
+async function runCollector(name: SystemCollectorName, fn: () => Promise<void>): Promise<boolean> {
+  try {
+    await fn();
+    collectorStatus[name].lastSuccessTime = Date.now();
+    collectorStatus[name].lastError = null;
+    collectorStatus[name].status = 'success';
+    return true;
+  } catch (err) {
+    collectorStatus[name].lastFailureTime = Date.now();
+    collectorStatus[name].lastError = err instanceof Error ? err.message : String(err);
+    collectorStatus[name].status = 'failed';
+    // Clear lastSuccessTime so this collector is immediately eligible for retry on the next scrape
+    collectorStatus[name].lastSuccessTime = null;
+    logger.debug({ err, collector: name }, `Safe non-blocking error collecting ${name} metrics`);
+    return false;
+  }
+}
+
+/**
+ * Resets collector throttle timestamp and statuses for deterministic unit testing.
  */
 export function _resetCollectThrottleForTesting(): void {
-  lastCollectTime = 0;
+  for (const name of ALL_SYSTEM_COLLECTORS) {
+    collectorStatus[name] = {
+      lastSuccessTime: null,
+      lastFailureTime: null,
+      lastError: null,
+      status: 'idle',
+    };
+  }
+  entireCollectionSucceeded = false;
+  lastEntireCollectionSuccessTime = null;
   inFlightCollectPromise = null;
 }
 
+/**
+ * Returns current internal status of system collectors for test verification.
+ */
+export function _getCollectorStatusForTesting() {
+  return {
+    collectors: {
+      db: { ...collectorStatus.db },
+      redis: { ...collectorStatus.redis },
+      bullmq: { ...collectorStatus.bullmq },
+      socketio: { ...collectorStatus.socketio },
+      outbox: { ...collectorStatus.outbox },
+    },
+    entireCollectionSucceeded,
+    lastEntireCollectionSuccessTime,
+    isInFlight: inFlightCollectPromise !== null,
+  };
+}
+
 export async function collectSystemMetrics(): Promise<void> {
-  // 1. If a collection is actively executing, share the existing promise (single-flight)
+  // 1. If a collection is actively executing, share the existing promise (single-flight mutex)
   if (inFlightCollectPromise) {
     return inFlightCollectPromise;
   }
 
-  // 2. Preserve 15-second throttle between completed collections
+  // 2. Determine which collectors need to run (due for execution or retry)
   const now = Date.now();
-  if (now - lastCollectTime < COLLECT_TTL_MS) {
+  const collectorsToRun = ALL_SYSTEM_COLLECTORS.filter((name) => isCollectorDue(name, now));
+
+  // If all collectors have completed successfully within the last 15 seconds, skip collection
+  if (collectorsToRun.length === 0) {
     return;
   }
 
   inFlightCollectPromise = (async () => {
-    try {
-      // 1. Collect Database Connectivity Metric (cached 15s TTL, non-blocking)
-      try {
+    let anyCollectorFailed = false;
+
+    // 1. Database Connectivity Metric (cached 15s TTL, non-blocking)
+    if (collectorsToRun.includes('db')) {
+      const ok = await runCollector('db', async () => {
         const { collectDbMetrics } = await import('./db-metrics');
         await collectDbMetrics();
-      } catch (err) {
-        logger.debug({ err }, 'Safe non-blocking error collecting Database metrics');
-      }
+      });
+      if (!ok) anyCollectorFailed = true;
+    }
 
-      // 2. Collect Redis Metrics (cached 15s TTL, non-blocking)
-      try {
+    // 2. Redis Metrics (cached 15s TTL, non-blocking)
+    if (collectorsToRun.includes('redis')) {
+      const ok = await runCollector('redis', async () => {
         const { collectRedisMetrics } = await import('./redis-metrics');
         await collectRedisMetrics();
-      } catch (err) {
-        logger.debug({ err }, 'Safe non-blocking error collecting Redis metrics');
-      }
+      });
+      if (!ok) anyCollectorFailed = true;
+    }
 
-      // 3. Collect BullMQ Queue Metrics
-      try {
+    // 3. BullMQ Queue Metrics (cached 15s TTL, non-blocking)
+    if (collectorsToRun.includes('bullmq')) {
+      const ok = await runCollector('bullmq', async () => {
         const { collectBullmqMetrics } = await import('../jobs/queue-metrics');
         await collectBullmqMetrics();
-      } catch (err) {
-        logger.debug({ err }, 'Safe non-blocking error collecting BullMQ metrics');
-      }
+      });
+      if (!ok) anyCollectorFailed = true;
+    }
 
-      // 4. Collect Socket.IO Metrics
-      try {
+    // 4. Socket.IO Metrics (cached 15s TTL, non-blocking)
+    if (collectorsToRun.includes('socketio')) {
+      const ok = await runCollector('socketio', async () => {
         const { getIo } = await import('../realtime/socket');
         const io = getIo();
         if (io && io.sockets && io.sockets.adapter && io.sockets.adapter.rooms) {
           socketioRoomsCount.set(io.sockets.adapter.rooms.size);
         }
-      } catch (err) {
-        logger.debug({ err }, 'Safe non-blocking error collecting Socket.IO metrics');
-      }
+      });
+      if (!ok) anyCollectorFailed = true;
+    }
 
-      // 5. Collect Outbox Metrics
-      try {
+    // 5. Outbox Metrics (cached 15s TTL, non-blocking)
+    if (collectorsToRun.includes('outbox')) {
+      const ok = await runCollector('outbox', async () => {
         const { collectOutboxMetrics } = await import('../modules/outbox/outbox.metrics');
         await collectOutboxMetrics();
-      } catch (err) {
-        logger.debug({ err }, 'Safe non-blocking error collecting Outbox metrics');
-      }
-
-      lastCollectTime = Date.now();
-    } catch (unexpectedErr) {
-      lastCollectTime = Date.now();
-      logger.error({ err: unexpectedErr }, 'Unexpected error in collectSystemMetrics');
-    } finally {
-      inFlightCollectPromise = null;
+      });
+      if (!ok) anyCollectorFailed = true;
     }
-  })();
+
+    // Mark entire collection as successful only when no collector failed and all collectors have valid success timestamps
+    if (
+      !anyCollectorFailed &&
+      ALL_SYSTEM_COLLECTORS.every(
+        (name) => collectorStatus[name].status === 'success' && collectorStatus[name].lastSuccessTime !== null,
+      )
+    ) {
+      entireCollectionSucceeded = true;
+      lastEntireCollectionSuccessTime = Date.now();
+    } else {
+      entireCollectionSucceeded = false;
+    }
+  })()
+    .catch((unexpectedErr) => {
+      entireCollectionSucceeded = false;
+      logger.error({ err: unexpectedErr }, 'Unexpected error in collectSystemMetrics');
+    })
+    .finally(() => {
+      inFlightCollectPromise = null;
+    });
 
   return inFlightCollectPromise;
 }

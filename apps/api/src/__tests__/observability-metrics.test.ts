@@ -19,7 +19,13 @@ import {
   socketioConnectedClients,
   collectSystemMetrics,
   _resetCollectThrottleForTesting,
+  _getCollectorStatusForTesting,
+  isCollectorDue,
 } from '../lib/metrics';
+import * as dbMetricsModule from '../lib/db-metrics';
+import * as queueMetricsModule from '../jobs/queue-metrics';
+import * as redisMetricsModule from '../lib/redis-metrics';
+import * as outboxMetricsModule from '../modules/outbox/outbox.metrics';
 import { collectRedisMetrics, markRedisUnavailable } from '../lib/redis-metrics';
 import { collectBullmqMetrics, instrumentWorker } from '../jobs/queue-metrics';
 import {
@@ -577,6 +583,123 @@ describe('Observability & Metrics Hardening (M8 Phase 2)', () => {
       // Simulate TTL expiration
       _resetCollectThrottleForTesting();
       await expect(collectSystemMetrics()).resolves.not.toThrow();
+    });
+
+    it('tracks individual collector completion and does not mark entire collection successful when one collector fails', async () => {
+      _resetCollectThrottleForTesting();
+
+      const bullmqSpy = vi
+        .spyOn(queueMetricsModule, 'collectBullmqMetrics')
+        .mockRejectedValueOnce(new Error('Simulated BullMQ failure'));
+
+      await collectSystemMetrics();
+
+      const status = _getCollectorStatusForTesting();
+      expect(status.collectors.bullmq.status).toBe('failed');
+      expect(status.collectors.bullmq.lastSuccessTime).toBeNull();
+      expect(status.collectors.bullmq.lastError).toBe('Simulated BullMQ failure');
+      expect(status.collectors.db.status).toBe('success');
+      expect(status.collectors.db.lastSuccessTime).not.toBeNull();
+      expect(status.entireCollectionSucceeded).toBe(false);
+      expect(status.lastEntireCollectionSuccessTime).toBeNull();
+
+      bullmqSpy.mockRestore();
+    });
+
+    it('retries a failed collector on subsequent scrape while preserving 15s throttle for successful collectors', async () => {
+      _resetCollectThrottleForTesting();
+
+      const dbSpy = vi.spyOn(dbMetricsModule, 'collectDbMetrics').mockResolvedValue();
+      const bullmqSpy = vi
+        .spyOn(queueMetricsModule, 'collectBullmqMetrics')
+        .mockRejectedValueOnce(new Error('Transient BullMQ failure'))
+        .mockResolvedValueOnce();
+
+      // Scrape 1: DB succeeds, BullMQ fails
+      await collectSystemMetrics();
+
+      expect(dbSpy).toHaveBeenCalledTimes(1);
+      expect(bullmqSpy).toHaveBeenCalledTimes(1);
+      expect(isCollectorDue('db')).toBe(false);
+      expect(isCollectorDue('bullmq')).toBe(true);
+
+      const statusAfterScrape1 = _getCollectorStatusForTesting();
+      expect(statusAfterScrape1.collectors.bullmq.status).toBe('failed');
+      expect(statusAfterScrape1.collectors.db.status).toBe('success');
+      expect(statusAfterScrape1.entireCollectionSucceeded).toBe(false);
+
+      // Scrape 2 (immediate subsequent scrape, before 15s TTL):
+      // DB must be throttled (NOT called again), BullMQ must be RETRIED (called 2nd time)
+      await collectSystemMetrics();
+
+      expect(dbSpy).toHaveBeenCalledTimes(1); // Throttled!
+      expect(bullmqSpy).toHaveBeenCalledTimes(2); // Retried!
+      expect(isCollectorDue('db')).toBe(false);
+      expect(isCollectorDue('bullmq')).toBe(false);
+
+      const statusAfterScrape2 = _getCollectorStatusForTesting();
+      expect(statusAfterScrape2.collectors.bullmq.status).toBe('success');
+      expect(statusAfterScrape2.entireCollectionSucceeded).toBe(true);
+      expect(statusAfterScrape2.lastEntireCollectionSuccessTime).not.toBeNull();
+
+      // Scrape 3 (immediate subsequent scrape): Both must be throttled
+      await collectSystemMetrics();
+      expect(dbSpy).toHaveBeenCalledTimes(1);
+      expect(bullmqSpy).toHaveBeenCalledTimes(2);
+
+      dbSpy.mockRestore();
+      bullmqSpy.mockRestore();
+    });
+
+    it('preserves non-blocking behavior: one failed collector does not prevent unrelated collectors from executing', async () => {
+      _resetCollectThrottleForTesting();
+
+      const redisSpy = vi
+        .spyOn(redisMetricsModule, 'collectRedisMetrics')
+        .mockRejectedValueOnce(new Error('Redis crash'));
+      const outboxSpy = vi.spyOn(outboxMetricsModule, 'collectOutboxMetrics');
+
+      // Does not throw an unhandled exception
+      await expect(collectSystemMetrics()).resolves.toBeUndefined();
+
+      // Unrelated collector still executed
+      expect(outboxSpy).toHaveBeenCalledTimes(1);
+      const status = _getCollectorStatusForTesting();
+      expect(status.collectors.redis.status).toBe('failed');
+      expect(status.collectors.outbox.status).toBe('success');
+
+      redisSpy.mockRestore();
+      outboxSpy.mockRestore();
+    });
+
+    it('preserves single-flight mutex across concurrent scrapes during failure and retry', async () => {
+      _resetCollectThrottleForTesting();
+
+      let resolveBullmq: () => void;
+      const bullmqDelay = new Promise<void>((resolve) => {
+        resolveBullmq = resolve;
+      });
+
+      const bullmqSpy = vi
+        .spyOn(queueMetricsModule, 'collectBullmqMetrics')
+        .mockImplementation(async () => {
+          await bullmqDelay;
+          throw new Error('Async BullMQ failure');
+        });
+
+      // Launch 3 concurrent calls
+      const call1 = collectSystemMetrics();
+      const call2 = collectSystemMetrics();
+      const call3 = collectSystemMetrics();
+
+      // All 3 share the in-flight collection promise
+      resolveBullmq!();
+      await Promise.all([call1, call2, call3]);
+
+      // Exactly 1 underlying collection execution took place
+      expect(bullmqSpy).toHaveBeenCalledTimes(1);
+
+      bullmqSpy.mockRestore();
     });
   });
 });
