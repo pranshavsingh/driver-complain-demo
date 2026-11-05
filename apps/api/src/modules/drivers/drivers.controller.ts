@@ -12,3 +12,9 @@ export async function list(req: Request, res: Response): Promise<void> {
     sendSuccess(res, result.data);
   }
 }
+
+export async function summary(req: Request, res: Response): Promise<void> {
+  const actor = req.user ? { id: req.user.id, role: req.user.role } : undefined;
+  const result = await driversService.getSummary(actor);
+  sendSuccess(res, result);
+}

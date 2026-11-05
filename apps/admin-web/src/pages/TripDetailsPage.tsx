@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactElement } from 'react';
+import { useEffect, useMemo, useState, useRef, type ReactElement } from 'react';
 import { createPortal } from 'react-dom';
 import type { DriverListItem, DriverMonthlyTripSummary, LoadingRecord } from '@driver-complaint/shared-types';
 import {
@@ -133,7 +133,7 @@ export function TripDetailsPage(): ReactElement {
   // Fetch Trip Logs & Monthly Summaries with JSON stringified keys
   const logsResource = useApiResource(
     JSON.stringify(['admin:trips:logs', queryObj]),
-    () => api.loading.list(queryObj),
+    () => api.loading.trips(queryObj),
   );
   const summaryResource = useApiResource(
     JSON.stringify(['admin:trips:summary', queryObj]),
@@ -141,6 +141,11 @@ export function TripDetailsPage(): ReactElement {
   );
 
   const { subscribe } = useRealtime();
+
+  const logsRef = useRef(logsResource);
+  logsRef.current = logsResource;
+  const summaryRef = useRef(summaryResource);
+  summaryRef.current = summaryResource;
 
   // Reload on realtime socket events
   useEffect(() => {
@@ -151,11 +156,11 @@ export function TripDetailsPage(): ReactElement {
         event === 'complaint:created' ||
         event === 'complaint:status-changed'
       ) {
-        logsResource.reload();
-        summaryResource.reload();
+        logsRef.current.reload();
+        summaryRef.current.reload();
       }
     });
-  }, [subscribe, logsResource, summaryResource]);
+  }, [subscribe]);
 
   const rawRecords: LoadingRecord[] = logsResource.data?.data ?? [];
   const rawSummaries: DriverMonthlyTripSummary[] = summaryResource.data?.data ?? [];

@@ -26,6 +26,7 @@ export interface UserFilterQuery extends PaginationParams {
   approvalStatus?: ApprovalStatus;
   isActive?: boolean;
   search?: string;
+  excludeRejected?: boolean;
 }
 
 export interface Actor {
@@ -252,7 +253,11 @@ export async function listUsers(
     where.role = filters.role;
   }
 
-  if (filters?.approvalStatus) where.approvalStatus = filters.approvalStatus;
+  if (filters?.approvalStatus) {
+    where.approvalStatus = filters.approvalStatus;
+  } else if (filters?.excludeRejected) {
+    where.approvalStatus = { not: 'REJECTED' };
+  }
   if (filters?.isActive !== undefined) where.isActive = filters.isActive;
   if (filters?.search) {
     andConditions.push({

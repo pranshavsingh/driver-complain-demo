@@ -7,6 +7,7 @@ import {
   completeTrip,
   completeUnloading,
   getActiveLoadingRecord,
+  getDelayedLoadingCount,
   listLoadingRecords,
   listTripRecords,
   iterateTripRecords,
@@ -155,6 +156,20 @@ export async function handleGetActiveLoading(req: Request, res: Response): Promi
 
   const { active, stats } = await getActiveLoadingRecord(userId);
   sendSuccess(res, { active, stats });
+}
+
+export async function handleGetDelayedCount(req: Request, res: Response): Promise<void> {
+  const user = req.user;
+  if (!user) throw ApiError.unauthorized();
+
+  // Scoping must use authenticated identity only; never trust client-supplied site or role params
+  const actor = {
+    id: user.id,
+    role: user.role,
+  };
+
+  const delayedCount = await getDelayedLoadingCount(actor);
+  sendSuccess(res, { delayedCount });
 }
 
 export async function handleListLoadingRecords(req: Request, res: Response): Promise<void> {

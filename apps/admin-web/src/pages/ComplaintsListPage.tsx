@@ -276,14 +276,61 @@ export function ComplaintsListPage(): ReactElement {
   const adminsResource = useApiResource('api:users:admins', () => api.users.admins());
   const adminsList: AdminSummary[] = adminsResource.data ?? [];
 
+  // Update URL on debounced search
+  useEffect(() => {
+    if (debouncedSearch !== filter.search) {
+      const next = { ...filter, search: debouncedSearch };
+      setSearchParams(writeParams(next, 1));
+    }
+  }, [debouncedSearch, filter, setSearchParams]);
+
+  // Sync URL query params like filter=overSla or segment=UNASSIGNED
+  useEffect(() => {
+    const filterParam = searchParams.get('filter');
+    const segParam = searchParams.get('segment');
+    const searchParam = searchParams.get('search');
+
+    if (filterParam === 'overSla' || segParam === 'UNASSIGNED') {
+      setActiveSegment('UNASSIGNED');
+    } else if (segParam === 'IN_PROGRESS') {
+      setActiveSegment('IN_PROGRESS');
+    } else if (segParam === 'RESOLVED') {
+      setActiveSegment('RESOLVED');
+    }
+
+    if (searchParam !== null && searchParam !== searchDraft) {
+      setSearchDraft(searchParam);
+    }
+  }, [searchParams]);
+
+  // Primary resource
+  const cacheKey = `complaints:list:${JSON.stringify(filter)}:${page}`;
+  const complaintsResource = useApiResource(cacheKey, () =>
+    api.complaints.list(filter, page, PAGE_SIZE),
+  );
+  const complaints = complaintsResource.data?.data ?? [];
+  const meta = complaintsResource.data?.meta ?? { total: 0, page: 1, limit: PAGE_SIZE, totalPages: 1 };
+
+  // Summary resource for accurate top KPI metrics without downloading 500 records
+  const summaryResource = useApiResource('complaints:summary', () =>
+    api.complaints.summary(),
+  );
+  const summaryData = summaryResource.data;
+
+  // Dynamic Real Metrics from database aggregation
+  const totalComplaintsCount = summaryData?.total ?? meta.total;
+  const needActionCount = summaryData?.needsAction ?? 0;
+  const inProcessCount = summaryData?.inProgress ?? 0;
+  const resolvedCount = (summaryData?.resolved ?? 0) + (summaryData?.closed ?? 0);
+
   const handleExecuteExport = () => {
     if (!exportFromDate || !exportToDate) return;
 
     const fromTime = new Date(`${exportFromDate}T00:00:00`).getTime();
     const toTime = new Date(`${exportToDate}T23:59:59.999`).getTime();
 
-    const sourceList = rawAllComplaints.length > 0 ? rawAllComplaints : complaints;
-    const filteredByDate = sourceList.filter((c) => {
+    const sourceList = complaints;
+    const filteredByDate = sourceList.filter((c: ComplaintPublic) => {
       if (isDeptAdmin && !userCategories.includes(c.category as any)) {
         return false;
       }
@@ -307,7 +354,7 @@ export function ComplaintsListPage(): ReactElement {
 
     const csvRows = [
       headers.join(','),
-      ...filteredByDate.map((c) => {
+      ...filteredByDate.map((c: ComplaintPublic) => {
         const assignedAdmin = c.assignedToId ? adminsList.find((a) => a.id === c.assignedToId) : null;
         const assignedName =
           c.assignedToName ||
@@ -352,73 +399,6 @@ export function ComplaintsListPage(): ReactElement {
     handleCloseExportModal();
   };
 
-  // Update URL on debounced search
-  useEffect(() => {
-    if (debouncedSearch !== filter.search) {
-      const next = { ...filter, search: debouncedSearch };
-      setSearchParams(writeParams(next, 1));
-    }
-  }, [debouncedSearch, filter, setSearchParams]);
-
-  // Sync URL query params like filter=overSla or segment=UNASSIGNED
-  useEffect(() => {
-    const filterParam = searchParams.get('filter');
-    const segParam = searchParams.get('segment');
-    const searchParam = searchParams.get('search');
-
-    if (filterParam === 'overSla' || segParam === 'UNASSIGNED') {
-      setActiveSegment('UNASSIGNED');
-    } else if (segParam === 'IN_PROGRESS') {
-      setActiveSegment('IN_PROGRESS');
-    } else if (segParam === 'RESOLVED') {
-      setActiveSegment('RESOLVED');
-    }
-
-    if (searchParam !== null && searchParam !== searchDraft) {
-      setSearchDraft(searchParam);
-    }
-  }, [searchParams]);
-
-  // Primary resource
-  const cacheKey = `complaints:list:${JSON.stringify(filter)}:${page}`;
-  const complaintsResource = useApiResource(cacheKey, () =>
-    api.complaints.list(filter, page, PAGE_SIZE),
-  );
-  const complaints = complaintsResource.data?.data ?? [];
-  const meta = complaintsResource.data?.meta ?? { total: 0, page: 1, limit: PAGE_SIZE, totalPages: 1 };
-
-  // Unfiltered complaints resource for accurate top KPI metrics
-  const allComplaintsResource = useApiResource('complaints:all_metrics', () =>
-    api.complaints.list(api.EMPTY_FILTER, 1, 500),
-  );
-  const rawAllComplaints: ComplaintPublic[] = allComplaintsResource.data?.data ?? [];
-
-  const metricsComplaints = useMemo(() => {
-    let list = rawAllComplaints.length > 0 ? rawAllComplaints : complaints;
-    if (isDeptAdmin) {
-      list = list.filter((c) => userCategories.includes(c.category as any));
-    }
-    return list;
-  }, [rawAllComplaints, complaints, isDeptAdmin, userCategories]);
-
-  // Dynamic Real Metrics
-  const totalComplaintsCount = allComplaintsResource.data?.meta?.total || metricsComplaints.length;
-  const needActionCount = useMemo(() => {
-    return metricsComplaints.filter((c) => {
-      if (c.status === 'RESOLVED' || c.status === 'CLOSED' || c.status === 'IN_PROGRESS') return false;
-      const sla = computeSlaInfo(c.createdAt, c.category, c.resolvedAt, slaMap, c.priority);
-      return sla.isOverdue || Boolean(c.needsAction);
-    }).length;
-  }, [metricsComplaints, slaMap]);
-
-  const inProcessCount = useMemo(() => {
-    return metricsComplaints.filter((c) => c.status === 'IN_PROGRESS').length;
-  }, [metricsComplaints]);
-
-  const resolvedCount = useMemo(() => {
-    return metricsComplaints.filter((c) => c.status === 'RESOLVED' || c.status === 'CLOSED').length;
-  }, [metricsComplaints]);
-
   // Check URL ?id= parameter to open drawer automatically
   useEffect(() => {
     const targetId = searchParams.get('id');
@@ -441,11 +421,16 @@ export function ComplaintsListPage(): ReactElement {
     return () => clearInterval(interval);
   }, [isPlayingAudio]);
 
+  const complaintsRef = useRef(complaintsResource);
+  complaintsRef.current = complaintsResource;
+  const summaryRef = useRef(summaryResource);
+  summaryRef.current = summaryResource;
+
   // Realtime Reload
   useEffect(() => {
     const handleReload = () => {
-      void complaintsResource.reload();
-      void allComplaintsResource.reload();
+      void complaintsRef.current.reload();
+      void summaryRef.current.reload();
     };
 
     const u1 = subscribeCustom('complaint:created', handleReload);
@@ -456,7 +441,7 @@ export function ComplaintsListPage(): ReactElement {
       u2();
       u3();
     };
-  }, [subscribeCustom, complaintsResource, allComplaintsResource]);
+  }, [subscribeCustom]);
 
   const updateFilterField = useCallback(
     (field: keyof ComplaintFilterInput, value: string) => {

@@ -29,12 +29,13 @@ export async function createUser(req: Request, res: Response): Promise<void> {
 
 export async function listUsers(req: Request, res: Response): Promise<void> {
   if (!req.user) throw ApiError.unauthorized();
-  const { role, approvalStatus, isActive, search, page, pageSize, paginate } = req.query;
+  const { role, approvalStatus, isActive, search, page, pageSize, paginate, excludeRejected } = req.query;
   const filters = {
     ...(typeof role === 'string' ? { role: role as Role } : {}),
     ...(typeof approvalStatus === 'string' ? { approvalStatus: approvalStatus as ApprovalStatus } : {}),
     ...(typeof isActive === 'string' ? { isActive: isActive === 'true' } : {}),
     ...(typeof search === 'string' ? { search } : {}),
+    ...(excludeRejected === 'true' ? { excludeRejected: true } : {}),
     page: page as any,
     pageSize: pageSize as any,
     paginate: paginate as any,

@@ -3,15 +3,20 @@ import {
   AdminSummarySchema,
   ComplaintDetailSchema,
   ComplaintPublicSchema,
+  ComplaintSummarySchema,
   DriverListItemSchema,
   ListComplaintsResponseSchema,
   LoginResponseSchema,
   UserPublicSchema,
   VehiclePublicSchema,
+  VehicleSummarySchema,
+  VehicleAssignmentItemSchema,
+  DriverSummarySchema,
   type ComplaintCategory,
   type AdminSummary,
   type ComplaintDetail,
   type ComplaintPublic,
+  type ComplaintSummary,
   type DriverListItem,
   type ListComplaintsResponse,
   type LoginRequest,
@@ -19,6 +24,9 @@ import {
   type UpdateComplaintStatus,
   type UserPublic,
   type VehiclePublic,
+  type VehicleSummary,
+  type VehicleAssignmentItem,
+  type DriverSummary,
   type CreateUser,
   type UpdateUser,
   type CreateVehicle,
@@ -153,6 +161,20 @@ export const users = {
   admins: (): Promise<AdminSummary[]> => request(z.array(AdminSummarySchema), '/users/admins'),
   list: (query?: { role?: string; approvalStatus?: string; isActive?: boolean; search?: string }): Promise<UserPublic[]> =>
     request(z.array(UserPublicSchema), '/users', { query: query as Record<string, QueryValue> }),
+  listPaginated: (query?: { role?: string; approvalStatus?: string; isActive?: boolean; search?: string; page?: number; pageSize?: number; excludeRejected?: boolean }): Promise<{ data: UserPublic[]; pagination: { page: number; pageSize: number; total: number; totalPages: number } }> =>
+    request(
+      z.object({
+        data: z.array(UserPublicSchema),
+        pagination: z.object({
+          page: z.number(),
+          pageSize: z.number(),
+          total: z.number(),
+          totalPages: z.number(),
+        }),
+      }),
+      '/users',
+      { query: { ...query, paginate: 'true' } as Record<string, QueryValue> },
+    ),
   pendingCount: (): Promise<{ pendingCount: number }> =>
     request(z.object({ pendingCount: z.number() }), '/users/pending-count'),
   checkAvailability: (query: {
@@ -186,6 +208,7 @@ export const users = {
 
 export const drivers = {
   list: (): Promise<DriverListItem[]> => request(z.array(DriverListItemSchema), '/drivers'),
+  summary: (): Promise<DriverSummary> => request(DriverSummarySchema, '/drivers/summary'),
 };
 
 export interface VehicleFilterQuery {
@@ -193,11 +216,43 @@ export interface VehicleFilterQuery {
   agreementStatus?: string;
   wheels?: string;
   driverId?: string;
+  assignmentFilter?: 'ALL' | 'ASSIGNED' | 'FREE';
 }
 
+export type VehicleSummaryResponse = VehicleSummary;
+export type DriverAssignment = VehicleAssignmentItem;
+
 export const vehicles = {
+  summary: (): Promise<VehicleSummary> =>
+    request(VehicleSummarySchema, '/vehicles/summary'),
+  assignments: (query?: { driverId?: string; driverIds?: string[]; limit?: number }): Promise<VehicleAssignmentItem[]> =>
+    request(
+      z.array(VehicleAssignmentItemSchema),
+      '/vehicles/assignments',
+      {
+        query: {
+          ...(query?.driverId ? { driverId: query.driverId } : {}),
+          ...(query?.driverIds && query.driverIds.length > 0 ? { driverIds: query.driverIds.join(',') } : {}),
+          ...(query?.limit ? { limit: query.limit } : {}),
+        } as Record<string, QueryValue>,
+      },
+    ),
   list: (query?: VehicleFilterQuery): Promise<VehiclePublic[]> =>
     request(z.array(VehiclePublicSchema), '/vehicles', { query: query as Record<string, QueryValue> }),
+  listPaginated: (query?: VehicleFilterQuery & { page?: number; pageSize?: number }): Promise<{ data: VehiclePublic[]; pagination: { page: number; pageSize: number; total: number; totalPages: number } }> =>
+    request(
+      z.object({
+        data: z.array(VehiclePublicSchema),
+        pagination: z.object({
+          page: z.number(),
+          pageSize: z.number(),
+          total: z.number(),
+          totalPages: z.number(),
+        }),
+      }),
+      '/vehicles',
+      { query: { ...query, paginate: 'true' } as Record<string, QueryValue> },
+    ),
   get: (id: string): Promise<VehiclePublic> =>
     request(VehiclePublicSchema, `/vehicles/${id}`),
   create: (input: CreateVehicle): Promise<VehiclePublic> =>
@@ -259,6 +314,9 @@ export const complaints = {
 
   unreadCount: (): Promise<{ unreadCount: number }> =>
     request(z.object({ unreadCount: z.number() }), '/complaints/unread-count'),
+
+  summary: (filter: ComplaintFilterInput = EMPTY_FILTER): Promise<ComplaintSummary> =>
+    request(ComplaintSummarySchema, '/complaints/summary', { query: toQuery(filter) }),
 };
 
 export interface TripFilterQuery {
@@ -270,8 +328,26 @@ export interface TripFilterQuery {
 }
 
 export const loading = {
-  list: (query?: TripFilterQuery): Promise<{ data: LoadingRecord[] }> =>
+  list: (query?: TripFilterQuery & { limit?: number }): Promise<{ data: LoadingRecord[] }> =>
     request(z.object({ data: z.array(LoadingRecordSchema) }), '/loading', { query: query as Record<string, QueryValue> }),
+
+  trips: (query?: TripFilterQuery & { page?: number; pageSize?: number }): Promise<{ data: LoadingRecord[]; meta: { page: number; pageSize: number; total: number; totalPages: number } }> =>
+    request(
+      z.object({
+        data: z.array(LoadingRecordSchema),
+        meta: z.object({
+          page: z.number(),
+          pageSize: z.number(),
+          total: z.number(),
+          totalPages: z.number(),
+        }),
+      }),
+      '/loading/trips',
+      { query: query as Record<string, QueryValue> },
+    ),
+
+  delayedCount: (): Promise<{ delayedCount: number }> =>
+    request(z.object({ delayedCount: z.number() }), '/loading/delayed-count'),
 
   monthlySummary: (query?: TripFilterQuery): Promise<{ data: DriverMonthlyTripSummary[] }> =>
     request(z.object({ data: z.array(DriverMonthlyTripSummarySchema) }), '/loading/monthly-summary', { query: query as Record<string, QueryValue> }),

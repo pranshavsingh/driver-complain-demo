@@ -22,6 +22,7 @@ import {
 import * as api from '../api/endpoints';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { useApiResource } from '../hooks/useApiResource';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { useAuth, isSuperAdmin } from '../auth/AuthContext';
 import { useRealtime } from '../realtime/RealtimeProvider';
 import { SkeletonTable } from '../components/LoadingSystem';
@@ -49,19 +50,18 @@ const AGREEMENT_STATUS_OPTIONS = [
 function InlineDriverSelect({
   vehicle,
   driversList,
-  driverAssignedVehicleMap,
   onAssign,
   isUpdating,
 }: {
   vehicle: VehiclePublic;
   driversList: DriverListItem[];
-  driverAssignedVehicleMap: Map<string, { vehicleId: string; plateNumber: string; driverName: string }>;
   onAssign: (vehicleId: string, driverId: string | null) => Promise<void>;
   isUpdating: boolean;
 }): ReactElement {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [coords, setCoords] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  const [assignmentsMap, setAssignmentsMap] = useState<Map<string, api.DriverAssignment>>(new Map());
   const buttonRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
 
@@ -85,6 +85,28 @@ function InlineDriverSelect({
       setIsOpen(false);
     }
   };
+
+  // Fetch driver assignments on demand only when popover opens
+  useEffect(() => {
+    if (!isOpen) return;
+    let active = true;
+    const ids = driversList.slice(0, 100).map((d) => d.id);
+    if (ids.length === 0) return;
+    api.vehicles
+      .assignments({ driverIds: ids })
+      .then((res) => {
+        if (!active) return;
+        const map = new Map<string, api.DriverAssignment>();
+        for (const item of res) {
+          map.set(item.driverId, item);
+        }
+        setAssignmentsMap(map);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [isOpen, driversList]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -131,7 +153,17 @@ function InlineDriverSelect({
 
   const handleSelect = async (dId: string | null) => {
     if (dId) {
-      const assigned = driverAssignedVehicleMap.get(dId);
+      let assigned = assignmentsMap.get(dId);
+      if (!assigned) {
+        try {
+          const directCheck = await api.vehicles.assignments({ driverId: dId });
+          if (directCheck.length > 0) {
+            assigned = directCheck[0];
+          }
+        } catch {
+          // Fall back to server-side 1:1 exclusivity validation on submit
+        }
+      }
       if (assigned && assigned.vehicleId !== vehicle.id) {
         const driverObj = driversList.find((d) => d.id === dId);
         const dName = driverObj ? `${driverObj.firstName} ${driverObj.lastName}` : 'Driver';
@@ -330,7 +362,7 @@ function InlineDriverSelect({
               ) : (
                 filteredDrivers.map((driver) => {
                   const isSelected = vehicle.driverId === driver.id;
-                  const assignedInfo = driverAssignedVehicleMap.get(driver.id);
+                  const assignedInfo = assignmentsMap.get(driver.id);
                   const isAssignedToOther = Boolean(assignedInfo && assignedInfo.vehicleId !== vehicle.id);
 
                   return (
@@ -438,6 +470,7 @@ export function VehiclesPage(): ReactElement {
   const { user } = useAuth();
   const canAddVehicle = isSuperAdmin(user);
   const [searchQuery, setSearchQuery] = useState('');
+  const debouncedSearch = useDebouncedValue(searchQuery, 300);
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [wheelFilter, setWheelFilter] = useState('ALL');
   const [assignmentFilter, setAssignmentFilter] = useState<'ALL' | 'ASSIGNED' | 'FREE'>('ALL');
@@ -464,41 +497,64 @@ export function VehiclesPage(): ReactElement {
   const [driverId, setDriverId] = useState<string>('');
   const [siteInchargeId, setSiteInchargeId] = useState<string>('');
 
-  const vehiclesResource = useApiResource('api:vehicles:list', () => api.vehicles.list());
+  // Reset page when debounced search or filters change
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, statusFilter, wheelFilter, assignmentFilter]);
+
+  const vehiclesResource = useApiResource(
+    `api:vehicles:paginated:${statusFilter}:${wheelFilter}:${assignmentFilter}:${debouncedSearch}:${page}:${pageSize}`,
+    () =>
+      api.vehicles.listPaginated({
+        agreementStatus: statusFilter !== 'ALL' ? statusFilter : undefined,
+        wheels: wheelFilter !== 'ALL' ? wheelFilter : undefined,
+        assignmentFilter: assignmentFilter as any,
+        search: debouncedSearch.trim() || undefined,
+        page,
+        pageSize,
+      }),
+  );
+  const summaryResource = useApiResource('api:vehicles:summary', () => api.vehicles.summary());
+  const summaryData = summaryResource.data;
+
   const driversResource = useApiResource('api:drivers:list', () => api.drivers.list());
   const usersResource = useApiResource('api:users:list', () => api.users.list());
   const { subscribeCustom } = useRealtime();
 
+  const vehiclesRef = useRef(vehiclesResource);
+  vehiclesRef.current = vehiclesResource;
+  const summaryRef = useRef(summaryResource);
+  summaryRef.current = summaryResource;
+  const driversRef = useRef(driversResource);
+  driversRef.current = driversResource;
+  const usersRef = useRef(usersResource);
+  usersRef.current = usersResource;
+
   // Live Realtime Subscriptions for Vehicle Add/Edit/Delete/Assign & Driver updates
   useEffect(() => {
-    const unsubCreated = subscribeCustom('vehicle:created', () => {
-      void vehiclesResource.reload();
-      void driversResource.reload();
-    });
-    const unsubUpdated = subscribeCustom('vehicle:updated', () => {
-      void vehiclesResource.reload();
-      void driversResource.reload();
-    });
-    const unsubDeleted = subscribeCustom('vehicle:deleted', () => {
-      void vehiclesResource.reload();
-      void driversResource.reload();
-    });
-    const unsubAssigned = subscribeCustom('vehicle:assigned', () => {
-      void vehiclesResource.reload();
-      void driversResource.reload();
-    });
+    const handleVehicleChange = () => {
+      void vehiclesRef.current.reload();
+      void summaryRef.current.reload();
+      void driversRef.current.reload();
+    };
+
+    const unsubCreated = subscribeCustom('vehicle:created', handleVehicleChange);
+    const unsubUpdated = subscribeCustom('vehicle:updated', handleVehicleChange);
+    const unsubDeleted = subscribeCustom('vehicle:deleted', handleVehicleChange);
+    const unsubAssigned = subscribeCustom('vehicle:assigned', handleVehicleChange);
     const unsubUserCreated = subscribeCustom('user:created', () => {
-      void driversResource.reload();
-      void usersResource.reload();
+      void driversRef.current.reload();
+      void usersRef.current.reload();
     });
     const unsubUserApproved = subscribeCustom('user:approved', () => {
-      void driversResource.reload();
-      void usersResource.reload();
+      void driversRef.current.reload();
+      void usersRef.current.reload();
     });
     const unsubUserUpdated = subscribeCustom('user:updated', () => {
-      void driversResource.reload();
-      void usersResource.reload();
-      void vehiclesResource.reload();
+      void driversRef.current.reload();
+      void usersRef.current.reload();
+      void vehiclesRef.current.reload();
+      void summaryRef.current.reload();
     });
     return () => {
       unsubCreated();
@@ -509,15 +565,11 @@ export function VehiclesPage(): ReactElement {
       unsubUserApproved();
       unsubUserUpdated();
     };
-  }, [subscribeCustom, vehiclesResource, driversResource, usersResource]);
+  }, [subscribeCustom]);
 
-  const rawVehicles: VehiclePublic[] = vehiclesResource.data ?? [];
-  const vehiclesList: VehiclePublic[] = useMemo(() => {
-    if (user?.role === 'EXECUTIVE') {
-      return rawVehicles.filter((v) => v.siteInchargeId === user.id);
-    }
-    return rawVehicles;
-  }, [rawVehicles, user]);
+  const paginatedVehicles: VehiclePublic[] = vehiclesResource.data?.data ?? [];
+  const totalItems = vehiclesResource.data?.pagination?.total ?? paginatedVehicles.length;
+  const totalPages = Math.max(1, vehiclesResource.data?.pagination?.totalPages ?? 1);
   const driversList: DriverListItem[] = driversResource.data ?? [];
   const allUsers: UserPublic[] = usersResource.data ?? [];
   const adminMap = useMemo(() => {
@@ -536,71 +588,29 @@ export function VehiclesPage(): ReactElement {
       .sort((a, b) => a.firstName.localeCompare(b.firstName));
   }, [allUsers]);
 
-  // Map of driverId -> assigned vehicle details (for 1:1 driver assignment enforcement)
-  const driverAssignedVehicleMap = useMemo(() => {
-    const map = new Map<string, { vehicleId: string; plateNumber: string; driverName: string }>();
-    for (const v of vehiclesList) {
-      if (v.driverId) {
-        map.set(v.driverId, {
-          vehicleId: v.id,
-          plateNumber: v.plateNumber,
-          driverName: v.driverName || 'Driver',
-        });
+  // Bounded assignments resource enabled only when the modal is open
+  const assignmentsResource = useApiResource(
+    'api:vehicles:assignments',
+    () => api.vehicles.assignments({ limit: 100 }),
+    { enabled: showModal },
+  );
+
+  const modalAssignmentsMap = useMemo(() => {
+    const map = new Map<string, api.DriverAssignment>();
+    if (assignmentsResource.data) {
+      for (const a of assignmentsResource.data) {
+        map.set(a.driverId, a);
       }
     }
     return map;
-  }, [vehiclesList]);
+  }, [assignmentsResource.data]);
 
-  // Filter vehicles
-  const filteredVehicles = useMemo(() => {
-    return vehiclesList.filter((v) => {
-      if (statusFilter !== 'ALL') {
-        const vStatus = (v.agreementStatus || 'ACTIVE').toLowerCase();
-        const target = statusFilter.toLowerCase();
-        if (vStatus !== target && v.agreementStatus !== statusFilter) {
-          return false;
-        }
-      }
-      if (wheelFilter !== 'ALL' && (v.wheels || '') !== wheelFilter) {
-        return false;
-      }
-      if (assignmentFilter === 'ASSIGNED' && !v.driverId) {
-        return false;
-      }
-      if (assignmentFilter === 'FREE' && Boolean(v.driverId)) {
-        return false;
-      }
-      if (!searchQuery.trim()) return true;
-      const q = searchQuery.toLowerCase();
-      const plateMatch = v.plateNumber.toLowerCase().includes(q);
-      const modelMatch = v.model ? v.model.toLowerCase().includes(q) : false;
-      const makeMatch = v.make ? v.make.toLowerCase().includes(q) : false;
-      const modelNoMatch = v.modelNumber ? v.modelNumber.toLowerCase().includes(q) : false;
-      const chassisMatch = v.chassisNumber ? v.chassisNumber.toLowerCase().includes(q) : false;
-      const vinMatch = v.vin ? v.vin.toLowerCase().includes(q) : false;
-      const driverMatch = v.driverName ? v.driverName.toLowerCase().includes(q) : false;
-      const siteInchargeMatch = v.siteInchargeName ? v.siteInchargeName.toLowerCase().includes(q) : false;
-      const yearMatch = v.year ? v.year.toString().includes(q) : false;
-      return plateMatch || modelMatch || makeMatch || modelNoMatch || chassisMatch || vinMatch || driverMatch || siteInchargeMatch || yearMatch;
-    });
-  }, [vehiclesList, statusFilter, wheelFilter, assignmentFilter, searchQuery]);
-
-  const totalItems = filteredVehicles.length;
-  const totalPages = Math.ceil(totalItems / pageSize) || 1;
-
-  const paginatedVehicles = useMemo(() => {
-    const start = (page - 1) * pageSize;
-    return filteredVehicles.slice(start, start + pageSize);
-  }, [filteredVehicles, page, pageSize]);
-
-  // KPI Metrics
-  const activeAgreementsCount = vehiclesList.filter((v) => {
-    const s = (v.agreementStatus || 'ACTIVE').toUpperCase();
-    return s === 'ACTIVE' || s.includes('FMS') || s.includes('PLATINUM');
-  }).length;
-  const freeVehiclesCount = vehiclesList.filter((v) => !v.driverId).length;
-  const assignedVehiclesCount = vehiclesList.filter((v) => Boolean(v.driverId)).length;
-  const fleetUtilizationPct = vehiclesList.length > 0 ? Math.round((assignedVehiclesCount / vehiclesList.length) * 100) : 0;
+  // KPI Metrics (pure scalar metrics, zero unbounded fleet payload)
+  const totalFleetCount = summaryData?.total ?? totalItems;
+  const activeAgreementsCount = summaryData?.activeAgreementsCount ?? 0;
+  const freeVehiclesCount = summaryData?.freeCount ?? 0;
+  const assignedVehiclesCount = summaryData?.assignedCount ?? 0;
+  const fleetUtilizationPct = summaryData?.utilizationPct ?? 0;
 
   const handleOpenCreate = () => {
     setEditingVehicle(null);
@@ -642,6 +652,7 @@ export function VehiclesPage(): ReactElement {
       setUpdatingDriverVehicleId(vehicleId);
       await api.vehicles.update(vehicleId, { driverId: newDriverId ? newDriverId : null });
       void vehiclesResource.reload();
+      void summaryResource.reload();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       alert(msg || 'Failed to update driver assignment');
@@ -661,7 +672,7 @@ export function VehiclesPage(): ReactElement {
     }
 
     // 1. Uniqueness check for Vehicle Number (Plate)
-    const dupPlate = vehiclesList.find(
+    const dupPlate = paginatedVehicles.find(
       (v) => v.plateNumber.toUpperCase() === normPlate && v.id !== editingVehicle?.id
     );
     if (dupPlate) {
@@ -672,7 +683,7 @@ export function VehiclesPage(): ReactElement {
     // 2. Uniqueness check for Chassis No (VIN)
     const normChassis = chassisNumber.trim().toUpperCase();
     if (normChassis) {
-      const dupChassis = vehiclesList.find(
+      const dupChassis = paginatedVehicles.find(
         (v) =>
           ((v.chassisNumber && v.chassisNumber.toUpperCase() === normChassis) ||
             (v.vin && v.vin.toUpperCase() === normChassis)) &&
@@ -689,7 +700,15 @@ export function VehiclesPage(): ReactElement {
     // 3. Driver 1:1 Assignment Validation
     const trimmedDriverId = driverId.trim();
     if (trimmedDriverId) {
-      const assigned = driverAssignedVehicleMap.get(trimmedDriverId);
+      let assigned = modalAssignmentsMap.get(trimmedDriverId);
+      if (!assigned) {
+        try {
+          const directCheck = await api.vehicles.assignments({ driverId: trimmedDriverId });
+          if (directCheck.length > 0) assigned = directCheck[0];
+        } catch {
+          // Fall back to server-side 1:1 exclusivity validation on submit
+        }
+      }
       if (assigned && assigned.vehicleId !== editingVehicle?.id) {
         const driverObj = driversList.find((d) => d.id === trimmedDriverId);
         const dName = driverObj ? `${driverObj.firstName} ${driverObj.lastName}` : 'Driver';
@@ -736,6 +755,7 @@ export function VehiclesPage(): ReactElement {
 
       setShowModal(false);
       void vehiclesResource.reload();
+      void summaryResource.reload();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       setModalError(msg || 'Failed to save vehicle entry');
@@ -752,6 +772,7 @@ export function VehiclesPage(): ReactElement {
     try {
       await api.vehicles.remove(vehicle.id);
       void vehiclesResource.reload();
+      void summaryResource.reload();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       alert(msg || 'Failed to delete vehicle');
@@ -892,7 +913,7 @@ export function VehiclesPage(): ReactElement {
               </div>
             </div>
             <div className="font-mono" style={{ fontSize: 28, fontWeight: 700, color: 'var(--fo-text)', margin: '10px 0 6px 0' }}>
-              {vehiclesList.length}
+              {totalFleetCount}
             </div>
             <button
               type="button"
@@ -1293,11 +1314,11 @@ export function VehiclesPage(): ReactElement {
           </div>
 
           {/* Table Body */}
-          {vehiclesResource.loading && vehiclesList.length === 0 ? (
+          {vehiclesResource.loading && paginatedVehicles.length === 0 ? (
             <div style={{ padding: 16 }}>
               <SkeletonTable rows={7} columns={7} />
             </div>
-          ) : filteredVehicles.length === 0 ? (
+          ) : paginatedVehicles.length === 0 ? (
             <div style={{ padding: 40, textAlign: 'center', color: 'var(--fo-text-muted)', fontSize: 13 }}>
               No fleet vehicles found matching your search or filters.
             </div>
@@ -1442,7 +1463,6 @@ export function VehiclesPage(): ReactElement {
                           <InlineDriverSelect
                             vehicle={vehicle}
                             driversList={driversList}
-                            driverAssignedVehicleMap={driverAssignedVehicleMap}
                             onAssign={handleInlineAssignDriver}
                             isUpdating={updatingDriverVehicleId === vehicle.id}
                           />
@@ -1960,7 +1980,7 @@ export function VehiclesPage(): ReactElement {
                     onChange={(e) => {
                       const selectedVal = e.target.value;
                       if (selectedVal) {
-                        const assignedInfo = driverAssignedVehicleMap.get(selectedVal);
+                        const assignedInfo = modalAssignmentsMap.get(selectedVal);
                         if (assignedInfo && assignedInfo.vehicleId !== editingVehicle?.id) {
                           const driverObj = driversList.find((d) => d.id === selectedVal);
                           const dName = driverObj ? `${driverObj.firstName} ${driverObj.lastName}` : 'This driver';
@@ -1991,7 +2011,7 @@ export function VehiclesPage(): ReactElement {
                   >
                     <option value="">-- No Driver (Free / Unassigned Vehicle) --</option>
                     {driversList.map((d) => {
-                      const assignedInfo = driverAssignedVehicleMap.get(d.id);
+                      const assignedInfo = modalAssignmentsMap.get(d.id);
                       const isAssignedElsewhere = Boolean(assignedInfo && assignedInfo.vehicleId !== editingVehicle?.id);
                       const isAssignedHere = Boolean(assignedInfo && assignedInfo.vehicleId === editingVehicle?.id);
 

@@ -12,6 +12,7 @@ import {
   type ComplaintFilter,
   type ComplaintListQuery,
   type ListComplaintsResponse,
+  type ComplaintSummary,
 } from '@driver-complaint/shared-types';
 import { prisma } from '../../lib/prisma';
 import { toComplaintPublic, toComplaintDetail } from '../../lib/serializers';
@@ -23,6 +24,7 @@ import { logger } from '../../lib/logger';
 import { ApiError } from '../../errors/api-error';
 import { emitToRoles, emitEventToUsers } from '../../realtime/socket';
 import { resolveUserScope } from '../../lib/user-scope';
+import { getCategorySlaList, DEFAULT_SLA_HOURS } from '../settings/settings.service';
 
 async function findLeastLoadedAdmin(
   category: string,
@@ -957,6 +959,143 @@ export async function list(
       totalPages: Math.ceil(total / query.pageSize),
     },
   };
+}
+
+/** Aggregates complaint status counts & actionable counts adhering to the exact role/scope of the caller. */
+export async function getSummary(
+  actor: Actor,
+  query: Partial<ComplaintListQuery> = {},
+): Promise<ComplaintSummary> {
+  let actorDriverId: string | undefined;
+  if (actor.role === 'DRIVER') {
+    const driver = await prisma.driver.findUnique({
+      where: { userId: actor.id },
+      select: { id: true },
+    });
+    if (!driver) {
+      return { total: 0, new: 0, inProgress: 0, resolved: 0, closed: 0, needsAction: 0 };
+    }
+    actorDriverId = driver.id;
+  }
+
+  // Base scope for this user (respects categories, executive assignments, sites, driver scoping)
+  const baseQuery: ComplaintListQuery = {
+    page: 1,
+    pageSize: 1,
+    ...query,
+  };
+  delete baseQuery.status; // summary aggregates across all statuses
+
+  const where = await buildWhere(actor, actorDriverId, baseQuery);
+
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+
+  const andBase = where.AND ? (Array.isArray(where.AND) ? where.AND : [where.AND]) : [];
+
+  const now = Date.now();
+  const categorySlas = await getCategorySlaList();
+  const overSlaConditions = categorySlas.map(({ category, slaHours }) => ({
+    category: category as import('@prisma/client').ComplaintCategory,
+    createdAt: { lte: new Date(now - (slaHours || DEFAULT_SLA_HOURS[category] || 12) * 3600 * 1000) },
+  }));
+
+  const [statusGroups, needsActionCount, escalatedCount, todayCount, categoryGroups, overSlaCount] = await Promise.all([
+    prisma.complaint.groupBy({
+      by: ['status'],
+      where,
+      _count: { id: true },
+    }),
+    prisma.complaint.count({
+      where: {
+        AND: [
+          ...andBase,
+          {
+            status: 'NEW',
+            OR: [
+              { assignedToId: null },
+              { updates: { none: { author: { role: { in: ['ADMIN', 'SUPER_ADMIN', 'EXECUTIVE'] } } } } },
+            ],
+          },
+        ],
+      },
+    }),
+    prisma.complaint.count({
+      where: {
+        AND: [
+          ...andBase,
+          { status: { in: ['NEW', 'IN_PROGRESS'] }, priority: { in: ['URGENT', 'HIGH'] } },
+        ],
+      },
+    }),
+    prisma.complaint.count({
+      where: {
+        AND: [
+          ...andBase,
+          { createdAt: { gte: startOfToday } },
+        ],
+      },
+    }),
+    prisma.complaint.groupBy({
+      by: ['category'],
+      where: {
+        AND: [
+          ...andBase,
+          { status: { in: ['NEW', 'IN_PROGRESS'] } },
+        ],
+      },
+      _count: { id: true },
+    }),
+    prisma.complaint.count({
+      where: {
+        AND: [
+          ...andBase,
+          {
+            status: { in: ['NEW', 'IN_PROGRESS'] },
+            OR: overSlaConditions,
+          },
+        ],
+      },
+    }),
+  ]);
+
+  const byCategory: Record<string, number> = {
+    BREAKDOWN: 0,
+    FUEL_DEF: 0,
+    TYRE_ISSUE: 0,
+    LOADING: 0,
+    ACCOUNTS: 0,
+    VEHICLE_MAINTENANCE: 0,
+  };
+  for (const catGroup of categoryGroups) {
+    if (catGroup.category) {
+      byCategory[catGroup.category] = catGroup._count.id;
+    }
+  }
+
+  const summary: ComplaintSummary = {
+    total: 0,
+    new: 0,
+    inProgress: 0,
+    resolved: 0,
+    closed: 0,
+    needsAction: needsActionCount,
+    escalated: escalatedCount,
+    today: todayCount,
+    overSla: overSlaCount,
+    byCategory,
+  };
+
+  for (const group of statusGroups) {
+    const count = group._count.id;
+    summary.total += count;
+    if (group.status === 'NEW') summary.new = count;
+    else if (group.status === 'IN_PROGRESS') summary.inProgress = count;
+    else if (group.status === 'RESOLVED') summary.resolved = count;
+    else if (group.status === 'CLOSED') summary.closed = count;
+  }
+
+  return summary;
 }
 
 /** Relations needed to render human-readable names in an exported spreadsheet. */

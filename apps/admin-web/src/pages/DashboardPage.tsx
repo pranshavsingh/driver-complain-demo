@@ -1,14 +1,14 @@
-import { useMemo, useState, useEffect, type ReactElement } from 'react';
+import { useMemo, useState, useEffect, useRef, useCallback, type ReactElement } from 'react';
 import { Link } from 'react-router-dom';
 import type {
   ComplaintPublic,
-  VehiclePublic,
   ComplaintCategory,
   SparePartRequestPublic,
   LoadingRecord,
 } from '@driver-complaint/shared-types';
 import * as api from '../api/endpoints';
 import { useApiResource } from '../hooks/useApiResource';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { computeSlaInfo } from '../lib/format';
 import { useAuth, isSuperAdmin } from '../auth/AuthContext';
 import { getUserCategories, canAccessPath } from '../auth/permissions';
@@ -31,48 +31,98 @@ export function DashboardPage(): ReactElement {
   const [activeTab, setActiveTab] = useState<DashboardTab>('complaints');
   const [selectedCategory, setSelectedCategory] = useState<ComplaintCategory | 'ALL'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
+  const debouncedSearch = useDebouncedValue(searchQuery, 300);
   const [page, setPage] = useState(1);
   const pageSize = 8;
 
-  // Resources
-  const complaintsResource = useApiResource('dashboard:complaints', () =>
-    api.complaints.list(api.EMPTY_FILTER, 1, 100),
+  // Lightweight Summary & KPI Resources
+  const complaintsSummaryResource = useApiResource('dashboard:complaints:summary', () =>
+    api.complaints.summary(),
   );
-  const vehiclesResource = useApiResource('api:vehicles:list', () => api.vehicles.list());
-  const loadingResource = useApiResource('api:loading:list', () => api.loading.list());
-  const sparePartsResource = useApiResource('dashboard:spare-parts', () =>
-    api.spareParts.list({ limit: 25 }),
+  const vehiclesSummaryResource = useApiResource('dashboard:vehicles:summary', () =>
+    api.vehicles.summary(),
   );
-  const usersResource = useApiResource('api:users:list', () =>
-    isSuperAdmin(user) || user?.role === 'ADMIN' ? api.users.list() : Promise.resolve([]),
+  const driversSummaryResource = useApiResource('dashboard:drivers:summary', () =>
+    api.drivers.summary(),
+  );
+  const delayedLoadingResource = useApiResource('dashboard:loading:delayedCount', () =>
+    canAccessPath(user, '/loading') ? api.loading.delayedCount() : Promise.resolve({ delayedCount: 0 }),
+  );
+  const pendingUsersResource = useApiResource('dashboard:users:pendingCount', () =>
+    isSuperAdmin(user) || user?.role === 'ADMIN' ? api.users.pendingCount() : Promise.resolve({ pendingCount: 0 }),
   );
   const sitesResource = useApiResource('api:sites:list', () => api.sites.list());
-  const driversResource = useApiResource('api:drivers:list', () => api.drivers.list());
+
+  // Bounded List Resources for Tables
+  const complaintsResource = useApiResource('dashboard:complaints:stream', () =>
+    api.complaints.list(api.EMPTY_FILTER, 1, 50),
+  );
+  const loadingResource = useApiResource('dashboard:loading:list', () =>
+    api.loading.list({ limit: 15 }),
+  );
+  const sparePartsResource = useApiResource('dashboard:spare-parts:list', () =>
+    api.spareParts.list({ limit: 25 }),
+  );
 
   const complaintsList: ComplaintPublic[] = complaintsResource.data?.data ?? [];
-  const vehicleList: VehiclePublic[] = vehiclesResource.data ?? [];
   const loadingList: LoadingRecord[] = loadingResource.data?.data ?? [];
   const sparePartsList: SparePartRequestPublic[] = sparePartsResource.data?.data ?? [];
-  const usersList = usersResource.data ?? [];
   const sitesList = sitesResource.data ?? [];
-  const driversList = driversResource.data ?? [];
+
+  const complaintsSummary = complaintsSummaryResource.data;
+  const vehiclesSummary = vehiclesSummaryResource.data;
+  const driversSummary = driversSummaryResource.data;
+  const delayedLoadingCount = delayedLoadingResource.data?.delayedCount ?? 0;
+  const pendingApprovalsCount = pendingUsersResource.data?.pendingCount ?? 0;
+
+  const complaintsSummaryRef = useRef(complaintsSummaryResource);
+  complaintsSummaryRef.current = complaintsSummaryResource;
+  const complaintsRef = useRef(complaintsResource);
+  complaintsRef.current = complaintsResource;
+  const vehiclesSummaryRef = useRef(vehiclesSummaryResource);
+  vehiclesSummaryRef.current = vehiclesSummaryResource;
+  const driversSummaryRef = useRef(driversSummaryResource);
+  driversSummaryRef.current = driversSummaryResource;
+  const delayedLoadingRef = useRef(delayedLoadingResource);
+  delayedLoadingRef.current = delayedLoadingResource;
+  const loadingRef = useRef(loadingResource);
+  loadingRef.current = loadingResource;
+  const sparePartsRef = useRef(sparePartsResource);
+  sparePartsRef.current = sparePartsResource;
+  const pendingUsersRef = useRef(pendingUsersResource);
+  pendingUsersRef.current = pendingUsersResource;
 
   // Realtime Subscriptions
   useEffect(() => {
-    const handleUpdate = () => {
-      void complaintsResource.reload();
-      void loadingResource.reload();
+    const handleComplaintUpdate = () => {
+      void complaintsSummaryRef.current.reload();
+      void complaintsRef.current.reload();
+    };
+    const handleLoadingUpdate = () => {
+      void delayedLoadingRef.current.reload();
+      void loadingRef.current.reload();
+    };
+    const handleVehicleUpdate = () => {
+      void vehiclesSummaryRef.current.reload();
+      void driversSummaryRef.current.reload();
+    };
+    const handleUserUpdate = () => {
+      void pendingUsersRef.current.reload();
+      void driversSummaryRef.current.reload();
     };
 
-    const unsubC1 = subscribeCustom('complaint:created', handleUpdate);
-    const unsubC2 = subscribeCustom('complaint:status-changed', handleUpdate);
-    const unsubC3 = subscribeCustom('complaint:assigned', handleUpdate);
-    const unsubU1 = subscribeCustom('user:approval-requested', () => void usersResource.reload());
-    const unsubU2 = subscribeCustom('user:approved', () => void usersResource.reload());
-    const unsubSP1 = subscribeCustom('spare-part:created', () => void sparePartsResource.reload());
-    const unsubSP2 = subscribeCustom('spare-part:updated', () => void sparePartsResource.reload());
-    const unsubL1 = subscribeCustom('loading:reached', () => void loadingResource.reload());
-    const unsubL2 = subscribeCustom('loading:completed', () => void loadingResource.reload());
+    const unsubC1 = subscribeCustom('complaint:created', handleComplaintUpdate);
+    const unsubC2 = subscribeCustom('complaint:status-changed', handleComplaintUpdate);
+    const unsubC3 = subscribeCustom('complaint:assigned', handleComplaintUpdate);
+    const unsubU1 = subscribeCustom('user:approval-requested', handleUserUpdate);
+    const unsubU2 = subscribeCustom('user:approved', handleUserUpdate);
+    const unsubSP1 = subscribeCustom('spare-part:created', () => void sparePartsRef.current.reload());
+    const unsubSP2 = subscribeCustom('spare-part:updated', () => void sparePartsRef.current.reload());
+    const unsubL1 = subscribeCustom('loading:reached', handleLoadingUpdate);
+    const unsubL2 = subscribeCustom('loading:completed', handleLoadingUpdate);
+    const unsubV1 = subscribeCustom('vehicle:created', handleVehicleUpdate);
+    const unsubV2 = subscribeCustom('vehicle:updated', handleVehicleUpdate);
+    const unsubV3 = subscribeCustom('vehicle:assigned', handleVehicleUpdate);
 
     return () => {
       unsubC1();
@@ -84,88 +134,51 @@ export function DashboardPage(): ReactElement {
       unsubSP2();
       unsubL1();
       unsubL2();
+      unsubV1();
+      unsubV2();
+      unsubV3();
     };
-  }, [subscribeCustom, complaintsResource, loadingResource, usersResource, sparePartsResource]);
+  }, [subscribeCustom]);
 
-  const handleSyncNow = () => {
-    void complaintsResource.reload();
-    void vehiclesResource.reload();
-    void loadingResource.reload();
-    void sparePartsResource.reload();
-    void usersResource.reload();
-  };
+  const handleSyncNow = useCallback(() => {
+    void complaintsSummaryRef.current.reload();
+    void complaintsRef.current.reload();
+    void vehiclesSummaryRef.current.reload();
+    void driversSummaryRef.current.reload();
+    void delayedLoadingRef.current.reload();
+    void loadingRef.current.reload();
+    void sparePartsRef.current.reload();
+    void pendingUsersRef.current.reload();
+  }, []);
 
   // Sync listener from global header
   useEffect(() => {
     const onSync = () => handleSyncNow();
     window.addEventListener('fleetops:sync', onSync);
     return () => window.removeEventListener('fleetops:sync', onSync);
-  }, [complaintsResource, vehiclesResource, loadingResource, sparePartsResource, usersResource]);
+  }, [handleSyncNow]);
 
-  // Active Complaints Metrics
-  const activeComplaints = complaintsList.filter(
-    (c) => c.status === 'NEW' || c.status === 'IN_PROGRESS',
-  );
-  const newComplaints = complaintsList.filter((c) => c.status === 'NEW').length;
-  const inProgressComplaints = complaintsList.filter((c) => c.status === 'IN_PROGRESS').length;
-  const urgentComplaints = complaintsList.filter(
-    (c) =>
-      (c.priority === 'URGENT' || c.priority === 'HIGH') &&
-      (c.status === 'NEW' || c.status === 'IN_PROGRESS'),
-  );
+  // Active Complaints Metrics from Summary API
+  const newComplaints = complaintsSummary?.new ?? 0;
+  const inProgressComplaints = complaintsSummary?.inProgress ?? 0;
+  const activeComplaintsCount = newComplaints + inProgressComplaints;
+  const urgentComplaintsCount = complaintsSummary?.escalated ?? 0;
+  const todayComplaintsCount = complaintsSummary?.today ?? 0;
+  const needsActionComplaintsCount = complaintsSummary?.needsAction ?? 0;
+  const overSlaComplaintsCount = complaintsSummary?.overSla ?? 0;
 
-  const todayComplaintsCount = useMemo(() => {
-    const todayStr = new Date().toDateString();
-    return complaintsList.filter((c) => new Date(c.createdAt).toDateString() === todayStr).length;
-  }, [complaintsList]);
+  // Fleet Vehicles Metrics from Summary API
+  const totalVehicles = vehiclesSummary?.total ?? 0;
+  const assignedVehiclesCount = vehiclesSummary?.assignedCount ?? 0;
+  const standbyVehiclesCount = vehiclesSummary?.freeCount ?? 0;
+  const utilizationPct = vehiclesSummary?.utilizationPct !== undefined ? vehiclesSummary.utilizationPct.toFixed(1) : '0.0';
 
-  const needsActionComplaintsCount = useMemo(() => {
-    return complaintsList.filter((c) => {
-      if (c.status === 'RESOLVED' || c.status === 'CLOSED' || c.status === 'IN_PROGRESS') return false;
-      const sla = computeSlaInfo(c.createdAt, c.category, c.resolvedAt, slaMap, c.priority);
-      return sla.isOverdue || Boolean(c.needsAction);
-    }).length;
-  }, [complaintsList, slaMap]);
+  // Driver Overview Metrics from Summary API
+  const totalDriversCount = driversSummary?.total ?? 0;
+  const assignedDriversCount = driversSummary?.assignedCount ?? 0;
+  const freeDriversCount = driversSummary?.freeCount ?? 0;
 
-  // Loading & Detention Metrics
-  const activeTrips = loadingList.filter((t) => t.status !== 'TRIP_COMPLETED');
-  const detainedTrips = loadingList.filter(
-    (t) => (t.waitingTimeMinutes ?? 0) >= 180 && t.status !== 'TRIP_COMPLETED',
-  );
-
-  const totalVehicles = vehicleList.length;
-  const vehiclesInTripCount = activeTrips.length;
-
-  const utilizationPct = useMemo(() => {
-    if (totalVehicles <= 0) return '0.0';
-    return ((vehiclesInTripCount / totalVehicles) * 100).toFixed(1);
-  }, [vehiclesInTripCount, totalVehicles]);
-
-  const standbyVehiclesCount = Math.max(0, totalVehicles - vehiclesInTripCount);
-
-  // Driver Overview Metrics
-  const totalDriversCount = driversList.length;
-  const assignedDriversCount = useMemo(() => {
-    const assignedDriverIds = new Set(vehicleList.map((v) => v.driverId).filter(Boolean));
-    if (!driversList.length) {
-      return assignedDriverIds.size;
-    }
-    return driversList.filter((d) => assignedDriverIds.has(d.id) || assignedDriverIds.has(d.userId)).length;
-  }, [driversList, vehicleList]);
-  const freeDriversCount = Math.max(0, totalDriversCount - assignedDriversCount);
-
-  const overSlaComplaintsCount = useMemo(() => {
-    return complaintsList.filter((c) => {
-      if (c.status === 'RESOLVED' || c.status === 'CLOSED') return false;
-      const sla = computeSlaInfo(c.createdAt, c.category, c.resolvedAt, slaMap, c.priority);
-      return sla.isOverdue;
-    }).length;
-  }, [complaintsList, slaMap]);
-
-  // Pending Approvals
-  const pendingApprovals = usersList.filter((u) => u.approvalStatus === 'PENDING_APPROVAL');
-
-  // Category Distribution Counts
+  // Category Distribution Counts from Summary API
   const categoryCounts = useMemo(() => {
     const counts: Record<string, number> = {
       BREAKDOWN: 0,
@@ -175,21 +188,21 @@ export function DashboardPage(): ReactElement {
       ACCOUNTS: 0,
       VEHICLE_MAINTENANCE: 0,
     };
-    for (const c of activeComplaints) {
-      const cat = c.category;
-      if (cat && typeof counts[cat] === 'number') {
-        const current = counts[cat] ?? 0;
-        counts[cat] = current + 1;
+    if (complaintsSummary?.byCategory) {
+      for (const [k, v] of Object.entries(complaintsSummary.byCategory)) {
+        if (typeof counts[k] === 'number') {
+          counts[k] = v;
+        }
       }
     }
     return counts;
-  }, [activeComplaints]);
+  }, [complaintsSummary]);
 
   const getCategoryBarWidth = (cat: string) => {
-    if (activeComplaints.length <= 0) return '0%';
+    if (activeComplaintsCount <= 0) return '0%';
     const count = categoryCounts[cat] || 0;
     if (count <= 0) return '0%';
-    const pct = Math.min(100, Math.max(5, Math.round((count / activeComplaints.length) * 100)));
+    const pct = Math.min(100, Math.max(5, Math.round((count / activeComplaintsCount) * 100)));
     return `${pct}%`;
   };
 
@@ -203,8 +216,8 @@ export function DashboardPage(): ReactElement {
       if (selectedCategory !== 'ALL' && item.category !== selectedCategory) {
         return false;
       }
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
+      if (debouncedSearch.trim()) {
+        const q = debouncedSearch.toLowerCase();
         const matchTitle = item.title?.toLowerCase().includes(q);
         const matchNo = item.complaintNo?.toLowerCase().includes(q);
         const matchDriver = item.driverName?.toLowerCase().includes(q);
@@ -213,7 +226,7 @@ export function DashboardPage(): ReactElement {
       }
       return true;
     });
-  }, [complaintsList, isDeptAdmin, userCategories, selectedCategory, searchQuery]);
+  }, [complaintsList, isDeptAdmin, userCategories, selectedCategory, debouncedSearch]);
 
   const paginatedComplaints = useMemo(() => {
     const start = (page - 1) * pageSize;
@@ -222,7 +235,7 @@ export function DashboardPage(): ReactElement {
 
   const totalPages = Math.max(1, Math.ceil(filteredComplaints.length / pageSize));
 
-  if (complaintsResource.loading && complaintsResource.data === null) {
+  if (complaintsSummaryResource.loading && complaintsSummaryResource.data === null) {
     return <DashboardSkeleton />;
   }
 
@@ -247,8 +260,8 @@ export function DashboardPage(): ReactElement {
                   <span className="fo-ping-dot" style={{ backgroundColor: '#ef4444', boxShadow: '0 0 8px #ef4444' }} />
                 </div>
                 <p className="fo-alert-desc">
-                  {detainedTrips.length > 0
-                    ? `${detainedTrips.length} Trucks detained >180m at Plant Bay. Demurrage penalties accumulating.`
+                  {delayedLoadingCount > 0
+                    ? `${delayedLoadingCount} Trucks detained >180m at Plant Bay. Demurrage penalties accumulating.`
                     : `${overSlaComplaintsCount} Trucks / Complaints over SLA detained at Plant Bay.`}
                 </p>
               </div>
@@ -276,7 +289,7 @@ export function DashboardPage(): ReactElement {
                   <span>Compliance Review Action</span>
                 </div>
                 <p className="fo-alert-desc">
-                  {`${pendingApprovals.length} Pending Driver Onboarding Approvals awaiting background verification.`}
+                  {`${pendingApprovalsCount} Pending Driver Onboarding Approvals awaiting background verification.`}
                 </p>
               </div>
             </div>
@@ -306,7 +319,7 @@ export function DashboardPage(): ReactElement {
               </div>
             </div>
             <div className="fo-kpi-val-row">
-              <span className="fo-kpi-value">{activeComplaints.length}</span>
+              <span className="fo-kpi-value">{activeComplaintsCount}</span>
               <span className="fo-kpi-badge" style={{ background: 'rgba(59, 130, 246, 0.2)', color: '#93ccff' }}>
                 +{todayComplaintsCount} today
               </span>
@@ -316,7 +329,7 @@ export function DashboardPage(): ReactElement {
               <span>•</span>
               <span>{inProgressComplaints} In Progress</span>
               <span>•</span>
-              <span style={{ color: '#ffb4ab' }}>{urgentComplaints.length} Escalated</span>
+              <span style={{ color: '#ffb4ab' }}>{urgentComplaintsCount} Escalated</span>
             </p>
           </div>
 
@@ -357,7 +370,7 @@ export function DashboardPage(): ReactElement {
               <span className="fo-kpi-value">
                 {totalVehicles}
                 <span style={{ fontSize: 14, color: 'var(--fo-text-muted)', fontWeight: 500 }}>
-                  {' '}/ {vehiclesInTripCount} / {totalVehicles}
+                  {' '}/ {assignedVehiclesCount} / {totalVehicles}
                 </span>
               </span>
               <span className="fo-kpi-badge" style={{ background: 'rgba(16, 185, 129, 0.2)', color: '#6ee7b7' }}>
@@ -617,7 +630,7 @@ export function DashboardPage(): ReactElement {
                   </span>
                   <span>Loading & Detention Radar</span>
                   <span className="fo-tab-count" style={{ color: '#ffb4ab' }}>
-                    {detainedTrips.length} Breached
+                    {delayedLoadingCount} Breached
                   </span>
                 </button>
               )}

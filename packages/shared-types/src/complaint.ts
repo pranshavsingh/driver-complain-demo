@@ -138,6 +138,21 @@ export const ListComplaintsResponseSchema = z.object({
 });
 export type ListComplaintsResponse = z.infer<typeof ListComplaintsResponseSchema>;
 
+/** Status breakdown & KPI summary response for complaints triage. */
+export const ComplaintSummarySchema = z.object({
+  total: z.number().int().nonnegative(),
+  new: z.number().int().nonnegative(),
+  inProgress: z.number().int().nonnegative(),
+  resolved: z.number().int().nonnegative(),
+  closed: z.number().int().nonnegative(),
+  needsAction: z.number().int().nonnegative().optional(),
+  escalated: z.number().int().nonnegative().optional(),
+  today: z.number().int().nonnegative().optional(),
+  overSla: z.number().int().nonnegative().optional(),
+  byCategory: z.record(z.string(), z.number().int().nonnegative()).optional(),
+});
+export type ComplaintSummary = z.infer<typeof ComplaintSummarySchema>;
+
 export const ComplaintAttachmentPublicSchema = z.object({
   id: z.string(),
   complaintId: z.string(),
