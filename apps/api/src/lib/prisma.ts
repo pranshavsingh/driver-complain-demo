@@ -9,7 +9,7 @@ import { dbUpGauge, dbQueryDurationSeconds } from './metrics';
  */
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
-const basePrisma =
+export const basePrisma =
   globalForPrisma.prisma ??
   new PrismaClient({
     log: env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],

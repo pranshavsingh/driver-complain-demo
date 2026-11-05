@@ -18,14 +18,14 @@ import {
   socketioConnectedClients,
 } from '../lib/metrics';
 import { collectRedisMetrics, markRedisUnavailable } from '../lib/redis-metrics';
-import { collectBullmqMetrics } from '../jobs/queue-metrics';
+import { collectBullmqMetrics, instrumentWorker } from '../jobs/queue-metrics';
 import {
   collectOutboxMetrics,
   computeOutboxMetricsFromRow,
   recordOutboxDispatch,
   recordOutboxDelivery,
 } from '../modules/outbox/outbox.metrics';
-import { prisma } from '../lib/prisma';
+import { prisma, basePrisma, pingDatabase } from '../lib/prisma';
 import * as redisModule from '../lib/redis';
 
 describe('Observability & Metrics Hardening (M8 Phase 2)', () => {
@@ -183,6 +183,30 @@ describe('Observability & Metrics Hardening (M8 Phase 2)', () => {
       mockRes.emit('close');
       expect((await httpRequestsInFlight.get()).values[0]?.value).toBe(initial);
     });
+
+    it('prevents double-decrement when close fires before finish', async () => {
+      const initial = (await httpRequestsInFlight.get()).values[0]?.value ?? 0;
+
+      const mockReq = {
+        path: '/api/v1/some-endpoint',
+        method: 'GET',
+      } as any;
+
+      const mockRes = new EventEmitter() as any;
+      mockRes.statusCode = 200;
+
+      metricsMiddleware(mockReq, mockRes, () => {});
+
+      expect((await httpRequestsInFlight.get()).values[0]?.value).toBe(initial + 1);
+
+      // Socket closes prematurely first
+      mockRes.emit('close');
+      expect((await httpRequestsInFlight.get()).values[0]?.value).toBe(initial);
+
+      // Follow-up finish event is ignored
+      mockRes.emit('finish');
+      expect((await httpRequestsInFlight.get()).values[0]?.value).toBe(initial);
+    });
   });
 
   describe('/metrics Security & Token Authentication', () => {
@@ -302,11 +326,51 @@ describe('Observability & Metrics Hardening (M8 Phase 2)', () => {
       expect((await dbUpGauge.get()).values[0]?.value).toBe(0);
       querySpy.mockRestore();
     });
+
+    it('initial state of dbUpGauge is a defined numeric value (0 or 1)', async () => {
+      const metric = await dbUpGauge.get();
+      expect(metric.values).toHaveLength(1);
+      expect([0, 1]).toContain(metric.values[0]?.value);
+    });
+
+    it('sets dbUpGauge to 1 on pingDatabase success and 0 on timeout/failure', async () => {
+      // Test failure path
+      const failSpy = vi.spyOn(basePrisma, '$queryRaw').mockRejectedValue(new Error('timeout'));
+      const failureResult = await pingDatabase(50);
+      expect(failureResult).toBe(false);
+      expect((await dbUpGauge.get()).values[0]?.value).toBe(0);
+      failSpy.mockRestore();
+
+      // Test success path
+      const okSpy = vi.spyOn(basePrisma, '$queryRaw').mockResolvedValue([{ '?column?': 1 }]);
+      const successResult = await pingDatabase(1000);
+      expect(successResult).toBe(true);
+      expect((await dbUpGauge.get()).values[0]?.value).toBe(1);
+      okSpy.mockRestore();
+    });
   });
 
   describe('Queue Metrics Resilience', () => {
     it('safely handles BullMQ metrics collection when queues are uninitialized or empty', async () => {
       await expect(collectBullmqMetrics()).resolves.not.toThrow();
+    });
+
+    it('observes worker completed and failed durations for allowlisted queues', async () => {
+      const mockWorker = new EventEmitter() as any;
+      instrumentWorker(mockWorker, 'token-cleanup');
+
+      mockWorker.emit('completed', {
+        processedOn: Date.now() - 250,
+        finishedOn: Date.now(),
+      });
+
+      mockWorker.emit('failed', {
+        processedOn: Date.now() - 500,
+        finishedOn: Date.now(),
+      });
+
+      const metric = (await register.getSingleMetric('sse_connect_bullmq_job_duration_seconds')?.get()) as any;
+      expect(metric?.values.some((v: any) => v.labels.queue === 'token-cleanup')).toBe(true);
     });
   });
 

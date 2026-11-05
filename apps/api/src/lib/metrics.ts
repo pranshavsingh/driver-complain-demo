@@ -45,6 +45,7 @@ export const redisUpGauge = new Gauge({
   help: 'Redis connectivity state: 1 for connected and healthy, 0 otherwise',
   registers: [register],
 });
+redisUpGauge.set(0);
 
 export const redisPingLatencySeconds = new Gauge({
   name: 'sse_connect_redis_ping_latency_seconds',
@@ -92,6 +93,7 @@ export const dbUpGauge = new Gauge({
   help: 'Database connectivity state: 1 for reachable, 0 otherwise',
   registers: [register],
 });
+dbUpGauge.set(0);
 
 export const dbQueryDurationSeconds = new Histogram({
   name: 'sse_connect_db_query_duration_seconds',
