@@ -20,3 +20,11 @@ export const DriverListItemSchema = z.object({
   licenseNumber: z.string(),
 });
 export type DriverListItem = z.infer<typeof DriverListItemSchema>;
+
+export const DriverSummarySchema = z.object({
+  total: z.number().int().nonnegative(),
+  assignedCount: z.number().int().nonnegative(),
+  freeCount: z.number().int().nonnegative(),
+});
+export type DriverSummary = z.infer<typeof DriverSummarySchema>;
+

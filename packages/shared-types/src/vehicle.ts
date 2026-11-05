@@ -41,3 +41,21 @@ export const VehiclePublicSchema = z.object({
   updatedAt: z.string(),
 });
 export type VehiclePublic = z.infer<typeof VehiclePublicSchema>;
+
+export const VehicleSummarySchema = z.object({
+  total: z.number().int().nonnegative(),
+  assignedCount: z.number().int().nonnegative(),
+  freeCount: z.number().int().nonnegative(),
+  activeAgreementsCount: z.number().int().nonnegative(),
+  utilizationPct: z.number().nonnegative(),
+});
+export type VehicleSummary = z.infer<typeof VehicleSummarySchema>;
+
+export const VehicleAssignmentItemSchema = z.object({
+  vehicleId: z.string(),
+  driverId: z.string(),
+  plateNumber: z.string(),
+  driverName: z.string().nullable().optional(),
+});
+export type VehicleAssignmentItem = z.infer<typeof VehicleAssignmentItemSchema>;
+

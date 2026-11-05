@@ -37,25 +37,39 @@ describe('GET /complaints/summary - Security & Role Scoping', () => {
       site: null,
     });
 
-    vi.mocked(prisma.complaint.groupBy).mockResolvedValue([
-      { status: 'NEW', _count: { id: 5 } } as any,
-      { status: 'IN_PROGRESS', _count: { id: 10 } } as any,
-      { status: 'RESOLVED', _count: { id: 20 } } as any,
-      { status: 'CLOSED', _count: { id: 3 } } as any,
-    ]);
+    vi.mocked(prisma.complaint.groupBy)
+      .mockResolvedValueOnce([
+        { status: 'NEW', _count: { id: 5 } } as any,
+        { status: 'IN_PROGRESS', _count: { id: 10 } } as any,
+        { status: 'RESOLVED', _count: { id: 20 } } as any,
+        { status: 'CLOSED', _count: { id: 3 } } as any,
+      ])
+      .mockResolvedValueOnce([
+        { category: 'BREAKDOWN', _count: { id: 8 } } as any,
+        { category: 'FUEL_DEF', _count: { id: 7 } } as any,
+      ]);
 
-    vi.mocked(prisma.complaint.count).mockResolvedValue(4);
+    vi.mocked(prisma.complaint.count)
+      .mockResolvedValueOnce(4) // needsAction
+      .mockResolvedValueOnce(3) // escalated
+      .mockResolvedValueOnce(6) // today
+      .mockResolvedValueOnce(2); // overSla
 
     const summary = await getSummary({ id: 'super-admin-1', role: 'SUPER_ADMIN' });
 
-    expect(summary).toEqual({
+    expect(summary).toMatchObject({
       total: 38,
       new: 5,
       inProgress: 10,
       resolved: 20,
       closed: 3,
       needsAction: 4,
+      escalated: 3,
+      today: 6,
+      overSla: 2,
     });
+    expect(summary.byCategory?.BREAKDOWN).toBe(8);
+    expect(summary.byCategory?.FUEL_DEF).toBe(7);
 
     // Check where clause sent to Prisma groupBy: no category restrictions for SUPER_ADMIN
     const lastGroupByCall = vi.mocked(prisma.complaint.groupBy).mock.calls[0]![0] as any;
@@ -66,40 +80,66 @@ describe('GET /complaints/summary - Security & Role Scoping', () => {
     }
   });
 
-  it('EXECUTIVE: strictly restricted to assigned category and cannot infer out-of-scope counts', async () => {
+  it('EXECUTIVE: strictly restricted to assigned category, site, and assignment scoping', async () => {
     vi.mocked(resolveUserScope).mockResolvedValue({
       role: 'EXECUTIVE',
       categories: ['BREAKDOWN'],
       site: 'Bay-North',
     });
 
-    vi.mocked(prisma.complaint.groupBy).mockResolvedValue([
-      { status: 'NEW', _count: { id: 2 } } as any,
-      { status: 'IN_PROGRESS', _count: { id: 1 } } as any,
-    ]);
+    vi.mocked(prisma.complaint.groupBy)
+      .mockResolvedValueOnce([
+        { status: 'NEW', _count: { id: 2 } } as any,
+        { status: 'IN_PROGRESS', _count: { id: 1 } } as any,
+      ])
+      .mockResolvedValueOnce([
+        { category: 'BREAKDOWN', _count: { id: 3 } } as any,
+      ]);
 
-    vi.mocked(prisma.complaint.count).mockResolvedValue(1);
+    vi.mocked(prisma.complaint.count)
+      .mockResolvedValueOnce(1) // needsAction
+      .mockResolvedValueOnce(1) // escalated
+      .mockResolvedValueOnce(2) // today
+      .mockResolvedValueOnce(0); // overSla
 
     const summary = await getSummary({ id: 'exec-1', role: 'EXECUTIVE' });
 
-    expect(summary).toEqual({
+    expect(summary).toMatchObject({
       total: 3,
       new: 2,
       inProgress: 1,
       resolved: 0,
       closed: 0,
       needsAction: 1,
+      escalated: 1,
+      today: 2,
+      overSla: 0,
     });
+    expect(summary.byCategory?.BREAKDOWN).toBe(3);
+    expect(summary.byCategory?.FUEL_DEF).toBe(0);
 
-    const lastGroupByCall = vi.mocked(prisma.complaint.groupBy).mock.calls[0]![0] as any;
-    const whereAnd = lastGroupByCall.where?.AND as any[];
+    const firstGroupByCall = vi.mocked(prisma.complaint.groupBy).mock.calls[0]![0] as any;
+    const whereAnd = firstGroupByCall.where?.AND as any[];
     expect(whereAnd).toBeDefined();
 
     // Verify hard category gate
-    const hasCategoryGate = whereAnd.some(
+    const categoryGate = whereAnd.find(
       (cond) => cond.category && cond.category.in && cond.category.in.includes('BREAKDOWN'),
     );
-    expect(hasCategoryGate).toBe(true);
+    expect(categoryGate).toBeDefined();
+    expect(categoryGate.category.in).toEqual(['BREAKDOWN']);
+
+    // Verify site/assignment scope OR conditions
+    const scopeOrCond = whereAnd.find((cond) => cond.OR && Array.isArray(cond.OR));
+    expect(scopeOrCond).toBeDefined();
+    expect(scopeOrCond.OR).toEqual(
+      expect.arrayContaining([
+        { assignedToId: 'exec-1' },
+        { vehicle: { siteInchargeId: 'exec-1' } },
+        { driver: { vehicles: { some: { siteInchargeId: 'exec-1' } } } },
+        { vehicle: { siteIncharge: { site: { equals: 'Bay-North', mode: 'insensitive' } } } },
+      ]),
+    );
 
     // Verify out-of-scope category FUEL_DEF is NOT in the allowed list
     const allowsFuel = whereAnd.some(
@@ -115,16 +155,24 @@ describe('GET /complaints/summary - Security & Role Scoping', () => {
       site: null,
     });
 
-    vi.mocked(prisma.complaint.groupBy).mockResolvedValue([
-      { status: 'NEW', _count: { id: 1 } } as any,
-      { status: 'RESOLVED', _count: { id: 4 } } as any,
-    ]);
+    vi.mocked(prisma.complaint.groupBy)
+      .mockResolvedValueOnce([
+        { status: 'NEW', _count: { id: 1 } } as any,
+        { status: 'RESOLVED', _count: { id: 4 } } as any,
+      ])
+      .mockResolvedValueOnce([
+        { category: 'TYRE_ISSUE', _count: { id: 1 } } as any,
+      ]);
 
-    vi.mocked(prisma.complaint.count).mockResolvedValue(0);
+    vi.mocked(prisma.complaint.count)
+      .mockResolvedValueOnce(0) // needsAction
+      .mockResolvedValueOnce(0) // escalated
+      .mockResolvedValueOnce(1) // today
+      .mockResolvedValueOnce(0); // overSla
 
     const summary = await getSummary({ id: 'dept-admin-1', role: 'ADMIN' });
 
-    expect(summary).toEqual({
+    expect(summary).toMatchObject({
       total: 5,
       new: 1,
       inProgress: 0,
@@ -139,15 +187,23 @@ describe('GET /complaints/summary - Security & Role Scoping', () => {
     expect(categoryGate.category.in).toEqual(['TYRE_ISSUE', 'VEHICLE_MAINTENANCE']);
   });
 
-  it('DRIVER: strictly scoped to driver profile id', async () => {
+  it('DRIVER: strictly scoped to driver profile id and cannot view other drivers complaints', async () => {
     vi.mocked(prisma.driver.findUnique).mockResolvedValue({
       id: 'driver-profile-uuid',
     } as any);
 
-    vi.mocked(prisma.complaint.groupBy).mockResolvedValue([
-      { status: 'NEW', _count: { id: 1 } } as any,
-    ]);
-    vi.mocked(prisma.complaint.count).mockResolvedValue(1);
+    vi.mocked(prisma.complaint.groupBy)
+      .mockResolvedValueOnce([
+        { status: 'NEW', _count: { id: 1 } } as any,
+      ])
+      .mockResolvedValueOnce([
+        { category: 'BREAKDOWN', _count: { id: 1 } } as any,
+      ]);
+    vi.mocked(prisma.complaint.count)
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(0)
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(0);
 
     const summary = await getSummary({ id: 'driver-user-id', role: 'DRIVER' });
 
@@ -175,5 +231,107 @@ describe('GET /complaints/summary - Security & Role Scoping', () => {
     });
     expect(prisma.complaint.groupBy).not.toHaveBeenCalled();
     expect(prisma.complaint.count).not.toHaveBeenCalled();
+  });
+
+  it('needsAction count strictly respects caller visibility and scoping conditions', async () => {
+    vi.mocked(resolveUserScope).mockResolvedValue({
+      role: 'EXECUTIVE',
+      categories: ['BREAKDOWN'],
+      site: 'Plant-East',
+    });
+
+    vi.mocked(prisma.complaint.groupBy).mockResolvedValue([]);
+    vi.mocked(prisma.complaint.count).mockResolvedValue(2);
+
+    await getSummary({ id: 'exec-east', role: 'EXECUTIVE' });
+
+    // The first prisma.complaint.count call calculates needsActionCount
+    const needsActionCallArg = vi.mocked(prisma.complaint.count).mock.calls[0]![0] as any;
+    const countWhereAnd = needsActionCallArg.where.AND;
+
+    // Must include the caller's scoped category filter
+    const hasCategoryScoping = countWhereAnd.some(
+      (cond: any) => cond.category && cond.category.in && cond.category.in.includes('BREAKDOWN'),
+    );
+    expect(hasCategoryScoping).toBe(true);
+
+    // Must include the caller's executive scope OR conditions
+    const hasExecutiveScoping = countWhereAnd.some((cond: any) =>
+      cond.OR && cond.OR.some((sub: any) => sub.assignedToId === 'exec-east' || sub.vehicle?.siteInchargeId === 'exec-east'),
+    );
+    expect(hasExecutiveScoping).toBe(true);
+
+    // Must include the needsAction unassigned/unresponded NEW status filter
+    const hasNeedsActionFilter = countWhereAnd.some(
+      (cond: any) => cond.status === 'NEW' && cond.OR && cond.OR.some((sub: any) => sub.assignedToId === null),
+    );
+    expect(hasNeedsActionFilter).toBe(true);
+  });
+
+  it('Additional filters (driverId, vehicleId) are strictly honored across summary aggregations', async () => {
+    vi.mocked(resolveUserScope).mockResolvedValue({
+      role: 'SUPER_ADMIN',
+      categories: null,
+      site: null,
+    });
+
+    vi.mocked(prisma.complaint.groupBy).mockResolvedValue([]);
+    vi.mocked(prisma.complaint.count).mockResolvedValue(0);
+
+    await getSummary(
+      { id: 'super-admin', role: 'SUPER_ADMIN' },
+      { driverId: 'filter-driver-uuid', vehicleId: 'filter-vehicle-uuid' } as any,
+    );
+
+    const groupByCallArg = vi.mocked(prisma.complaint.groupBy).mock.calls[0]![0] as any;
+    const whereAnd = groupByCallArg.where.AND;
+
+    expect(whereAnd).toEqual(
+      expect.arrayContaining([
+        { driverId: 'filter-driver-uuid' },
+        { vehicleId: 'filter-vehicle-uuid' },
+      ]),
+    );
+
+    // Also verify needsAction count received driverId and vehicleId filters
+    const needsActionCallArg = vi.mocked(prisma.complaint.count).mock.calls[0]![0] as any;
+    expect(needsActionCallArg.where.AND).toEqual(
+      expect.arrayContaining([
+        { driverId: 'filter-driver-uuid' },
+        { vehicleId: 'filter-vehicle-uuid' },
+      ]),
+    );
+  });
+
+  it('Summary parity: cannot reveal counts from records excluded by normal complaint list endpoint', async () => {
+    // Executive at North site assigned only to TYRE_ISSUE
+    vi.mocked(resolveUserScope).mockResolvedValue({
+      role: 'EXECUTIVE',
+      categories: ['TYRE_ISSUE'],
+      site: 'North-Depot',
+    });
+
+    vi.mocked(prisma.complaint.groupBy).mockResolvedValue([]);
+    vi.mocked(prisma.complaint.count).mockResolvedValue(0);
+
+    await getSummary({ id: 'exec-north', role: 'EXECUTIVE' });
+
+    // Inspect the where clause passed to all aggregate queries
+    const groupByWhere = vi.mocked(prisma.complaint.groupBy).mock.calls[0]![0]!.where as any;
+    const countWhere = vi.mocked(prisma.complaint.count).mock.calls[0]![0]!.where as any;
+
+    // Both queries enforce the exact same restriction
+    expect(groupByWhere.AND).toBeDefined();
+    expect(countWhere.AND).toBeDefined();
+
+    // Verifies no leak of BREAKDOWN or other categories
+    const categoryIn = groupByWhere.AND.find((c: any) => c.category)?.category?.in;
+    expect(categoryIn).toEqual(['TYRE_ISSUE']);
+
+    // Verifies executive site boundary prevents seeing South-Depot or unassigned vehicles
+    const orClauses = groupByWhere.AND.find((c: any) => c.OR)?.OR;
+    expect(orClauses).toBeDefined();
+    const siteMatches = orClauses.filter((c: any) => c.vehicle?.siteIncharge?.site);
+    expect(siteMatches[0].vehicle.siteIncharge.site.equals).toBe('North-Depot');
   });
 });

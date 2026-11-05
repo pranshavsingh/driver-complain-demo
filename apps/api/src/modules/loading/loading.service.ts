@@ -4,8 +4,15 @@ import { uploadBuffer, cloudinaryFolder } from '../../lib/cloudinary';
 import { emitToUsers } from '../../realtime/socket';
 import { getActiveAdminUserIds } from '../../lib/admin-cache';
 import { buildPaginationMetadata } from '../../lib/pagination';
-import { REALTIME_EVENTS, type LoadingRecord, type LoadingStatus } from '@driver-complaint/shared-types';
+import { REALTIME_EVENTS, type LoadingRecord, type LoadingStatus, type Role } from '@driver-complaint/shared-types';
 import { ApiError } from '../../errors/api-error';
+import { resolveUserScope } from '../../lib/user-scope';
+
+export interface Actor {
+  id: string;
+  role: Role;
+  site?: string | null;
+}
 
 export function formatDurationText(minutes: number | null | undefined): string | null {
   if (minutes === null || minutes === undefined) return null;
@@ -521,19 +528,51 @@ export async function getActiveLoadingRecord(userId: string): Promise<{
   };
 }
 
-export async function getDelayedLoadingCount(): Promise<number> {
+export async function getDelayedLoadingCount(actor?: Actor): Promise<number> {
   const threeHoursAgo = new Date(Date.now() - 180 * 60 * 1000);
-  const count = await prisma.loadingRecord.count({
-    where: {
-      OR: [
-        { waitingTimeMinutes: { gt: 180 } },
-        { unloadingDurationMinutes: { gt: 180 } },
-        { status: 'REACHED', reachedAt: { lte: threeHoursAgo } },
-        { status: 'UNLOADING', tripCompletedAt: { lte: threeHoursAgo } },
-      ],
-    },
-  });
-  return count;
+  const delayCondition: Prisma.LoadingRecordWhereInput = {
+    OR: [
+      { waitingTimeMinutes: { gt: 180 } },
+      { unloadingDurationMinutes: { gt: 180 } },
+      { status: 'REACHED', reachedAt: { lte: threeHoursAgo } },
+      { status: 'UNLOADING', tripCompletedAt: { lte: threeHoursAgo } },
+    ],
+  };
+
+  // ADMIN and SUPER_ADMIN receive authorized global count
+  if (!actor || actor.role === 'ADMIN' || actor.role === 'SUPER_ADMIN') {
+    return prisma.loadingRecord.count({
+      where: delayCondition,
+    });
+  }
+
+  // EXECUTIVE receives only the count within their permitted site/vehicle scope
+  if (actor.role === 'EXECUTIVE') {
+    const scope = await resolveUserScope(actor.id, actor.role);
+
+    const scopeConditions: Prisma.LoadingRecordWhereInput[] = [
+      { driver: { vehicles: { some: { siteInchargeId: actor.id } } } },
+      { complaint: { vehicle: { siteInchargeId: actor.id } } },
+    ];
+
+    if (scope.site) {
+      scopeConditions.push(
+        { driver: { vehicles: { some: { siteIncharge: { site: { equals: scope.site, mode: 'insensitive' } } } } } },
+        { complaint: { vehicle: { siteIncharge: { site: { equals: scope.site, mode: 'insensitive' } } } } },
+      );
+    }
+
+    return prisma.loadingRecord.count({
+      where: {
+        AND: [
+          delayCondition,
+          { OR: scopeConditions },
+        ],
+      },
+    });
+  }
+
+  return 0;
 }
 
 export async function listLoadingRecords(opts: {

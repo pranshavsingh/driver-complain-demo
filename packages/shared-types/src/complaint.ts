@@ -146,6 +146,10 @@ export const ComplaintSummarySchema = z.object({
   resolved: z.number().int().nonnegative(),
   closed: z.number().int().nonnegative(),
   needsAction: z.number().int().nonnegative().optional(),
+  escalated: z.number().int().nonnegative().optional(),
+  today: z.number().int().nonnegative().optional(),
+  overSla: z.number().int().nonnegative().optional(),
+  byCategory: z.record(z.string(), z.number().int().nonnegative()).optional(),
 });
 export type ComplaintSummary = z.infer<typeof ComplaintSummarySchema>;
 

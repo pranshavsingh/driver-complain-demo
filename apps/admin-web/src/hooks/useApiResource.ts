@@ -13,6 +13,7 @@ export interface Resource<T> extends ResourceState<T> {
 }
 
 const MAX_CACHE_ENTRIES = 50;
+const MAX_KEY_VERSIONS = 100;
 const cache = new Map<string, { data: any; timestamp: number }>();
 const activeRequests = new Map<string, Promise<any>>();
 const keyVersions = new Map<string, number>();
@@ -27,7 +28,29 @@ function getKeyVersion(key: string): number {
 }
 
 function bumpKeyVersion(key: string) {
-  keyVersions.set(key, (keyVersions.get(key) || 0) + 1);
+  const nextVer = (keyVersions.get(key) || 0) + 1;
+  if (keyVersions.has(key)) {
+    // Refresh LRU position
+    keyVersions.delete(key);
+  } else if (keyVersions.size >= MAX_KEY_VERSIONS) {
+    // Evict oldest version entry, protecting keys that currently have active in-flight requests
+    let evicted = false;
+    for (const k of keyVersions.keys()) {
+      if (!activeRequests.has(k)) {
+        keyVersions.delete(k);
+        evicted = true;
+        break;
+      }
+    }
+    // Fallback if all are in activeRequests
+    if (!evicted) {
+      const oldestKey = keyVersions.keys().next().value;
+      if (oldestKey !== undefined) {
+        keyVersions.delete(oldestKey);
+      }
+    }
+  }
+  keyVersions.set(key, nextVer);
 }
 
 /** Wipes the ENTIRE cache (all users). Used during logout/session expiry. */
@@ -45,17 +68,26 @@ export function clearApiCache() {
  */
 export function invalidateApiCache(userId: string | undefined, rawKey: string, prefix = false) {
   const scopedKey = `${userId || 'anonymous'}:${rawKey}`;
+  const keysToBump = new Set<string>();
+
   for (const key of Array.from(cache.keys())) {
     if (prefix ? key.startsWith(scopedKey) : key === scopedKey) {
       cache.delete(key);
-      bumpKeyVersion(key);
+      keysToBump.add(key);
     }
   }
   for (const key of Array.from(activeRequests.keys())) {
     if (prefix ? key.startsWith(scopedKey) : key === scopedKey) {
       activeRequests.delete(key);
-      bumpKeyVersion(key);
+      keysToBump.add(key);
     }
+  }
+  if (!prefix && keysToBump.size === 0) {
+    keysToBump.add(scopedKey);
+  }
+
+  for (const key of keysToBump) {
+    bumpKeyVersion(key);
   }
 }
 

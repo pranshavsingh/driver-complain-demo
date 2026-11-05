@@ -9,6 +9,9 @@ import {
   LoginResponseSchema,
   UserPublicSchema,
   VehiclePublicSchema,
+  VehicleSummarySchema,
+  VehicleAssignmentItemSchema,
+  DriverSummarySchema,
   type ComplaintCategory,
   type AdminSummary,
   type ComplaintDetail,
@@ -21,6 +24,9 @@ import {
   type UpdateComplaintStatus,
   type UserPublic,
   type VehiclePublic,
+  type VehicleSummary,
+  type VehicleAssignmentItem,
+  type DriverSummary,
   type CreateUser,
   type UpdateUser,
   type CreateVehicle,
@@ -202,6 +208,7 @@ export const users = {
 
 export const drivers = {
   list: (): Promise<DriverListItem[]> => request(z.array(DriverListItemSchema), '/drivers'),
+  summary: (): Promise<DriverSummary> => request(DriverSummarySchema, '/drivers/summary'),
 };
 
 export interface VehicleFilterQuery {
@@ -212,27 +219,15 @@ export interface VehicleFilterQuery {
   assignmentFilter?: 'ALL' | 'ASSIGNED' | 'FREE';
 }
 
-export interface VehicleSummaryResponse {
-  total: number;
-  assignedCount: number;
-  freeCount: number;
-  activeAgreementsCount: number;
-  utilizationPct: number;
-}
-
-export interface DriverAssignment {
-  vehicleId: string;
-  plateNumber: string;
-  driverId: string;
-  driverName: string;
-}
+export type VehicleSummaryResponse = VehicleSummary;
+export type DriverAssignment = VehicleAssignmentItem;
 
 export const vehicles = {
-  summary: (): Promise<VehicleSummaryResponse> =>
-    request(z.any(), '/vehicles/summary'),
-  assignments: (query?: { driverId?: string; driverIds?: string[]; limit?: number }): Promise<DriverAssignment[]> =>
+  summary: (): Promise<VehicleSummary> =>
+    request(VehicleSummarySchema, '/vehicles/summary'),
+  assignments: (query?: { driverId?: string; driverIds?: string[]; limit?: number }): Promise<VehicleAssignmentItem[]> =>
     request(
-      z.array(z.any()),
+      z.array(VehicleAssignmentItemSchema),
       '/vehicles/assignments',
       {
         query: {

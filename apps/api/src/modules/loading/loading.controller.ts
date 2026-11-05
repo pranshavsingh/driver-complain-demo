@@ -158,8 +158,17 @@ export async function handleGetActiveLoading(req: Request, res: Response): Promi
   sendSuccess(res, { active, stats });
 }
 
-export async function handleGetDelayedCount(_req: Request, res: Response): Promise<void> {
-  const delayedCount = await getDelayedLoadingCount();
+export async function handleGetDelayedCount(req: Request, res: Response): Promise<void> {
+  const user = req.user;
+  if (!user) throw ApiError.unauthorized();
+
+  // Scoping must use authenticated identity only; never trust client-supplied site or role params
+  const actor = {
+    id: user.id,
+    role: user.role,
+  };
+
+  const delayedCount = await getDelayedLoadingCount(actor);
   sendSuccess(res, { delayedCount });
 }
 

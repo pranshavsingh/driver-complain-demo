@@ -987,7 +987,26 @@ export async function getSummary(
 
   const where = await buildWhere(actor, actorDriverId, baseQuery);
 
-  const [statusGroups, needsActionCount] = await Promise.all([
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+
+  const andBase = where.AND ? (Array.isArray(where.AND) ? where.AND : [where.AND]) : [];
+
+  const now = Date.now();
+  const categorySlaEntries = [
+    { category: 'BREAKDOWN', hours: 4 },
+    { category: 'FUEL_DEF', hours: 2 },
+    { category: 'TYRE_ISSUE', hours: 3 },
+    { category: 'LOADING', hours: 6 },
+    { category: 'ACCOUNTS', hours: 12 },
+    { category: 'VEHICLE_MAINTENANCE', hours: 8 },
+  ] as const;
+  const overSlaConditions = categorySlaEntries.map(({ category, hours }) => ({
+    category: category as import('@prisma/client').ComplaintCategory,
+    createdAt: { lte: new Date(now - hours * 3600 * 1000) },
+  }));
+
+  const [statusGroups, needsActionCount, escalatedCount, todayCount, categoryGroups, overSlaCount] = await Promise.all([
     prisma.complaint.groupBy({
       by: ['status'],
       where,
@@ -996,7 +1015,7 @@ export async function getSummary(
     prisma.complaint.count({
       where: {
         AND: [
-          ...(where.AND ? (Array.isArray(where.AND) ? where.AND : [where.AND]) : []),
+          ...andBase,
           {
             status: 'NEW',
             OR: [
@@ -1007,7 +1026,58 @@ export async function getSummary(
         ],
       },
     }),
+    prisma.complaint.count({
+      where: {
+        AND: [
+          ...andBase,
+          { status: { in: ['NEW', 'IN_PROGRESS'] }, priority: { in: ['URGENT', 'HIGH'] } },
+        ],
+      },
+    }),
+    prisma.complaint.count({
+      where: {
+        AND: [
+          ...andBase,
+          { createdAt: { gte: startOfToday } },
+        ],
+      },
+    }),
+    prisma.complaint.groupBy({
+      by: ['category'],
+      where: {
+        AND: [
+          ...andBase,
+          { status: { in: ['NEW', 'IN_PROGRESS'] } },
+        ],
+      },
+      _count: { id: true },
+    }),
+    prisma.complaint.count({
+      where: {
+        AND: [
+          ...andBase,
+          {
+            status: { in: ['NEW', 'IN_PROGRESS'] },
+            OR: overSlaConditions,
+          },
+        ],
+      },
+    }),
   ]);
+
+  const byCategory: Record<string, number> = {
+    BREAKDOWN: 0,
+    FUEL_DEF: 0,
+    TYRE_ISSUE: 0,
+    LOADING: 0,
+    ACCOUNTS: 0,
+    VEHICLE_MAINTENANCE: 0,
+  };
+  for (const catGroup of categoryGroups) {
+    if (catGroup.category) {
+      byCategory[catGroup.category] = catGroup._count.id;
+    }
+  }
 
   const summary: ComplaintSummary = {
     total: 0,
@@ -1016,6 +1086,10 @@ export async function getSummary(
     resolved: 0,
     closed: 0,
     needsAction: needsActionCount,
+    escalated: escalatedCount,
+    today: todayCount,
+    overSla: overSlaCount,
+    byCategory,
   };
 
   for (const group of statusGroups) {

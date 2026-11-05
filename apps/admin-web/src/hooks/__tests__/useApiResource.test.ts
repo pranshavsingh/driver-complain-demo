@@ -177,5 +177,88 @@ describe('useApiResource Cache & Session Behavior', () => {
       expect(expired).toBeUndefined(); // Completely expired & evicted
     });
   });
+
+  describe('Bounded Key Versions & Invalidation Bookkeeping', () => {
+    it('caps keyVersions at MAX_KEY_VERSIONS = 100 during repeated unique key invalidations', () => {
+      const internals = _getInternalCacheForTesting();
+
+      // Invalidate 250 unique keys
+      for (let i = 1; i <= 250; i++) {
+        invalidateApiCache('user-1', `api:unique:query:${i}`);
+      }
+
+      // Assert keyVersions size is capped at 100
+      expect(internals.keyVersions.size).toBe(100);
+
+      // Early keys (e.g. query:1) should have been evicted to prevent unbounded memory growth
+      expect(internals.keyVersions.has('user-1:api:unique:query:1')).toBe(false);
+
+      // Recent keys (e.g. query:250) should be present
+      expect(internals.keyVersions.has('user-1:api:unique:query:250')).toBe(true);
+      expect(internals.getKeyVersion('user-1:api:unique:query:250')).toBe(1);
+    });
+
+    it('protects active in-flight requests from premature keyVersion eviction', () => {
+      const internals = _getInternalCacheForTesting();
+      const activeKey = 'user-1:api:in-flight:vital';
+
+      // Set up an active in-flight request
+      internals.activeRequests.set(activeKey, Promise.resolve({ ok: true }));
+      internals.bumpKeyVersion(activeKey);
+      expect(internals.getKeyVersion(activeKey)).toBe(1);
+
+      // Invalidate 120 other unique keys to trigger multiple rounds of eviction
+      for (let i = 1; i <= 120; i++) {
+        internals.bumpKeyVersion(`user-1:other:key:${i}`);
+      }
+
+      expect(internals.keyVersions.size).toBe(100);
+
+      // The active key MUST still be preserved because activeRequests.has(activeKey) is true!
+      expect(internals.keyVersions.has(activeKey)).toBe(true);
+      expect(internals.getKeyVersion(activeKey)).toBe(1);
+
+      // Cleanup
+      internals.activeRequests.delete(activeKey);
+    });
+
+    it('discards completed response if key version was bumped after fetch was initiated', async () => {
+      const internals = _getInternalCacheForTesting();
+      const key = 'user-1:api:stale-check';
+
+      let resolveFetch!: (data: any) => void;
+      const fetchPromise = new Promise((resolve) => {
+        resolveFetch = resolve;
+      });
+
+      const initialVer = internals.getKeyVersion(key); // 0
+      const currentGen = internals.sessionGeneration;
+
+      const wrappedPromise = fetchPromise.then((data) => {
+        if (
+          internals.sessionGeneration === currentGen &&
+          internals.getKeyVersion(key) === initialVer &&
+          internals.activeRequests.has(key)
+        ) {
+          internals.setCacheEntry(key, data);
+          internals.activeRequests.delete(key);
+        }
+        return data;
+      });
+      internals.activeRequests.set(key, wrappedPromise);
+
+      // Invalidate key while request is in flight
+      invalidateApiCache('user-1', 'api:stale-check');
+
+      // Now resolve the in-flight fetch with stale data
+      resolveFetch({ staleField: 'do-not-cache-me' });
+      await wrappedPromise;
+
+      // Stale data must not exist in cache
+      expect(internals.cache.has(key)).toBe(false);
+      expect(internals.getCacheEntry(key)).toBeUndefined();
+    });
+  });
 });
+
 
