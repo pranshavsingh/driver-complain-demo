@@ -96,10 +96,13 @@ beforeAll(async () => {
 beforeEach(cleanupLoadingRecords);
 
 afterAll(async () => {
-  await cleanupLoadingRecords();
-  // Deleting the user cascades its driver → vehicles.
-  await prisma.user.deleteMany({ where: { employeeId: D1 } });
-  await prisma.$disconnect();
+  try {
+    await cleanupLoadingRecords();
+    await prisma.vehicle.deleteMany({ where: { plateNumber: 'LTEST-PLATE-1' } });
+    await prisma.user.deleteMany({ where: { employeeId: D1 } });
+  } finally {
+    await prisma.$disconnect().catch(() => {});
+  }
 });
 
 describe('loading.service — completeTrip parks the record in UNLOADING', () => {
@@ -236,29 +239,32 @@ describe('loading.service — completeUnloading', () => {
 describe('loading.service — getDriverMonthlyTripSummaries', () => {
   it('sums and averages unloading minutes across a driver-month', async () => {
     vi.useFakeTimers();
-    const now = new Date('2026-10-09T10:00:00Z');
-    vi.setSystemTime(now);
-    // Two closed trips in the current month: 30 and 90 minutes of unloading.
-    for (const minutes of [30, 90]) {
-      const id = await reachUnloadingPoint();
-      await prisma.loadingRecord.update({
-        where: { id },
-        data: { tripCompletedAt: new Date(Date.now() - minutes * 60_000) },
+    try {
+      const now = new Date('2026-10-09T10:00:00Z');
+      vi.setSystemTime(now);
+      // Two closed trips in the current month: 30 and 90 minutes of unloading.
+      for (const minutes of [30, 90]) {
+        const id = await reachUnloadingPoint();
+        await prisma.loadingRecord.update({
+          where: { id },
+          data: { tripCompletedAt: new Date(Date.now() - minutes * 60_000) },
+        });
+        await completeUnloading({ userId: driver1UserId, loadingId: id, fileBuffer: photo(), ...gps });
+      }
+
+      const summaries = await getDriverMonthlyTripSummaries({
+        year: now.getFullYear(),
+        month: now.getMonth() + 1,
+        driverId: driver1Id,
       });
-      await completeUnloading({ userId: driver1UserId, loadingId: id, fileBuffer: photo(), ...gps });
+
+      expect(summaries).toHaveLength(1);
+      expect(summaries[0]!.completedTripsCount).toBe(2);
+      expect(summaries[0]!.totalUnloadingTimeMinutes).toBe(120);
+      expect(summaries[0]!.avgUnloadingTimeMinutes).toBe(60);
+    } finally {
+      vi.useRealTimers();
     }
-
-    const summaries = await getDriverMonthlyTripSummaries({
-      year: now.getFullYear(),
-      month: now.getMonth() + 1,
-      driverId: driver1Id,
-    });
-
-    expect(summaries).toHaveLength(1);
-    expect(summaries[0]!.completedTripsCount).toBe(2);
-    expect(summaries[0]!.totalUnloadingTimeMinutes).toBe(120);
-    expect(summaries[0]!.avgUnloadingTimeMinutes).toBe(60);
-    vi.useRealTimers();
   });
 
   it('reports zero rather than NaN for a driver-month with no unloading data', async () => {

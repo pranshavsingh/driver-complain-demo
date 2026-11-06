@@ -10,7 +10,7 @@ import { createRequire } from 'node:module';
 import { redis } from '../lib/redis';
 import { logger } from '../lib/logger';
 import { prisma } from '../lib/prisma';
-import { tryAdvisoryXactLock, ADVISORY_LOCK_IDS } from '../lib/advisory-lock';
+import { tryAdvisoryXactLock, releaseAdvisoryLock, ADVISORY_LOCK_IDS } from '../lib/advisory-lock';
 import { QUEUES } from './queue';
 import { instrumentWorker } from './queue-metrics';
 
@@ -38,26 +38,30 @@ async function runCleanup(): Promise<void> {
           return;
         }
 
-        // 1. Prune expired refresh tokens.
-        const { count: expiredCount } = await tx.refreshToken.deleteMany({
-          where: {
-            OR: [
-              { expiresAt: { lt: cutoff } },
-              { revokedAt: { not: null, lt: cutoff } },
-            ],
-          },
-        });
+        try {
+          // 1. Prune expired refresh tokens.
+          const { count: expiredCount } = await tx.refreshToken.deleteMany({
+            where: {
+              OR: [
+                { expiresAt: { lt: cutoff } },
+                { revokedAt: { not: null, lt: cutoff } },
+              ],
+            },
+          });
 
-        // 2. Prune stale device tokens (unused for 90 days).
-        const { count: deviceCount } = await tx.deviceToken.deleteMany({
-          where: { lastUsedAt: { lt: deviceCutoff } },
-        });
+          // 2. Prune stale device tokens (unused for 90 days).
+          const { count: deviceCount } = await tx.deviceToken.deleteMany({
+            where: { lastUsedAt: { lt: deviceCutoff } },
+          });
 
-        if (expiredCount > 0 || deviceCount > 0) {
-          logger.info(
-            { expiredTokens: expiredCount, staleDevices: deviceCount },
-            'Cleanup: pruned expired tokens and stale devices',
-          );
+          if (expiredCount > 0 || deviceCount > 0) {
+            logger.info(
+              { expiredTokens: expiredCount, staleDevices: deviceCount },
+              'Cleanup: pruned expired tokens and stale devices',
+            );
+          }
+        } finally {
+          await releaseAdvisoryLock(tx, ADVISORY_LOCK_IDS.CLEANUP_MAINTENANCE).catch(() => {});
         }
       },
       { timeout: 10000 },

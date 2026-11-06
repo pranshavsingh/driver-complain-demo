@@ -2,7 +2,7 @@ import { prisma } from '../../lib/prisma';
 import { logger } from '../../lib/logger';
 import { getCategorySlaList } from '../settings/settings.service';
 import { emitEventToUsers } from '../../realtime/socket';
-import { tryAdvisoryXactLock, ADVISORY_LOCK_IDS } from '../../lib/advisory-lock';
+import { tryAdvisoryXactLock, releaseAdvisoryLock, ADVISORY_LOCK_IDS } from '../../lib/advisory-lock';
 
 function formatEnum(value: string): string {
   const words = value.replace(/_/g, ' ').toLowerCase();
@@ -44,7 +44,8 @@ export async function checkAndEscalateSlaBreaches(): Promise<SlaEscalationResult
         return null;
       }
 
-      // Fetch all open complaints (NEW or IN_PROGRESS)
+      try {
+        // Fetch all open complaints (NEW or IN_PROGRESS)
       const complaintClient = (tx as any).complaint?.findMany ? (tx as any).complaint : prisma.complaint;
       const openComplaints = await complaintClient.findMany({
         where: {
@@ -210,12 +211,15 @@ export async function checkAndEscalateSlaBreaches(): Promise<SlaEscalationResult
         });
       }
 
-      return {
-        checkedCount: openComplaints.length,
-        escalatedCount,
-        notifiedUserCount: totalNotifiedUsers,
-        pendingEmits,
-      };
+        return {
+          checkedCount: openComplaints.length,
+          escalatedCount,
+          notifiedUserCount: totalNotifiedUsers,
+          pendingEmits,
+        };
+      } finally {
+        await releaseAdvisoryLock(tx, ADVISORY_LOCK_IDS.SLA_ESCALATION).catch(() => {});
+      }
     },
     { timeout: 10000 },
   );

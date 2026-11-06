@@ -810,86 +810,161 @@ export async function getDriverMonthlyTripSummaries(opts: {
   }
 
   const search = opts.search?.trim();
+  const isPostgres = (process.env.DATABASE_URL ?? '').startsWith('postgres');
 
   // Build parameterized conditions safely using Prisma.sql
   const conditions: Prisma.Sql[] = [Prisma.sql`1=1`];
 
   if (fromDate && toDate) {
-    conditions.push(Prisma.sql`lr."reachedAt" >= ${fromDate} AND lr."reachedAt" <= ${toDate}`);
+    conditions.push(
+      isPostgres
+        ? Prisma.sql`lr."reachedAt" >= ${fromDate} AND lr."reachedAt" <= ${toDate}`
+        : Prisma.sql`lr.reachedAt >= ${fromDate} AND lr.reachedAt <= ${toDate}`,
+    );
   }
 
   if (opts.driverId) {
-    conditions.push(Prisma.sql`lr."driverId" = ${opts.driverId}::uuid`);
+    conditions.push(
+      isPostgres
+        ? Prisma.sql`lr."driverId" = ${opts.driverId}::uuid`
+        : Prisma.sql`lr.driverId = ${opts.driverId}`,
+    );
   }
 
   if (opts.status) {
-    conditions.push(Prisma.sql`lr."status"::text = ${opts.status}`);
+    conditions.push(
+      isPostgres
+        ? Prisma.sql`lr."status"::text = ${opts.status}`
+        : Prisma.sql`lr.status = ${opts.status}`,
+    );
   }
 
   if (search) {
     const searchPattern = `%${search}%`;
-    conditions.push(Prisma.sql`(
-      u."firstName" ILIKE ${searchPattern} OR
-      u."lastName" ILIKE ${searchPattern} OR
-      u."employeeId" ILIKE ${searchPattern} OR
-      d."licenseNumber" ILIKE ${searchPattern} OR
-      EXISTS (
-        SELECT 1 FROM "Vehicle" v 
-        WHERE v."driverId" = d."id" AND v."plateNumber" ILIKE ${searchPattern}
-      )
-    )`);
+    conditions.push(
+      isPostgres
+        ? Prisma.sql`(
+            u."firstName" ILIKE ${searchPattern} OR
+            u."lastName" ILIKE ${searchPattern} OR
+            u."employeeId" ILIKE ${searchPattern} OR
+            d."licenseNumber" ILIKE ${searchPattern} OR
+            EXISTS (
+              SELECT 1 FROM "Vehicle" v 
+              WHERE v."driverId" = d."id" AND v."plateNumber" ILIKE ${searchPattern}
+            )
+          )`
+        : Prisma.sql`(
+            u.firstName LIKE ${searchPattern} OR
+            u.lastName LIKE ${searchPattern} OR
+            u.employeeId LIKE ${searchPattern} OR
+            d.licenseNumber LIKE ${searchPattern} OR
+            EXISTS (
+              SELECT 1 FROM Vehicle v 
+              WHERE v.driverId = d.id AND v.plateNumber LIKE ${searchPattern}
+            )
+          )`,
+    );
   }
 
   const whereClause = Prisma.join(conditions, ' AND ');
 
-  const rows = await prisma.$queryRaw<
-    Array<{
-      driver_id: string;
-      year: number;
-      month: number;
-      completed_trips_count: number;
-      total_trip_duration_minutes: number;
-      total_waiting_time_minutes: number;
-      total_unloading_time_minutes: number;
-      driver_name: string;
-      license_number: string;
-      vehicle_plate: string;
-    }>
-  >(Prisma.sql`
-    SELECT
-      lr."driverId"::text AS driver_id,
-      EXTRACT(YEAR FROM lr."reachedAt")::int AS year,
-      EXTRACT(MONTH FROM lr."reachedAt")::int AS month,
-      COUNT(*)::int AS completed_trips_count,
-      COALESCE(SUM(lr."tripDurationMinutes"), 0)::int AS total_trip_duration_minutes,
-      COALESCE(SUM(lr."waitingTimeMinutes"), 0)::int AS total_waiting_time_minutes,
-      COALESCE(SUM(lr."unloadingDurationMinutes"), 0)::int AS total_unloading_time_minutes,
-      COALESCE(
-        NULLIF(TRIM(CONCAT(COALESCE(u."firstName", ''), ' ', COALESCE(u."lastName", ''))), ''),
-        'Unknown Driver'
-      ) AS driver_name,
-      COALESCE(d."licenseNumber", 'N/A') AS license_number,
-      COALESCE(
-        (SELECT v."plateNumber" FROM "Vehicle" v WHERE v."driverId" = d."id" ORDER BY v."createdAt" DESC, v."id" DESC LIMIT 1),
-        'N/A'
-      ) AS vehicle_plate
-    FROM "LoadingRecord" lr
-    JOIN "Driver" d ON d."id" = lr."driverId"
-    LEFT JOIN "User" u ON u."id" = d."userId"
-    WHERE ${whereClause}
-    GROUP BY
-      lr."driverId",
-      EXTRACT(YEAR FROM lr."reachedAt"),
-      EXTRACT(MONTH FROM lr."reachedAt"),
-      u."firstName",
-      u."lastName",
-      d."licenseNumber",
-      d."id"
-    ORDER BY
-      year DESC,
-      month DESC,
-      completed_trips_count DESC
-  `);
+  const rows = isPostgres
+    ? await prisma.$queryRaw<
+        Array<{
+          driver_id: string;
+          year: number;
+          month: number;
+          completed_trips_count: number;
+          total_trip_duration_minutes: number;
+          total_waiting_time_minutes: number;
+          total_unloading_time_minutes: number;
+          driver_name: string;
+          license_number: string;
+          vehicle_plate: string;
+        }>
+      >(Prisma.sql`
+        SELECT
+          lr."driverId"::text AS driver_id,
+          EXTRACT(YEAR FROM lr."reachedAt")::int AS year,
+          EXTRACT(MONTH FROM lr."reachedAt")::int AS month,
+          COUNT(*)::int AS completed_trips_count,
+          COALESCE(SUM(lr."tripDurationMinutes"), 0)::int AS total_trip_duration_minutes,
+          COALESCE(SUM(lr."waitingTimeMinutes"), 0)::int AS total_waiting_time_minutes,
+          COALESCE(SUM(lr."unloadingDurationMinutes"), 0)::int AS total_unloading_time_minutes,
+          COALESCE(
+            NULLIF(TRIM(CONCAT(COALESCE(u."firstName", ''), ' ', COALESCE(u."lastName", ''))), ''),
+            'Unknown Driver'
+          ) AS driver_name,
+          COALESCE(d."licenseNumber", 'N/A') AS license_number,
+          COALESCE(
+            (SELECT v."plateNumber" FROM "Vehicle" v WHERE v."driverId" = d."id" ORDER BY v."createdAt" DESC, v."id" DESC LIMIT 1),
+            'N/A'
+          ) AS vehicle_plate
+        FROM "LoadingRecord" lr
+        JOIN "Driver" d ON d."id" = lr."driverId"
+        LEFT JOIN "User" u ON u."id" = d."userId"
+        WHERE ${whereClause}
+        GROUP BY
+          lr."driverId",
+          EXTRACT(YEAR FROM lr."reachedAt"),
+          EXTRACT(MONTH FROM lr."reachedAt"),
+          u."firstName",
+          u."lastName",
+          d."licenseNumber",
+          d."id"
+        ORDER BY
+          year DESC,
+          month DESC,
+          completed_trips_count DESC
+      `)
+    : await prisma.$queryRaw<
+        Array<{
+          driver_id: string;
+          year: number;
+          month: number;
+          completed_trips_count: number;
+          total_trip_duration_minutes: number;
+          total_waiting_time_minutes: number;
+          total_unloading_time_minutes: number;
+          driver_name: string;
+          license_number: string;
+          vehicle_plate: string;
+        }>
+      >(Prisma.sql`
+        SELECT
+          lr.driverId AS driver_id,
+          EXTRACT(YEAR FROM lr.reachedAt) AS year,
+          EXTRACT(MONTH FROM lr.reachedAt) AS month,
+          COUNT(*) AS completed_trips_count,
+          COALESCE(SUM(lr.tripDurationMinutes), 0) AS total_trip_duration_minutes,
+          COALESCE(SUM(lr.waitingTimeMinutes), 0) AS total_waiting_time_minutes,
+          COALESCE(SUM(lr.unloadingDurationMinutes), 0) AS total_unloading_time_minutes,
+          COALESCE(
+            NULLIF(TRIM(CONCAT(COALESCE(u.firstName, ''), ' ', COALESCE(u.lastName, ''))), ''),
+            'Unknown Driver'
+          ) AS driver_name,
+          COALESCE(d.licenseNumber, 'N/A') AS license_number,
+          COALESCE(
+            (SELECT v.plateNumber FROM Vehicle v WHERE v.driverId = d.id ORDER BY v.createdAt DESC, v.id DESC LIMIT 1),
+            'N/A'
+          ) AS vehicle_plate
+        FROM LoadingRecord lr
+        JOIN Driver d ON d.id = lr.driverId
+        LEFT JOIN User u ON u.id = d.userId
+        WHERE ${whereClause}
+        GROUP BY
+          lr.driverId,
+          EXTRACT(YEAR FROM lr.reachedAt),
+          EXTRACT(MONTH FROM lr.reachedAt),
+          u.firstName,
+          u.lastName,
+          d.licenseNumber,
+          d.id
+        ORDER BY
+          year DESC,
+          month DESC,
+          completed_trips_count DESC
+      `);
 
   const MONTH_NAMES = [
     'January', 'February', 'March', 'April', 'May', 'June',

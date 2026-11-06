@@ -57,14 +57,24 @@ export function computeOutboxMetricsFromRow(
  * by the background dispatcher and watchdog scheduler to maintain low pending-set cardinality.
  */
 export async function collectOutboxMetrics(): Promise<void> {
-  const result = await prisma.$queryRaw<Array<OutboxLagQueryResult>>`
-    SELECT 
-      count(*)::int as pending_count,
-      count(CASE WHEN "scheduledAt" <= NOW() THEN 1 END)::int as overdue_count,
-      MIN(CASE WHEN "scheduledAt" <= NOW() THEN "scheduledAt" END) as oldest_overdue
-    FROM "TransactionalOutbox"
-    WHERE status = 'PENDING'
-  `;
+  const isPostgres = (process.env.DATABASE_URL ?? '').startsWith('postgres');
+  const result = isPostgres
+    ? await prisma.$queryRaw<Array<OutboxLagQueryResult>>`
+        SELECT 
+          count(*)::int as pending_count,
+          count(CASE WHEN "scheduledAt" <= NOW() THEN 1 END)::int as overdue_count,
+          MIN(CASE WHEN "scheduledAt" <= NOW() THEN "scheduledAt" END) as oldest_overdue
+        FROM "TransactionalOutbox"
+        WHERE status = 'PENDING'
+      `
+    : await prisma.$queryRaw<Array<OutboxLagQueryResult>>`
+        SELECT 
+          count(*) as pending_count,
+          count(CASE WHEN scheduledAt <= NOW() THEN 1 END) as overdue_count,
+          MIN(CASE WHEN scheduledAt <= NOW() THEN scheduledAt END) as oldest_overdue
+        FROM TransactionalOutbox
+        WHERE status = 'PENDING'
+      `;
 
   const metrics = computeOutboxMetricsFromRow(result?.[0]);
   outboxPendingEvents.set(metrics.pendingCount);

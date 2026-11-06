@@ -23,7 +23,9 @@ import {
   ArchivalReason,
 } from '../outbox.types';
 
-describe('Milestone 3: PostgreSQL Real Integration Tests', () => {
+const isPostgres = (process.env.DATABASE_URL ?? '').startsWith('postgres');
+
+describe.skipIf(!isPostgres)('Milestone 3: PostgreSQL Real Integration Tests', () => {
   const TEST_PREFIX = `m3_audit_${Date.now()}`;
   let noMatchConsumerId: string;
 

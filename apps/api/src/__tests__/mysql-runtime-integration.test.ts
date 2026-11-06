@@ -150,7 +150,7 @@ describe('M8.3 — MySQL 8.0 Runtime Integration Tests', () => {
       expect(migrations.length).toBe(1);
       expect(migrations[0]?.migration_name).toBe('20261106120000_init_mysql');
       expect(migrations[0]?.rolled_back_at).toBeNull();
-      expect(migrations[0]?.applied_steps_count).toBe(1);
+      expect(Number(migrations[0]?.applied_steps_count)).toBe(1);
     });
 
     it('verifies target MySQL table collation is utf8mb4_0900_ai_ci', async () => {
