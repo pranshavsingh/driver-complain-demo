@@ -47,7 +47,7 @@ export async function create(data: CreateOperatingSite): Promise<OperatingSitePu
   const existing = await prisma.operatingSite.findFirst({
     where: {
       OR: [
-        { name: { equals: trimmedName, mode: 'insensitive' } },
+        { name: { equals: trimmedName } },
         ...(trimmedCode ? [{ code: trimmedCode }] : []),
       ],
     },
@@ -88,7 +88,7 @@ export async function update(id: string, data: UpdateOperatingSite): Promise<Ope
       where: {
         id: { not: id },
         OR: [
-          ...(trimmedName ? [{ name: { equals: trimmedName, mode: 'insensitive' as const } }] : []),
+          ...(trimmedName ? [{ name: { equals: trimmedName } }] : []),
           ...(trimmedCode ? [{ code: trimmedCode }] : []),
         ],
       },

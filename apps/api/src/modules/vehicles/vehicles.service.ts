@@ -41,25 +41,25 @@ export async function list(
   if (query?.search?.trim()) {
     const q = query.search.trim();
     where.OR = [
-      { plateNumber: { contains: q, mode: 'insensitive' } },
-      { model: { contains: q, mode: 'insensitive' } },
-      { modelNumber: { contains: q, mode: 'insensitive' } },
-      { chassisNumber: { contains: q, mode: 'insensitive' } },
-      { vin: { contains: q, mode: 'insensitive' } },
-      { make: { contains: q, mode: 'insensitive' } },
-      { driver: { user: { firstName: { contains: q, mode: 'insensitive' } } } },
-      { driver: { user: { lastName: { contains: q, mode: 'insensitive' } } } },
-      { siteIncharge: { firstName: { contains: q, mode: 'insensitive' } } },
-      { siteIncharge: { lastName: { contains: q, mode: 'insensitive' } } },
+      { plateNumber: { contains: q } },
+      { model: { contains: q } },
+      { modelNumber: { contains: q } },
+      { chassisNumber: { contains: q } },
+      { vin: { contains: q } },
+      { make: { contains: q } },
+      { driver: { user: { firstName: { contains: q } } } },
+      { driver: { user: { lastName: { contains: q } } } },
+      { siteIncharge: { firstName: { contains: q } } },
+      { siteIncharge: { lastName: { contains: q } } },
     ];
   }
 
   if (query?.agreementStatus && query.agreementStatus !== 'ALL') {
     if (query.agreementStatus.toUpperCase() === 'ACTIVE') {
       const activeOr = [
-        { agreementStatus: { contains: 'ACTIVE', mode: 'insensitive' } },
-        { agreementStatus: { contains: 'FMS', mode: 'insensitive' } },
-        { agreementStatus: { contains: 'PLATINUM', mode: 'insensitive' } },
+        { agreementStatus: { contains: 'ACTIVE' } },
+        { agreementStatus: { contains: 'FMS' } },
+        { agreementStatus: { contains: 'PLATINUM' } },
       ];
       if (where.OR) {
         where.AND = [{ OR: where.OR }, { OR: activeOr }];
@@ -68,7 +68,7 @@ export async function list(
         where.OR = activeOr;
       }
     } else {
-      where.agreementStatus = { equals: query.agreementStatus, mode: 'insensitive' };
+      where.agreementStatus = { equals: query.agreementStatus };
     }
   }
 
@@ -136,9 +136,9 @@ export async function getSummary(actor?: { id: string; role: string }): Promise<
       where: {
         ...where,
         OR: [
-          { agreementStatus: { contains: 'ACTIVE', mode: 'insensitive' } },
-          { agreementStatus: { contains: 'FMS', mode: 'insensitive' } },
-          { agreementStatus: { contains: 'PLATINUM', mode: 'insensitive' } },
+          { agreementStatus: { contains: 'ACTIVE' } },
+          { agreementStatus: { contains: 'FMS' } },
+          { agreementStatus: { contains: 'PLATINUM' } },
         ],
       },
     }),
@@ -272,7 +272,7 @@ export async function create(input: CreateVehicle): Promise<VehiclePublic> {
   // 1. Vehicle Number uniqueness
   const existingPlate = await prisma.vehicle.findFirst({
     where: {
-      plateNumber: { equals: normalizedPlate, mode: 'insensitive' },
+      plateNumber: { equals: normalizedPlate },
     },
   });
   if (existingPlate) {
@@ -285,8 +285,8 @@ export async function create(input: CreateVehicle): Promise<VehiclePublic> {
     const existingChassis = await prisma.vehicle.findFirst({
       where: {
         OR: [
-          { chassisNumber: { equals: chassisOrVin, mode: 'insensitive' } },
-          { vin: { equals: chassisOrVin, mode: 'insensitive' } },
+          { chassisNumber: { equals: chassisOrVin } },
+          { vin: { equals: chassisOrVin } },
         ],
       },
       select: { plateNumber: true },
@@ -424,7 +424,7 @@ export async function update(
     if (normalizedPlate !== existing.plateNumber) {
       const duplicate = await prisma.vehicle.findFirst({
         where: {
-          plateNumber: { equals: normalizedPlate, mode: 'insensitive' },
+          plateNumber: { equals: normalizedPlate },
           id: { not: id },
         },
       });
@@ -441,8 +441,8 @@ export async function update(
       where: {
         id: { not: id },
         OR: [
-          { chassisNumber: { equals: updatedChassisOrVin, mode: 'insensitive' } },
-          { vin: { equals: updatedChassisOrVin, mode: 'insensitive' } },
+          { chassisNumber: { equals: updatedChassisOrVin } },
+          { vin: { equals: updatedChassisOrVin } },
         ],
       },
       select: { plateNumber: true },

@@ -6,7 +6,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
@@ -100,14 +100,14 @@ enum Platform {
 }
 
 model User {
-  id                  String            @id @default(uuid(7)) @db.Uuid
+  id                  String            @id @default(uuid(7)) @db.VarChar(36)
   employeeId          String            @unique
   pinHash             String
   role                Role              @default(DRIVER)
   approvalStatus      ApprovalStatus    @default(APPROVED)
   category            ComplaintCategory?
   site                String?
-  createdByAdminId    String?           @db.Uuid
+  createdByAdminId    String?           @db.VarChar(36)
   firstName           String
   lastName            String
   email               String?           @unique
@@ -142,8 +142,8 @@ model User {
 }
 
 model Driver {
-  id            String    @id @default(uuid(7)) @db.Uuid
-  userId        String    @unique @db.Uuid
+  id            String    @id @default(uuid(7)) @db.VarChar(36)
+  userId        String    @unique @db.VarChar(36)
   user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   licenseNumber String    @unique
   licenseExpiry DateTime?
@@ -159,10 +159,10 @@ model Driver {
 }
 
 model Vehicle {
-  id               String    @id @default(uuid(7)) @db.Uuid
-  driverId         String?   @db.Uuid
+  id               String    @id @default(uuid(7)) @db.VarChar(36)
+  driverId         String?   @db.VarChar(36)
   driver           Driver?   @relation(fields: [driverId], references: [id], onDelete: SetNull)
-  siteInchargeId   String?   @db.Uuid
+  siteInchargeId   String?   @db.VarChar(36)
   siteIncharge     User?     @relation("SiteInchargeVehicles", fields: [siteInchargeId], references: [id], onDelete: SetNull)
   plateNumber      String    @unique
   make             String?
@@ -188,15 +188,15 @@ model Vehicle {
 }
 
 model Complaint {
-  id                String            @id @default(uuid(7)) @db.Uuid
+  id                String            @id @default(uuid(7)) @db.VarChar(36)
   complaintNo       String            @unique
-  driverId          String            @db.Uuid
+  driverId          String            @db.VarChar(36)
   driver            Driver            @relation(fields: [driverId], references: [id], onDelete: Cascade)
-  vehicleId         String?           @db.Uuid
+  vehicleId         String?           @db.VarChar(36)
   vehicle           Vehicle?          @relation(fields: [vehicleId], references: [id])
   title             String
-  description       String
-  transcription     String?
+  description       String @db.Text
+  transcription     String? @db.Text
   category          ComplaintCategory @default(BREAKDOWN)
   status            ComplaintStatus   @default(NEW)
   priority          Priority          @default(MEDIUM)
@@ -204,14 +204,14 @@ model Complaint {
   latitude          Float?
   longitude         Float?
   locationName      String?
-  assignedToId      String?           @db.Uuid
+  assignedToId      String?           @db.VarChar(36)
   assignedTo        User?             @relation("AssignedAdmin", fields: [assignedToId], references: [id])
-  pendingAssigneeId String?           @db.Uuid
+  pendingAssigneeId String?           @db.VarChar(36)
   pendingAssignee   User?             @relation("PendingAssignee", fields: [pendingAssigneeId], references: [id])
   assignmentStatus  AssignmentStatus  @default(NONE)
   resolvedAt        DateTime?
   lastSlaEscalatedAt DateTime?
-  idempotencyKey    String?
+  idempotencyKey    String? @db.VarChar(255)
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
@@ -233,52 +233,52 @@ model Complaint {
 }
 
 model ComplaintAttachment {
-  id           String    @id @default(uuid(7)) @db.Uuid
-  complaintId  String    @db.Uuid
+  id           String    @id @default(uuid(7)) @db.VarChar(36)
+  complaintId  String    @db.VarChar(36)
   complaint    Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
-  uploadedById String?   @db.Uuid
+  uploadedById String?   @db.VarChar(36)
   uploadedBy   User?     @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
   // Defaulted to PHOTO so the column could be added to existing rows (all of which were
   // photos) without a data migration. Every write path sets it explicitly — treat the default
   // as a backfill artefact, not a fallback to rely on.
   kind         AttachmentKind @default(PHOTO)
-  url          String
+  url          String @db.Text
   publicId     String         @unique
   resourceType String
   format       String?
   bytes        Int?
   /// Runtime of a voice note or video, from Cloudinary. Null for photos.
   durationSec  Int?
-  originalName String?
-  transcription String?
+  originalName String? @db.VarChar(255)
+  transcription String? @db.Text
   createdAt    DateTime       @default(now())
 
   @@index([complaintId])
 }
 
 model ComplaintUpdate {
-  id          String           @id @default(uuid(7)) @db.Uuid
-  complaintId String           @db.Uuid
+  id          String           @id @default(uuid(7)) @db.VarChar(36)
+  complaintId String           @db.VarChar(36)
   complaint   Complaint        @relation(fields: [complaintId], references: [id], onDelete: Cascade)
-  authorId    String?          @db.Uuid
+  authorId    String?          @db.VarChar(36)
   author      User?            @relation(fields: [authorId], references: [id], onDelete: SetNull)
   fromStatus  ComplaintStatus?
   toStatus    ComplaintStatus?
-  note        String?
+  note        String? @db.Text
   createdAt   DateTime         @default(now())
 
   @@index([complaintId])
 }
 
 model Notification {
-  id          String           @id @default(uuid(7)) @db.Uuid
-  userId      String           @db.Uuid
+  id          String           @id @default(uuid(7)) @db.VarChar(36)
+  userId      String           @db.VarChar(36)
   user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   type        NotificationType
   title       String
-  body        String
+  body        String @db.Text
   data        Json?
-  complaintId String?          @db.Uuid
+  complaintId String?          @db.VarChar(36)
   complaint   Complaint?       @relation(fields: [complaintId], references: [id], onDelete: SetNull)
   isRead      Boolean          @default(false)
   readAt      DateTime?
@@ -290,10 +290,10 @@ model Notification {
 }
 
 model DeviceToken {
-  id         String   @id @default(uuid(7)) @db.Uuid
-  userId     String   @db.Uuid
+  id         String   @id @default(uuid(7)) @db.VarChar(36)
+  userId     String   @db.VarChar(36)
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  token      String   @unique
+  token      String   @unique @db.VarChar(255)
   platform   Platform
   createdAt  DateTime @default(now())
   lastUsedAt DateTime @default(now())
@@ -304,16 +304,16 @@ model DeviceToken {
 // ADDED beyond the 7 v1 entities — required for refresh-token rotation, reuse
 // detection, and server-side revocation (JWTs alone can't be revoked).
 model RefreshToken {
-  id            String         @id @default(uuid(7)) @db.Uuid
-  userId        String         @db.Uuid
+  id            String         @id @default(uuid(7)) @db.VarChar(36)
+  userId        String         @db.VarChar(36)
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  familyId      String         @db.Uuid
-  tokenHash     String         @unique
+  familyId      String         @db.VarChar(36)
+  tokenHash     String         @unique @db.VarChar(255)
   expiresAt     DateTime
   revokedAt     DateTime?
   revokedReason RevokedReason?
-  replacedById  String?        @unique @db.Uuid
-  userAgent     String?
+  replacedById  String?        @unique @db.VarChar(36)
+  userAgent     String? @db.Text
   ipAddress     String?
   createdAt     DateTime       @default(now())
 
@@ -342,39 +342,39 @@ enum LoadingStatus {
 }
 
 model LoadingRecord {
-  id                     String        @id @default(uuid(7)) @db.Uuid
-  driverId               String        @db.Uuid
+  id                     String        @id @default(uuid(7)) @db.VarChar(36)
+  driverId               String        @db.VarChar(36)
   driver                 Driver        @relation(fields: [driverId], references: [id], onDelete: Cascade)
-  complaintId            String?       @db.Uuid
+  complaintId            String?       @db.VarChar(36)
   complaint              Complaint?    @relation(fields: [complaintId], references: [id], onDelete: SetNull)
-  locationName           String?
+  locationName           String? @db.VarChar(255)
 
   reachedAt              DateTime      @default(now())
   reachedLatitude        Float
   reachedLongitude       Float
-  reachedAddress         String?
-  reachedPhotoUrl        String
+  reachedAddress         String? @db.VarChar(500)
+  reachedPhotoUrl        String @db.Text
   reachedPublicId        String?
 
   completedAt            DateTime?
   completedLatitude      Float?
   completedLongitude     Float?
-  completedAddress       String?
-  completedPhotoUrl      String?
+  completedAddress       String? @db.VarChar(500)
+  completedPhotoUrl      String? @db.Text
   completedPublicId      String?
 
   tripStartedAt          DateTime?
   tripStartLatitude      Float?
   tripStartLongitude     Float?
-  tripStartAddress       String?
+  tripStartAddress       String? @db.VarChar(500)
 
   // tripCompletedAt is the moment the driver reached the unloading point, so it is
   // both the end of transit (tripDurationMinutes) and the start of the unloading wait.
   tripCompletedAt        DateTime?
   tripCompletedLatitude  Float?
   tripCompletedLongitude Float?
-  tripCompletedAddress   String?
-  tripCompletedPhotoUrl  String?
+  tripCompletedAddress   String? @db.VarChar(500)
+  tripCompletedPhotoUrl  String? @db.Text
   tripCompletedPublicId  String?
   tripDurationMinutes    Int?
 
@@ -382,8 +382,8 @@ model LoadingRecord {
   unloadingCompletedAt     DateTime?
   unloadingLatitude        Float?
   unloadingLongitude       Float?
-  unloadingAddress         String?
-  unloadingPhotoUrl        String?
+  unloadingAddress         String? @db.VarChar(500)
+  unloadingPhotoUrl        String? @db.Text
   unloadingPublicId        String?
   unloadingDurationMinutes Int?
 
@@ -407,19 +407,19 @@ enum FuelType {
 }
 
 model FuelRecord {
-  id              String   @id @default(uuid(7)) @db.Uuid
-  driverId        String   @db.Uuid
+  id              String   @id @default(uuid(7)) @db.VarChar(36)
+  driverId        String   @db.VarChar(36)
   driver          Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
-  vehicleId       String   @db.Uuid
+  vehicleId       String   @db.VarChar(36)
   vehicle         Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
   type            FuelType @default(FUEL)
   quantityLtr     Float
   totalPrice      Float
   ratePerLtr      Float?
   odometerKm      Int?
-  receiptUrl      String?
+  receiptUrl      String? @db.Text
   receiptPublicId String?
-  notes           String?
+  notes           String? @db.Text
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -435,22 +435,22 @@ enum MaintenanceType {
 }
 
 model MaintenanceRecord {
-  id              String          @id @default(uuid(7)) @db.Uuid
-  driverId        String          @db.Uuid
+  id              String          @id @default(uuid(7)) @db.VarChar(36)
+  driverId        String          @db.VarChar(36)
   driver          Driver          @relation(fields: [driverId], references: [id], onDelete: Cascade)
-  vehicleId       String          @db.Uuid
+  vehicleId       String          @db.VarChar(36)
   vehicle         Vehicle         @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
   type            MaintenanceType @default(TYRE)
   itemNumber      String
   oldItemNumber   String?
   quantity        Int             @default(1)
-  photoUrl        String
+  photoUrl        String @db.Text
   photoPublicId   String?
   odometerKm      Int?
   brand           String?
   position        String?
   cost            Float?
-  notes           String?
+  notes           String? @db.Text
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 
@@ -461,7 +461,7 @@ model MaintenanceRecord {
 }
 
 model Warehouse {
-  id          String             @id @default(uuid(7)) @db.Uuid
+  id          String             @id @default(uuid(7)) @db.VarChar(36)
   name        String             @unique
   code        String?            @unique
   location    String?
@@ -490,23 +490,23 @@ enum SparePartType {
 }
 
 model SparePartRequest {
-  id                    String                 @id @default(uuid(7)) @db.Uuid
+  id                    String                 @id @default(uuid(7)) @db.VarChar(36)
   requestNo             String                 @unique
-  driverId              String                 @db.Uuid
+  driverId              String                 @db.VarChar(36)
   driver                Driver                 @relation(fields: [driverId], references: [id], onDelete: Cascade)
-  vehicleId             String                 @db.Uuid
+  vehicleId             String                 @db.VarChar(36)
   vehicle               Vehicle                @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
 
   // Driver Request Details
-  description           String
-  transcription         String?
+  description           String @db.Text
+  transcription         String? @db.Text
   partName              String?
   quantity              Int                    @default(1)
 
   // Evidence
-  photoUrl              String?
+  photoUrl              String? @db.Text
   photoPublicId         String?
-  voiceUrl              String?
+  voiceUrl              String? @db.Text
   voicePublicId         String?
 
   // Status & Type
@@ -515,20 +515,20 @@ model SparePartRequest {
   category              ComplaintCategory?
 
   // Executive / Admin Issue Proposal
-  issueProposedById     String?                @db.Uuid
+  issueProposedById     String?                @db.VarChar(36)
   issueProposedBy       User?                  @relation("SparePartProposedBy", fields: [issueProposedById], references: [id], onDelete: SetNull)
   issueProposedAt       DateTime?
 
   // SuperAdmin Approval
-  approvedById          String?                @db.Uuid
+  approvedById          String?                @db.VarChar(36)
   approvedBy            User?                  @relation("SparePartApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
   approvedAt            DateTime?
 
   // Issuance & Warehouse
-  issuedById            String?                @db.Uuid
+  issuedById            String?                @db.VarChar(36)
   issuedBy              User?                  @relation("SparePartIssuedBy", fields: [issuedById], references: [id], onDelete: SetNull)
   issuedAt              DateTime?
-  warehouseId           String?                @db.Uuid
+  warehouseId           String?                @db.VarChar(36)
   warehouse             Warehouse?             @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
 
   // Issued item details
@@ -542,8 +542,8 @@ model SparePartRequest {
   returnedPartNo        String?
   returnedPartCondition String?
 
-  adminNotes            String?
-  rejectionReason       String?
+  adminNotes            String? @db.Text
+  rejectionReason       String? @db.Text
 
   createdAt             DateTime               @default(now())
   updatedAt             DateTime               @updatedAt
@@ -562,23 +562,23 @@ enum SupportMessageType {
 }
 
 model SupportMessage {
-  id                    String             @id @default(uuid(7)) @db.Uuid
-  senderId              String             @db.Uuid
+  id                    String             @id @default(uuid(7)) @db.VarChar(36)
+  senderId              String             @db.VarChar(36)
   sender                User               @relation("SentSupportMessages", fields: [senderId], references: [id], onDelete: Cascade)
-  receiverId            String             @db.Uuid
+  receiverId            String             @db.VarChar(36)
   receiver              User               @relation("ReceivedSupportMessages", fields: [receiverId], references: [id], onDelete: Cascade)
 
-  content               String             @default("")
+  content               String             @default("") @db.Text
   type                  SupportMessageType @default(TEXT)
 
-  attachmentUrl         String?
+  attachmentUrl         String? @db.Text
   attachmentPublicId    String?
   attachmentDurationSec Int?
 
   isRead                Boolean            @default(false)
   readAt                DateTime?
 
-  linkedComplaintId     String?            @db.Uuid
+  linkedComplaintId     String?            @db.VarChar(36)
   linkedComplaint       Complaint?         @relation("LinkedMessages", fields: [linkedComplaintId], references: [id], onDelete: SetNull)
   linkedComplaintNo     String?
 
@@ -592,7 +592,7 @@ model SupportMessage {
 }
 
 model OperatingSite {
-  id          String    @id @default(uuid(7)) @db.Uuid
+  id          String    @id @default(uuid(7)) @db.VarChar(36)
   name        String    @unique
   code        String?   @unique
   address     String?
@@ -604,7 +604,7 @@ model OperatingSite {
 }
 
 model CategorySla {
-  id        String            @id @default(uuid(7)) @db.Uuid
+  id        String            @id @default(uuid(7)) @db.VarChar(36)
   category  ComplaintCategory @unique
   slaHours  Float             @default(12.0)
   createdAt DateTime          @default(now())
@@ -612,8 +612,8 @@ model CategorySla {
 }
 
 model AdminCategoryAssignment {
-  id        String            @id @default(uuid(7)) @db.Uuid
-  adminId   String            @db.Uuid
+  id        String            @id @default(uuid(7)) @db.VarChar(36)
+  adminId   String            @db.VarChar(36)
   admin     User              @relation("AdminCategories", fields: [adminId], references: [id], onDelete: Cascade)
   category  ComplaintCategory
   createdAt DateTime          @default(now())
@@ -681,7 +681,7 @@ enum ArchivalReason {
 }
 
 model RegisteredConsumer {
-  id                   String                         @id @default(uuid(7)) @db.Uuid
+  id                   String                         @id @default(uuid(7)) @db.VarChar(36)
   consumerGroup        String
   consumerName         String
   state                ConsumerState                  @default(ACTIVE)
@@ -704,7 +704,7 @@ model RegisteredConsumer {
 }
 
 model TransactionalOutbox {
-  id                    String                         @id @default(uuid(7)) @db.Uuid
+  id                    String                         @id @default(uuid(7)) @db.VarChar(36)
   aggregateType         String
   aggregateId           String
   eventType             String
@@ -733,10 +733,10 @@ model TransactionalOutbox {
 }
 
 model OutboxConsumerDispatchIntent {
-  id             String               @id @default(uuid(7)) @db.Uuid
-  outboxId       String               @db.Uuid
+  id             String               @id @default(uuid(7)) @db.VarChar(36)
+  outboxId       String               @db.VarChar(36)
   outbox         TransactionalOutbox @relation(fields: [outboxId], references: [id], onDelete: Cascade)
-  consumerId     String               @db.Uuid
+  consumerId     String               @db.VarChar(36)
   consumer       RegisteredConsumer   @relation(fields: [consumerId], references: [id], onDelete: Restrict)
   sequenceNumber BigInt
   status         DispatchIntentStatus @default(PLANNED)
@@ -754,20 +754,20 @@ model OutboxConsumerDispatchIntent {
 }
 
 model DeliveryLedger {
-  id                  String                       @id @default(uuid(7)) @db.Uuid
-  intentId            String                       @db.Uuid
+  id                  String                       @id @default(uuid(7)) @db.VarChar(36)
+  intentId            String                       @db.VarChar(36)
   intent              OutboxConsumerDispatchIntent @relation(fields: [intentId], references: [id], onDelete: Cascade)
-  consumerId          String                       @db.Uuid
+  consumerId          String                       @db.VarChar(36)
   consumer            RegisteredConsumer           @relation(fields: [consumerId], references: [id], onDelete: Restrict)
-  outboxId            String                       @db.Uuid
+  outboxId            String                       @db.VarChar(36)
   outbox              TransactionalOutbox          @relation(fields: [outboxId], references: [id], onDelete: Cascade)
   claimEpoch          BigInt                       @default(0)
   claimCount          Int                          @default(0)
-  leaseToken          String?                      @db.Uuid
+  leaseToken          String?                      @db.VarChar(36)
   leaseExpiresAt      DateTime?
   lastWorkerId        String?
   outcome             DeliveryOutcome?
-  outcomeReason       String?
+  outcomeReason       String? @db.Text
   executionDurationMs Int?
   createdAt           DateTime                     @default(now())
   updatedAt           DateTime                     @updatedAt
@@ -779,13 +779,13 @@ model DeliveryLedger {
 }
 
 model ConsumerAggregateCursor {
-  id                    String             @id @default(uuid(7)) @db.Uuid
-  consumerId            String             @db.Uuid
+  id                    String             @id @default(uuid(7)) @db.VarChar(36)
+  consumerId            String             @db.VarChar(36)
   consumer              RegisteredConsumer @relation(fields: [consumerId], references: [id], onDelete: Restrict)
   aggregateType         String
   aggregateId           String
   lastDeliveredSequence BigInt             @default(0)
-  lastDeliveredOutboxId String?            @db.Uuid
+  lastDeliveredOutboxId String?            @db.VarChar(36)
   updatedAt             DateTime           @updatedAt
 
   @@unique([consumerId, aggregateType, aggregateId])
@@ -793,16 +793,16 @@ model ConsumerAggregateCursor {
 }
 
 model SequenceResolutionRecord {
-  id              String              @id @default(uuid(7)) @db.Uuid
-  consumerId      String              @db.Uuid
+  id              String              @id @default(uuid(7)) @db.VarChar(36)
+  consumerId      String              @db.VarChar(36)
   consumer        RegisteredConsumer  @relation(fields: [consumerId], references: [id], onDelete: Restrict)
   aggregateType   String
   aggregateId     String
   sequenceNumber  BigInt
-  outboxId        String              @db.Uuid
+  outboxId        String              @db.VarChar(36)
   outbox          TransactionalOutbox @relation(fields: [outboxId], references: [id], onDelete: Cascade)
   status          ResolutionStatus    @default(IN_FLIGHT)
-  resolutionNotes String?
+  resolutionNotes String? @db.Text
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
 
@@ -812,7 +812,7 @@ model SequenceResolutionRecord {
 }
 
 model TransactionalOutboxArchive {
-  id                    String          @id @db.Uuid
+  id                    String          @id @db.VarChar(36)
   aggregateType         String
   aggregateId           String
   eventType             String
@@ -830,7 +830,7 @@ model TransactionalOutboxArchive {
   archivedAt            DateTime
   createdAt             DateTime
   updatedAt             DateTime
-  archiveBatchId        String          @db.Uuid
+  archiveBatchId        String          @db.VarChar(36)
   archivedReason        ArchivalReason
   archivedTimestamp     DateTime        @default(now())
 
@@ -840,16 +840,16 @@ model TransactionalOutboxArchive {
 }
 
 model OutboxConsumerDispatchIntentArchive {
-  id                String               @id @db.Uuid
-  outboxId          String               @db.Uuid
-  consumerId        String               @db.Uuid
+  id                String               @id @db.VarChar(36)
+  outboxId          String               @db.VarChar(36)
+  consumerId        String               @db.VarChar(36)
   sequenceNumber    BigInt
   status            DispatchIntentStatus
   deliveredAt       DateTime?
   archivedAt        DateTime
   createdAt         DateTime
   updatedAt         DateTime
-  archiveBatchId    String               @db.Uuid
+  archiveBatchId    String               @db.VarChar(36)
   archivedReason    ArchivalReason
   archivedTimestamp DateTime             @default(now())
 
@@ -859,21 +859,21 @@ model OutboxConsumerDispatchIntentArchive {
 }
 
 model DeliveryLedgerArchive {
-  id                  String           @id @db.Uuid
-  intentId            String           @db.Uuid
-  consumerId          String           @db.Uuid
-  outboxId            String           @db.Uuid
+  id                  String           @id @db.VarChar(36)
+  intentId            String           @db.VarChar(36)
+  consumerId          String           @db.VarChar(36)
+  outboxId            String           @db.VarChar(36)
   claimEpoch          BigInt
   claimCount          Int
-  leaseToken          String?          @db.Uuid
+  leaseToken          String?          @db.VarChar(36)
   leaseExpiresAt      DateTime?
   lastWorkerId        String?
   outcome             DeliveryOutcome?
-  outcomeReason       String?
+  outcomeReason       String? @db.Text
   executionDurationMs Int?
   createdAt           DateTime
   updatedAt           DateTime
-  archiveBatchId      String           @db.Uuid
+  archiveBatchId      String           @db.VarChar(36)
   archivedReason      ArchivalReason
   archivedTimestamp   DateTime         @default(now())
 

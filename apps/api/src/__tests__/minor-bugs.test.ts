@@ -47,11 +47,11 @@ describe('Minor Bug Fixes (M-1 to M-10) — Verification Suite', () => {
               },
               {
                 OR: [
-                  { employeeId: { contains: 'driverJohn', mode: 'insensitive' } },
-                  { firstName: { contains: 'driverJohn', mode: 'insensitive' } },
-                  { lastName: { contains: 'driverJohn', mode: 'insensitive' } },
-                  { email: { contains: 'driverJohn', mode: 'insensitive' } },
-                  { phone: { contains: 'driverJohn', mode: 'insensitive' } },
+                  { employeeId: { contains: 'driverJohn' } },
+                  { firstName: { contains: 'driverJohn' } },
+                  { lastName: { contains: 'driverJohn' } },
+                  { email: { contains: 'driverJohn' } },
+                  { phone: { contains: 'driverJohn' } },
                 ],
               },
             ],

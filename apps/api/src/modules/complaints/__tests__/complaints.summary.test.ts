@@ -140,7 +140,7 @@ describe('GET /complaints/summary - Security & Role Scoping', () => {
         { assignedToId: 'exec-1' },
         { vehicle: { siteInchargeId: 'exec-1' } },
         { driver: { vehicles: { some: { siteInchargeId: 'exec-1' } } } },
-        { vehicle: { siteIncharge: { site: { equals: 'Bay-North', mode: 'insensitive' } } } },
+        { vehicle: { siteIncharge: { site: { equals: 'Bay-North' } } } },
       ]),
     );
 

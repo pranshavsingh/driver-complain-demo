@@ -64,7 +64,7 @@ export async function createMaintenanceRecord(
   if (!targetVehicleId && parsed.vehicleNumber) {
     const foundVehicle = await prisma.vehicle.findFirst({
       where: {
-        plateNumber: { equals: parsed.vehicleNumber.trim(), mode: 'insensitive' },
+        plateNumber: { equals: parsed.vehicleNumber.trim() },
       },
     });
     if (foundVehicle) {
@@ -181,22 +181,22 @@ export async function listMaintenanceRecords(opts: MaintenanceFilterOpts) {
   if (opts.search && opts.search.trim()) {
     const term = opts.search.trim();
     where.OR = [
-      { itemNumber: { contains: term, mode: 'insensitive' } },
-      { oldItemNumber: { contains: term, mode: 'insensitive' } },
-      { brand: { contains: term, mode: 'insensitive' } },
-      { notes: { contains: term, mode: 'insensitive' } },
+      { itemNumber: { contains: term } },
+      { oldItemNumber: { contains: term } },
+      { brand: { contains: term } },
+      { notes: { contains: term } },
       {
         vehicle: {
-          plateNumber: { contains: term, mode: 'insensitive' },
+          plateNumber: { contains: term },
         },
       },
       {
         driver: {
           user: {
             OR: [
-              { firstName: { contains: term, mode: 'insensitive' } },
-              { lastName: { contains: term, mode: 'insensitive' } },
-              { employeeId: { contains: term, mode: 'insensitive' } },
+              { firstName: { contains: term } },
+              { lastName: { contains: term } },
+              { employeeId: { contains: term } },
             ],
           },
         },

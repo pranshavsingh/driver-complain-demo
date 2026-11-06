@@ -72,8 +72,8 @@ describe('getDelayedLoadingCount - Authorization & Scoping', () => {
       expect.arrayContaining([
         { driver: { vehicles: { some: { siteInchargeId: 'exec-user-1' } } } },
         { complaint: { vehicle: { siteInchargeId: 'exec-user-1' } } },
-        { driver: { vehicles: { some: { siteIncharge: { site: { equals: 'West-Hub', mode: 'insensitive' } } } } } },
-        { complaint: { vehicle: { siteIncharge: { site: { equals: 'West-Hub', mode: 'insensitive' } } } } },
+        { driver: { vehicles: { some: { siteIncharge: { site: { equals: 'West-Hub' } } } } } },
+        { complaint: { vehicle: { siteIncharge: { site: { equals: 'West-Hub' } } } } },
       ]),
     );
   });

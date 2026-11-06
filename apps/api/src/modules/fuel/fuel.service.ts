@@ -56,7 +56,7 @@ export async function createFuelRecord(
   if (!targetVehicleId && parsed.vehicleNumber) {
     const foundVehicle = await prisma.vehicle.findFirst({
       where: {
-        plateNumber: { equals: parsed.vehicleNumber.trim(), mode: 'insensitive' },
+        plateNumber: { equals: parsed.vehicleNumber.trim() },
       },
     });
     if (foundVehicle) {

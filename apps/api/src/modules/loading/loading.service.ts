@@ -561,8 +561,8 @@ export async function getDelayedLoadingCount(actor: Actor): Promise<number> {
 
     if (scope.site) {
       scopeConditions.push(
-        { driver: { vehicles: { some: { siteIncharge: { site: { equals: scope.site, mode: 'insensitive' } } } } } },
-        { complaint: { vehicle: { siteIncharge: { site: { equals: scope.site, mode: 'insensitive' } } } } },
+        { driver: { vehicles: { some: { siteIncharge: { site: { equals: scope.site } } } } } },
+        { complaint: { vehicle: { siteIncharge: { site: { equals: scope.site } } } } },
       );
     }
 
@@ -685,15 +685,15 @@ function tripWhere(filters: TripFilters): Prisma.LoadingRecordWhereInput {
     ...(search
       ? {
           OR: [
-            { locationName: { contains: search, mode: 'insensitive' } },
-            { reachedAddress: { contains: search, mode: 'insensitive' } },
-            { tripStartAddress: { contains: search, mode: 'insensitive' } },
-            { tripCompletedAddress: { contains: search, mode: 'insensitive' } },
-            { driver: { user: { firstName: { contains: search, mode: 'insensitive' } } } },
-            { driver: { user: { lastName: { contains: search, mode: 'insensitive' } } } },
-            { driver: { user: { employeeId: { contains: search, mode: 'insensitive' } } } },
-            { driver: { licenseNumber: { contains: search, mode: 'insensitive' } } },
-            { driver: { vehicles: { some: { plateNumber: { contains: search, mode: 'insensitive' } } } } },
+            { locationName: { contains: search } },
+            { reachedAddress: { contains: search } },
+            { tripStartAddress: { contains: search } },
+            { tripCompletedAddress: { contains: search } },
+            { driver: { user: { firstName: { contains: search } } } },
+            { driver: { user: { lastName: { contains: search } } } },
+            { driver: { user: { employeeId: { contains: search } } } },
+            { driver: { licenseNumber: { contains: search } } },
+            { driver: { vehicles: { some: { plateNumber: { contains: search } } } } },
           ],
         }
       : {}),

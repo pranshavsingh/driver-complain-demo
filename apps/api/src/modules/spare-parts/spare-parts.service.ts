@@ -171,8 +171,8 @@ export async function createRequest(
     let vehicle = await prisma.vehicle.findFirst({
       where: {
         OR: [
-          { plateNumber: { equals: rawNumber, mode: 'insensitive' } },
-          { vin: { equals: rawNumber, mode: 'insensitive' } },
+          { plateNumber: { equals: rawNumber } },
+          { vin: { equals: rawNumber } },
         ],
       },
     });
@@ -378,31 +378,31 @@ export async function listRequests(actor: Actor, query: SparePartListQuery) {
   if (query.search && query.search.trim()) {
     const term = query.search.trim();
     where.OR = [
-      { requestNo: { contains: term, mode: 'insensitive' } },
-      { partName: { contains: term, mode: 'insensitive' } },
-      { description: { contains: term, mode: 'insensitive' } },
-      { issuedPartName: { contains: term, mode: 'insensitive' } },
-      { issuedPartNo: { contains: term, mode: 'insensitive' } },
-      { returnedPartNo: { contains: term, mode: 'insensitive' } },
+      { requestNo: { contains: term } },
+      { partName: { contains: term } },
+      { description: { contains: term } },
+      { issuedPartName: { contains: term } },
+      { issuedPartNo: { contains: term } },
+      { returnedPartNo: { contains: term } },
       {
         vehicle: {
-          plateNumber: { contains: term, mode: 'insensitive' },
+          plateNumber: { contains: term },
         },
       },
       {
         driver: {
           user: {
             OR: [
-              { firstName: { contains: term, mode: 'insensitive' } },
-              { lastName: { contains: term, mode: 'insensitive' } },
-              { employeeId: { contains: term, mode: 'insensitive' } },
+              { firstName: { contains: term } },
+              { lastName: { contains: term } },
+              { employeeId: { contains: term } },
             ],
           },
         },
       },
       {
         warehouse: {
-          name: { contains: term, mode: 'insensitive' },
+          name: { contains: term },
         },
       },
     ];

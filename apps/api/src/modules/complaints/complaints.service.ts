@@ -41,7 +41,7 @@ async function findLeastLoadedAdmin(
         category: category as Prisma.EnumComplaintCategoryFilter,
         OR: [
           ...(siteInchargeId ? [{ createdByAdminId: siteInchargeId }, { id: siteInchargeId }] : []),
-          ...(vehicleSite ? [{ site: { equals: vehicleSite, mode: 'insensitive' as const } }] : []),
+          ...(vehicleSite ? [{ site: { equals: vehicleSite } }] : []),
         ],
       },
       select: { id: true },
@@ -276,8 +276,8 @@ export async function create(
     let vehicle = await prisma.vehicle.findFirst({
       where: {
         OR: [
-          { plateNumber: { equals: rawNumber, mode: 'insensitive' } },
-          { vin: { equals: rawNumber, mode: 'insensitive' } },
+          { plateNumber: { equals: rawNumber } },
+          { vin: { equals: rawNumber } },
         ],
       },
     });
@@ -359,7 +359,7 @@ export async function create(
         where: {
           driverId: driver.id,
           category: categoryToUse,
-          title: { equals: finalTitle, mode: 'insensitive' },
+          title: { equals: finalTitle },
           ...(vehicleIdToUse ? { vehicleId: vehicleIdToUse } : {}),
           status: { notIn: ['RESOLVED', 'CLOSED'] },
           createdAt: { gte: fiveMinutesAgo },
@@ -645,7 +645,7 @@ export async function create(
         OR: [
           { category: categoryToUse },
           ...(siteInchargeIdForVehicle ? [{ id: siteInchargeIdForVehicle }] : []),
-          ...(vehicleSite ? [{ site: { equals: vehicleSite, mode: 'insensitive' as const } }] : []),
+          ...(vehicleSite ? [{ site: { equals: vehicleSite } }] : []),
         ],
       },
       select: { id: true },
@@ -729,7 +729,7 @@ export async function create(
       OR: [
         { category: categoryToUse },
         ...(siteInchargeIdForVehicle ? [{ id: siteInchargeIdForVehicle }] : []),
-        ...(vehicleSite ? [{ site: { equals: vehicleSite, mode: 'insensitive' as const } }] : []),
+        ...(vehicleSite ? [{ site: { equals: vehicleSite } }] : []),
       ],
     },
     select: { id: true },
@@ -822,7 +822,7 @@ async function buildWhere(
       ];
       if (scope.site) {
         adminOrConditions.push({
-          vehicle: { siteIncharge: { site: { equals: scope.site, mode: 'insensitive' } } },
+          vehicle: { siteIncharge: { site: { equals: scope.site } } },
         });
       }
       andConditions.push({ OR: adminOrConditions });
@@ -847,7 +847,7 @@ async function buildWhere(
 
     if (scope.site) {
       execOrConditions.push({
-        vehicle: { siteIncharge: { site: { equals: scope.site, mode: 'insensitive' } } },
+        vehicle: { siteIncharge: { site: { equals: scope.site } } },
       });
     }
 
@@ -900,15 +900,15 @@ async function buildWhere(
   if (query.search) {
     andConditions.push({
       OR: [
-        { complaintNo: { contains: query.search, mode: 'insensitive' } },
-        { title: { contains: query.search, mode: 'insensitive' } },
-        { description: { contains: query.search, mode: 'insensitive' } },
+        { complaintNo: { contains: query.search } },
+        { title: { contains: query.search } },
+        { description: { contains: query.search } },
         { driver: { user: { OR: [
-          { firstName: { contains: query.search, mode: 'insensitive' } },
-          { lastName: { contains: query.search, mode: 'insensitive' } },
-          { employeeId: { contains: query.search, mode: 'insensitive' } },
+          { firstName: { contains: query.search } },
+          { lastName: { contains: query.search } },
+          { employeeId: { contains: query.search } },
         ] } } },
-        { vehicle: { plateNumber: { contains: query.search, mode: 'insensitive' } } },
+        { vehicle: { plateNumber: { contains: query.search } } },
       ],
     });
   }

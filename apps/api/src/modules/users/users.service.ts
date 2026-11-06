@@ -70,7 +70,7 @@ export async function createUser(actor: Actor, input: CreateUser): Promise<UserP
   // 1. Employee ID Uniqueness Check (B-Tree unique index)
   const normEmpId = input.employeeId.trim().toUpperCase();
   const existingEmp = await prisma.user.findFirst({
-    where: { employeeId: { equals: normEmpId, mode: 'insensitive' } },
+    where: { employeeId: { equals: normEmpId } },
   });
   if (existingEmp) {
     throw ApiError.badRequest(`Employee ID "${normEmpId}" is already registered.`);
@@ -92,7 +92,7 @@ export async function createUser(actor: Actor, input: CreateUser): Promise<UserP
   const normEmail = input.email?.trim() ? input.email.trim().toLowerCase() : null;
   if (normEmail) {
     const existingEmail = await prisma.user.findFirst({
-      where: { email: { equals: normEmail, mode: 'insensitive' } },
+      where: { email: { equals: normEmail } },
     });
     if (existingEmail) {
       throw ApiError.badRequest(`Email address "${normEmail}" is already registered.`);
@@ -106,7 +106,7 @@ export async function createUser(actor: Actor, input: CreateUser): Promise<UserP
       throw ApiError.badRequest('Driving License (DL) number is required for driver accounts.');
     }
     const existingLicense = await prisma.driver.findFirst({
-      where: { licenseNumber: { equals: normLicense, mode: 'insensitive' } },
+      where: { licenseNumber: { equals: normLicense } },
     });
     if (existingLicense) {
       throw ApiError.badRequest(`Driving License "${normLicense}" is already registered.`);
@@ -262,11 +262,11 @@ export async function listUsers(
   if (filters?.search) {
     andConditions.push({
       OR: [
-        { employeeId: { contains: filters.search, mode: 'insensitive' } },
-        { firstName: { contains: filters.search, mode: 'insensitive' } },
-        { lastName: { contains: filters.search, mode: 'insensitive' } },
-        { email: { contains: filters.search, mode: 'insensitive' } },
-        { phone: { contains: filters.search, mode: 'insensitive' } },
+        { employeeId: { contains: filters.search } },
+        { firstName: { contains: filters.search } },
+        { lastName: { contains: filters.search } },
+        { email: { contains: filters.search } },
+        { phone: { contains: filters.search } },
       ],
     });
   }
@@ -327,7 +327,7 @@ export async function checkAvailability(query: {
     const norm = query.employeeId.trim().toUpperCase();
     const existing = await prisma.user.findFirst({
       where: {
-        employeeId: { equals: norm, mode: 'insensitive' },
+        employeeId: { equals: norm },
         ...(query.excludeUserId ? { id: { not: query.excludeUserId } } : {}),
       },
       select: { id: true },
@@ -359,7 +359,7 @@ export async function checkAvailability(query: {
     const norm = query.email.trim().toLowerCase();
     const existing = await prisma.user.findFirst({
       where: {
-        email: { equals: norm, mode: 'insensitive' },
+        email: { equals: norm },
         ...(query.excludeUserId ? { id: { not: query.excludeUserId } } : {}),
       },
       select: { id: true },
@@ -375,7 +375,7 @@ export async function checkAvailability(query: {
     const norm = query.licenseNumber.trim().toUpperCase();
     const existing = await prisma.driver.findFirst({
       where: {
-        licenseNumber: { equals: norm, mode: 'insensitive' },
+        licenseNumber: { equals: norm },
         ...(query.excludeUserId ? { user: { id: { not: query.excludeUserId } } } : {}),
       },
       select: { id: true },
@@ -523,7 +523,7 @@ export async function updateUser(actor: Actor, userId: string, input: UpdateUser
     if (normEmp !== user.employeeId) {
       const dup = await prisma.user.findFirst({
         where: {
-          employeeId: { equals: normEmp, mode: 'insensitive' },
+          employeeId: { equals: normEmp },
           id: { not: userId },
         },
       });
@@ -542,7 +542,7 @@ export async function updateUser(actor: Actor, userId: string, input: UpdateUser
     const normEmail = input.email.trim().toLowerCase();
     const dup = await prisma.user.findFirst({
       where: {
-        email: { equals: normEmail, mode: 'insensitive' },
+        email: { equals: normEmail },
         id: { not: userId },
       },
     });
@@ -567,7 +567,7 @@ export async function updateUser(actor: Actor, userId: string, input: UpdateUser
     const normDl = input.licenseNumber.trim().toUpperCase();
     const dupDl = await prisma.driver.findFirst({
       where: {
-        licenseNumber: { equals: normDl, mode: 'insensitive' },
+        licenseNumber: { equals: normDl },
         userId: { not: userId },
       },
     });
