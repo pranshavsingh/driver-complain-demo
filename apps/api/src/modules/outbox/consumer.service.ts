@@ -8,6 +8,7 @@ import type {
   ConsumerHandler,
 } from './outbox.types';
 import { ConsumerState, DeliveryOutcome } from './outbox.types';
+import { recordOutboxDelivery } from './outbox.metrics';
 
 type DbClient = typeof prisma | Prisma.TransactionClient;
 
@@ -211,5 +212,12 @@ export async function processDeliveryForConsumer(
     durationMs,
   });
 
+  if (outcome === DeliveryOutcome.DELIVERED) {
+    recordOutboxDelivery('success', 1);
+  } else if (outcome === DeliveryOutcome.RETRIABLE_FAILURE) {
+    recordOutboxDelivery('retry', 1);
+  } else {
+    recordOutboxDelivery('failure', 1);
+  }
   return { processed: true, outcome };
 }

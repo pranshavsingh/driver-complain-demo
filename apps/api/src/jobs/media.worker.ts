@@ -10,6 +10,7 @@ import { createRequire } from 'node:module';
 import { redis } from '../lib/redis';
 import { logger } from '../lib/logger';
 import { QUEUES } from './queue';
+import { instrumentWorker } from './queue-metrics';
 import type { AttachmentKind } from '@driver-complaint/shared-types';
 
 const require = createRequire(import.meta.url);
@@ -175,6 +176,8 @@ export async function startMediaWorkers(): Promise<void> {
     },
   );
 
+  instrumentWorker(complaintWorker, QUEUES.COMPLAINT_MEDIA);
+
   complaintWorker.on('failed', (job: unknown, err: unknown) => {
     const jobObj = job as { id?: string } | undefined;
     const errObj = err as { message?: string } | undefined;
@@ -215,6 +218,8 @@ export async function startMediaWorkers(): Promise<void> {
     },
     { connection: redis, concurrency: 5 },
   );
+
+  instrumentWorker(loadingWorker, QUEUES.LOADING_PHOTO);
 
   loadingWorker.on('failed', (job: unknown, err: unknown) => {
     const jobObj = job as { id?: string } | undefined;

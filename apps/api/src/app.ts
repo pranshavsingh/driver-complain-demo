@@ -6,7 +6,7 @@ import { logger } from './lib/logger';
 import { prisma } from './lib/prisma';
 import { pingRedis } from './lib/redis';
 import { Sentry } from './lib/sentry';
-import { register, metricsMiddleware, verifyMetricsAuth } from './lib/metrics';
+import { register, metricsMiddleware, verifyMetricsAuth, collectSystemMetrics, dbUpGauge } from './lib/metrics';
 import { requestId } from './middleware/request-id';
 import { apiRateLimiter } from './middleware/rate-limit';
 import { notFound } from './middleware/not-found';
@@ -73,6 +73,7 @@ export function createApp(): Express {
     try {
       // 1. Bounded query to verify PostgreSQL connection pool health
       await prisma.$queryRaw`SELECT 1`;
+      dbUpGauge.set(1);
 
       // 2. Verify Redis reachability when configured or required in production
       const redisHealth = await pingRedis();
@@ -99,6 +100,7 @@ export function createApp(): Express {
         timestamp: new Date().toISOString(),
       });
     } catch (err: unknown) {
+      dbUpGauge.set(0);
       const message = err instanceof Error ? err.message : 'Database check failed';
       logger.error({ err }, 'Readiness probe failed');
       res.status(503).json({
@@ -113,6 +115,7 @@ export function createApp(): Express {
   // Prometheus Metrics scrape endpoint (protected)
   app.get('/metrics', verifyMetricsAuth, async (_req, res) => {
     try {
+      await collectSystemMetrics();
       res.set('Content-Type', register.contentType);
       res.end(await register.metrics());
     } catch (err) {

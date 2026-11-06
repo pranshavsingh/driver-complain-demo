@@ -10,17 +10,25 @@ export const QUEUES = {
   LOADING_PHOTO: 'loading-photo',
   TOKEN_CLEANUP: 'token-cleanup',
   SLA_ESCALATION: 'sla-escalation',
+  OUTBOX_DISPATCH: 'outbox-dispatch',
+  OUTBOX_DELIVERY: 'outbox-delivery',
 } as const;
 
 export interface GenericQueue {
   add(name: string, data: unknown, opts?: unknown): Promise<unknown>;
   close(): Promise<void>;
+  getJobCounts?(...types: string[]): Promise<Record<string, number>>;
 }
 
 const queues = new Map<string, GenericQueue>();
 
+/** Access all currently registered queue instances for metrics collection. */
+export function getRegisteredQueues(): Map<string, GenericQueue> {
+  return queues;
+}
+
 /** Lazily create / reuse a named queue. Returns null when Redis is unavailable. */
-async function getQueue(name: string): Promise<GenericQueue | null> {
+export async function getQueue(name: string): Promise<GenericQueue | null> {
   if (!redis) return null;
 
   const existing = queues.get(name);
@@ -54,75 +62,58 @@ export interface LoadingPhotoJob {
   folder: string;
 }
 
-// ────────────────────────────── Enqueue helpers ──────────────────────────────
+// ────────────────────────────── Producer helpers ──────────────────────────
 
 /**
  * Enqueue a complaint media processing job.
- * @returns `true` if enqueued successfully; `false` if Redis is unavailable.
+ * Jobs with priority === 'URGENT' are placed at the front of the queue (priority: 1).
  */
-export async function enqueueComplaintMedia(
-  job: ComplaintMediaJob,
-): Promise<boolean> {
+export async function enqueueComplaintMedia(data: ComplaintMediaJob): Promise<boolean> {
   const q = await getQueue(QUEUES.COMPLAINT_MEDIA);
-  if (!q) return false;
+  if (!q) {
+    logger.info({ complaintId: data.complaintId }, 'Redis not available — falling back to inline media upload');
+    return false;
+  }
 
-  const priorityWeight: Record<string, number> = {
-    URGENT: 1,
-    HIGH: 2,
-    MEDIUM: 3,
-    LOW: 4,
-  };
+  // DSA: Priority Queue — lower priority number = higher priority in BullMQ.
+  const priority = data.priority === 'URGENT' ? 1 : 10;
 
-  await q.add('process', job, {
-    priority: priorityWeight[job.priority] ?? 3,
+  await q.add('process-media', data, {
+    priority,
     attempts: 3,
-    backoff: { type: 'exponential', delay: 5000 },
-    removeOnComplete: 100,
-    removeOnFail: 500,
+    backoff: { type: 'exponential', delay: 2000 },
+    removeOnComplete: 100, // Keep last 100 completed jobs for debugging.
+    removeOnFail: 500,     // Keep failed jobs for inspection.
   });
 
-  logger.info(
-    { complaintId: job.complaintId, priority: job.priority },
-    'Complaint media job enqueued',
-  );
+  logger.info({ complaintId: data.complaintId, priority }, 'Enqueued complaint media job');
   return true;
 }
 
-/**
- * Enqueue a loading photo upload job.
- * @returns `true` if enqueued; `false` if Redis is unavailable.
- */
-export async function enqueueLoadingPhoto(
-  job: LoadingPhotoJob,
-): Promise<boolean> {
+/** Enqueue a loading milestone photo upload. */
+export async function enqueueLoadingPhoto(data: LoadingPhotoJob): Promise<boolean> {
   const q = await getQueue(QUEUES.LOADING_PHOTO);
   if (!q) return false;
 
-  await q.add('upload', job, {
+  await q.add('process-photo', data, {
     attempts: 3,
-    backoff: { type: 'exponential', delay: 3000 },
-    removeOnComplete: 100,
+    backoff: { type: 'exponential', delay: 2000 },
+    removeOnComplete: 50,
     removeOnFail: 200,
   });
+
+  logger.info({ loadingRecordId: data.loadingRecordId, stage: data.stage }, 'Enqueued loading photo job');
   return true;
 }
 
-/**
- * Schedule a one-off token cleanup job (called from the cleanup cron).
- */
-export async function enqueueTokenCleanup(): Promise<boolean> {
-  const q = await getQueue(QUEUES.TOKEN_CLEANUP);
-  if (!q) return false;
-
-  await q.add('cleanup', {}, { removeOnComplete: 5, removeOnFail: 10 });
-  return true;
-}
-
-// ────────────────────────────── Shutdown ──────────────────────────────
-
+/** Close all queue connections on graceful shutdown. */
 export async function closeQueues(): Promise<void> {
-  for (const q of queues.values()) {
-    await q.close().catch(() => {});
+  for (const [name, q] of queues.entries()) {
+    try {
+      await q.close();
+    } catch (err) {
+      logger.warn({ err, queue: name }, 'Error closing queue');
+    }
   }
   queues.clear();
 }

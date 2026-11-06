@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
 import { env } from '../config/env';
 import { logger } from './logger';
+import { dbUpGauge, dbQueryDurationSeconds } from './metrics';
 
 /**
  * Reuse a single PrismaClient across hot-reloads in dev; a fresh one per process
@@ -8,7 +9,7 @@ import { logger } from './logger';
  */
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
-const basePrisma =
+export const basePrisma =
   globalForPrisma.prisma ??
   new PrismaClient({
     log: env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
@@ -73,24 +74,60 @@ export async function withDbRetry<T>(fn: () => Promise<T>, maxRetries = 3): Prom
   }
 }
 
+/**
+ * Fast, non-retrying connectivity probe for readiness checks and metric scrapers.
+ * Guarantees a bounded execution time (default 1500ms) without triggering multi-attempt retry loops.
+ */
+export async function pingDatabase(timeoutMs = 1500): Promise<boolean> {
+  try {
+    const probePromise = basePrisma.$queryRaw`SELECT 1`;
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`Database ping timed out after ${timeoutMs}ms`)), timeoutMs).unref(),
+    );
+    await Promise.race([probePromise, timeoutPromise]);
+    dbUpGauge.set(1);
+    return true;
+  } catch (_err) {
+    dbUpGauge.set(0);
+    return false;
+  }
+}
+
+/**
+ * NOTE ON DATABASE OBSERVABILITY & POOL METRICS:
+ * 1. Model queries ($allModels) only intercept high-level model operations.
+ *    Raw operations ($queryRaw, $executeRaw, $queryRawUnsafe, $executeRawUnsafe) are instrumented via the client proxy below
+ *    to ensure comprehensive coverage across both model and raw database traffic without double-counting.
+ * 2. Prisma Client executes queries using an internal compiled Rust query engine.
+ *    The Rust engine does not export active/idle/waiting pool metrics to JavaScript
+ *    runtime without previewFeatures metrics.
+ * 3. In this production architecture, PgBouncer (infra/pgbouncer.ini) acts as the
+ *    true transaction-pooling proxy. Standard production pool instrumentation
+ *    is performed via pgbouncer_exporter scraping SHOW POOLS and SHOW STATS.
+ */
 const extendedPrisma = basePrisma.$extends({
   query: {
     $allModels: {
       async $allOperations({ model, operation, args, query }) {
         return withDbRetry(async () => {
-          const t0 = Date.now();
-          if (process.env.NODE_ENV === 'test') {
-             console.log(`[${new Date().toISOString()}] [PRISMA] ${model}.${operation} START`);
-          }
+          const start = process.hrtime();
           try {
             const res = await query(args);
-            if (process.env.NODE_ENV === 'test') {
-               console.log(`[${new Date().toISOString()}] [PRISMA] ${model}.${operation} SUCCESS (${Date.now() - t0}ms)`);
-            }
+            const [seconds, nanoseconds] = process.hrtime(start);
+            dbQueryDurationSeconds.observe(
+              { model: model || 'raw', operation: operation || 'unknown' },
+              seconds + nanoseconds / 1e9,
+            );
+            dbUpGauge.set(1);
             return res;
           } catch (e: any) {
-            if (process.env.NODE_ENV === 'test') {
-               console.log(`[${new Date().toISOString()}] [PRISMA] ${model}.${operation} ERROR: ${e?.message} (${Date.now() - t0}ms)`);
+            const [seconds, nanoseconds] = process.hrtime(start);
+            dbQueryDurationSeconds.observe(
+              { model: model || 'raw', operation: operation || 'unknown' },
+              seconds + nanoseconds / 1e9,
+            );
+            if (isConnectionError(e)) {
+              dbUpGauge.set(0);
             }
             throw e;
           }
@@ -102,8 +139,8 @@ const extendedPrisma = basePrisma.$extends({
 
 export type ExtendedPrismaClient = typeof extendedPrisma;
 
-// Proxy extendedPrisma to wrap batch $transaction automatically with retry logic,
-// while executing interactive transaction callbacks exactly once without callback retry replay.
+// Proxy extendedPrisma to wrap batch $transaction, $queryRaw, $executeRaw, $queryRawUnsafe, and $executeRawUnsafe
+// with metrics and retry logic, while executing interactive transaction callbacks exactly once without callback retry replay.
 export const prisma: ExtendedPrismaClient = new Proxy(extendedPrisma, {
   get(target, prop, receiver) {
     if (prop === '$transaction') {
@@ -121,9 +158,43 @@ export const prisma: ExtendedPrismaClient = new Proxy(extendedPrisma, {
         return withDbRetry(async () => Reflect.apply(origTransaction, target, args));
       };
     }
+
+    if (
+      prop === '$queryRaw' ||
+      prop === '$executeRaw' ||
+      prop === '$queryRawUnsafe' ||
+      prop === '$executeRawUnsafe'
+    ) {
+      const orig = typeof (target as any)[prop] === 'function'
+        ? (target as any)[prop]
+        : (basePrisma as any)[prop];
+      return async (...args: any[]) => {
+        return withDbRetry(async () => {
+          const start = process.hrtime();
+          try {
+            const res = await orig.apply(target, args);
+            const [seconds, nanoseconds] = process.hrtime(start);
+            dbQueryDurationSeconds.observe(
+              { model: 'raw', operation: String(prop) },
+              seconds + nanoseconds / 1e9,
+            );
+            dbUpGauge.set(1);
+            return res;
+          } catch (e: any) {
+            const [seconds, nanoseconds] = process.hrtime(start);
+            dbQueryDurationSeconds.observe(
+              { model: 'raw', operation: String(prop) },
+              seconds + nanoseconds / 1e9,
+            );
+            if (isConnectionError(e)) {
+              dbUpGauge.set(0);
+            }
+            throw e;
+          }
+        });
+      };
+    }
+
     return Reflect.get(target, prop, receiver);
   },
 }) as ExtendedPrismaClient;
-
-
-

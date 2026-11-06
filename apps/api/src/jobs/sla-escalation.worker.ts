@@ -13,6 +13,7 @@ import { redis } from '../lib/redis';
 import { logger } from '../lib/logger';
 import { QUEUES } from './queue';
 import { checkAndEscalateSlaBreaches } from '../modules/complaints/sla-escalation.service';
+import { instrumentWorker } from './queue-metrics';
 
 const require = createRequire(import.meta.url);
 
@@ -49,6 +50,8 @@ export async function startSlaEscalationScheduler(): Promise<void> {
         },
         { connection: redis, concurrency: 1 },
       );
+
+      instrumentWorker(worker, QUEUES.SLA_ESCALATION || 'sla-escalation');
 
       worker.on('failed', (_job: unknown, err: unknown) => {
         const msg = err instanceof Error ? err.message : String(err);

@@ -4,10 +4,12 @@ import { logger } from '../../lib/logger';
 import { dispatchPendingOutboxEvents, startDispatcherScheduler, stopDispatcherScheduler } from './dispatcher.service';
 import { processDeliveryForConsumer } from './consumer.service';
 import { startWatchdogScheduler, stopWatchdogScheduler } from './watchdog.service';
+import { instrumentWorker } from '../../jobs/queue-metrics';
+import { QUEUES } from '../../jobs/queue';
 
 export const OUTBOX_QUEUES = {
-  DISPATCH: 'outbox-dispatch',
-  DELIVERY: 'outbox-delivery',
+  DISPATCH: QUEUES.OUTBOX_DISPATCH,
+  DELIVERY: QUEUES.OUTBOX_DELIVERY,
 } as const;
 
 let dispatchQueue: Queue | null = null;
@@ -15,6 +17,11 @@ let deliveryQueue: Queue | null = null;
 let dispatchWorker: Worker | null = null;
 let deliveryWorker: Worker | null = null;
 let isStarted = false;
+
+/** Returns active outbox queues for metrics collection. */
+export function getOutboxQueues(): { dispatchQueue: Queue | null; deliveryQueue: Queue | null } {
+  return { dispatchQueue, deliveryQueue };
+}
 
 export async function enqueueOutboxDispatch(outboxId: string): Promise<boolean> {
   if (!dispatchQueue) return false;
@@ -74,6 +81,9 @@ export async function startOutboxWorkers(): Promise<void> {
         concurrency: 10,
       },
     );
+
+    instrumentWorker(dispatchWorker, OUTBOX_QUEUES.DISPATCH);
+    instrumentWorker(deliveryWorker, OUTBOX_QUEUES.DELIVERY);
 
     dispatchWorker.on('error', (err) => {
       logger.error({ err }, 'Outbox dispatch worker error');

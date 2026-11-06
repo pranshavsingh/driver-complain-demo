@@ -5,6 +5,12 @@ import type { Role, ComplaintEventPayload, RealtimeEvent } from '@driver-complai
 import { verifyAccessToken } from '../lib/jwt';
 import { logger } from '../lib/logger';
 import { redis, duplicateRedis } from '../lib/redis';
+import {
+  socketioConnectedClients,
+  socketioConnectionsTotal,
+  socketioDisconnectionsTotal,
+  normalizeDisconnectReason,
+} from '../lib/metrics';
 
 /** What we attach to each authenticated socket after the handshake. */
 interface SocketData {
@@ -77,6 +83,10 @@ export function initRealtime(server: HttpServer): RealtimeServer {
 
   instance.on('connection', (socket) => {
     const { userId, role } = socket.data;
+
+    socketioConnectedClients.inc();
+    socketioConnectionsTotal.inc();
+
     // SAFETY-CRITICAL: a socket only ever joins its OWN user room and its verified role room.
     void socket.join(userRoom(userId));
     if (role) {
@@ -85,6 +95,8 @@ export function initRealtime(server: HttpServer): RealtimeServer {
     logger.debug({ userId, role, socketId: socket.id }, 'Realtime client connected');
 
     socket.on('disconnect', (reason) => {
+      socketioConnectedClients.dec();
+      socketioDisconnectionsTotal.inc({ reason: normalizeDisconnectReason(reason) });
       logger.debug({ userId, socketId: socket.id, reason }, 'Realtime client disconnected');
     });
   });
@@ -160,6 +172,7 @@ export async function closeRealtime(): Promise<void> {
   if (!io) return;
   const instance = io;
   io = null;
+  socketioConnectedClients.set(0);
   await new Promise<void>((resolve) => {
     instance.close(() => resolve());
   });
