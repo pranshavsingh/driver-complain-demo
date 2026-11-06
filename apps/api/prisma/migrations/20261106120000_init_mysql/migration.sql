@@ -26,7 +26,7 @@ CREATE TABLE `User` (
     INDEX `User_createdByAdminId_idx`(`createdByAdminId`),
     INDEX `User_createdAt_id_idx`(`createdAt`, `id`),
     PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
 -- CreateTable
 CREATE TABLE `Driver` (
@@ -40,7 +40,7 @@ CREATE TABLE `Driver` (
     UNIQUE INDEX `Driver_userId_key`(`userId`),
     UNIQUE INDEX `Driver_licenseNumber_key`(`licenseNumber`),
     PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
 -- CreateTable
 CREATE TABLE `Vehicle` (
@@ -66,7 +66,7 @@ CREATE TABLE `Vehicle` (
     INDEX `Vehicle_siteInchargeId_idx`(`siteInchargeId`),
     INDEX `Vehicle_createdAt_id_idx`(`createdAt`, `id`),
     PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
 -- CreateTable
 CREATE TABLE `Complaint` (
@@ -104,7 +104,7 @@ CREATE TABLE `Complaint` (
     INDEX `Complaint_vehicleId_idx`(`vehicleId`),
     UNIQUE INDEX `Complaint_driverId_idempotencyKey_key`(`driverId`, `idempotencyKey`),
     PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
 -- CreateTable
 CREATE TABLE `ComplaintAttachment` (
@@ -125,7 +125,7 @@ CREATE TABLE `ComplaintAttachment` (
     UNIQUE INDEX `ComplaintAttachment_publicId_key`(`publicId`),
     INDEX `ComplaintAttachment_complaintId_idx`(`complaintId`),
     PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
 -- CreateTable
 CREATE TABLE `ComplaintUpdate` (
@@ -139,7 +139,7 @@ CREATE TABLE `ComplaintUpdate` (
 
     INDEX `ComplaintUpdate_complaintId_idx`(`complaintId`),
     PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
 -- CreateTable
 CREATE TABLE `Notification` (
@@ -158,7 +158,7 @@ CREATE TABLE `Notification` (
     INDEX `Notification_userId_isRead_idx`(`userId`, `isRead`),
     INDEX `Notification_userId_clearedAt_idx`(`userId`, `clearedAt`),
     PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
 -- CreateTable
 CREATE TABLE `DeviceToken` (
@@ -172,7 +172,7 @@ CREATE TABLE `DeviceToken` (
     UNIQUE INDEX `DeviceToken_token_key`(`token`),
     INDEX `DeviceToken_userId_idx`(`userId`),
     PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
 -- CreateTable
 CREATE TABLE `RefreshToken` (
@@ -194,7 +194,7 @@ CREATE TABLE `RefreshToken` (
     INDEX `RefreshToken_familyId_idx`(`familyId`),
     INDEX `RefreshToken_expiresAt_idx`(`expiresAt`),
     PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
 -- CreateTable
 CREATE TABLE `Counter` (
@@ -202,7 +202,7 @@ CREATE TABLE `Counter` (
     `value` INTEGER NOT NULL DEFAULT 0,
 
     PRIMARY KEY (`name`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
 -- CreateTable
 CREATE TABLE `LoadingRecord` (
@@ -251,7 +251,7 @@ CREATE TABLE `LoadingRecord` (
     INDEX `LoadingRecord_reachedAt_idx`(`reachedAt`),
     INDEX `LoadingRecord_driverId_status_createdAt_idx`(`driverId`, `status`, `createdAt`),
     PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
 -- CreateTable
 CREATE TABLE `FuelRecord` (
@@ -274,7 +274,7 @@ CREATE TABLE `FuelRecord` (
     INDEX `FuelRecord_type_idx`(`type`),
     INDEX `FuelRecord_createdAt_idx`(`createdAt`),
     PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
 -- CreateTable
 CREATE TABLE `MaintenanceRecord` (
@@ -300,7 +300,7 @@ CREATE TABLE `MaintenanceRecord` (
     INDEX `MaintenanceRecord_type_idx`(`type`),
     INDEX `MaintenanceRecord_createdAt_idx`(`createdAt`),
     PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
 -- CreateTable
 CREATE TABLE `Warehouse` (
@@ -317,7 +317,7 @@ CREATE TABLE `Warehouse` (
     UNIQUE INDEX `Warehouse_name_key`(`name`),
     UNIQUE INDEX `Warehouse_code_key`(`code`),
     PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
 -- CreateTable
 CREATE TABLE `SparePartRequest` (
@@ -361,7 +361,7 @@ CREATE TABLE `SparePartRequest` (
     INDEX `SparePartRequest_warehouseId_idx`(`warehouseId`),
     INDEX `SparePartRequest_createdAt_idx`(`createdAt`),
     PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
 -- CreateTable
 CREATE TABLE `SupportMessage` (
@@ -385,7 +385,7 @@ CREATE TABLE `SupportMessage` (
     INDEX `SupportMessage_senderId_isRead_idx`(`senderId`, `isRead`),
     INDEX `SupportMessage_createdAt_idx`(`createdAt`),
     PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
 -- CreateTable
 CREATE TABLE `OperatingSite` (
@@ -401,7 +401,7 @@ CREATE TABLE `OperatingSite` (
     UNIQUE INDEX `OperatingSite_code_key`(`code`),
     INDEX `OperatingSite_isActive_idx`(`isActive`),
     PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
 -- CreateTable
 CREATE TABLE `CategorySla` (
@@ -413,7 +413,7 @@ CREATE TABLE `CategorySla` (
 
     UNIQUE INDEX `CategorySla_category_key`(`category`),
     PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
 -- CreateTable
 CREATE TABLE `AdminCategoryAssignment` (
@@ -426,7 +426,7 @@ CREATE TABLE `AdminCategoryAssignment` (
     INDEX `AdminCategoryAssignment_category_idx`(`category`),
     UNIQUE INDEX `AdminCategoryAssignment_adminId_category_key`(`adminId`, `category`),
     PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
 -- CreateTable
 CREATE TABLE `RegisteredConsumer` (
@@ -446,7 +446,7 @@ CREATE TABLE `RegisteredConsumer` (
     INDEX `RegisteredConsumer_consumerGroup_idx`(`consumerGroup`),
     UNIQUE INDEX `RegisteredConsumer_consumerGroup_consumerName_key`(`consumerGroup`, `consumerName`),
     PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
 -- CreateTable
 CREATE TABLE `TransactionalOutbox` (
@@ -473,7 +473,7 @@ CREATE TABLE `TransactionalOutbox` (
     INDEX `TransactionalOutbox_aggregateType_aggregateId_idx`(`aggregateType`, `aggregateId`),
     INDEX `TransactionalOutbox_createdAt_idx`(`createdAt`),
     PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
 -- CreateTable
 CREATE TABLE `OutboxConsumerDispatchIntent` (
@@ -492,7 +492,7 @@ CREATE TABLE `OutboxConsumerDispatchIntent` (
     UNIQUE INDEX `OutboxConsumerDispatchIntent_outboxId_consumerId_key`(`outboxId`, `consumerId`),
     UNIQUE INDEX `OutboxConsumerDispatchIntent_consumerId_sequenceNumber_key`(`consumerId`, `sequenceNumber`),
     PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
 -- CreateTable
 CREATE TABLE `DeliveryLedger` (
@@ -516,7 +516,7 @@ CREATE TABLE `DeliveryLedger` (
     INDEX `DeliveryLedger_intentId_idx`(`intentId`),
     INDEX `DeliveryLedger_outcome_idx`(`outcome`),
     PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
 -- CreateTable
 CREATE TABLE `ConsumerAggregateCursor` (
@@ -531,7 +531,7 @@ CREATE TABLE `ConsumerAggregateCursor` (
     INDEX `ConsumerAggregateCursor_consumerId_idx`(`consumerId`),
     UNIQUE INDEX `ConsumerAggregateCursor_consumerId_aggregateType_aggregateId_key`(`consumerId`, `aggregateType`, `aggregateId`),
     PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
 -- CreateTable
 CREATE TABLE `SequenceResolutionRecord` (
@@ -550,7 +550,7 @@ CREATE TABLE `SequenceResolutionRecord` (
     INDEX `SequenceResolutionRecord_outboxId_idx`(`outboxId`),
     UNIQUE INDEX `SequenceResolutionRecord_consumerId_sequenceNumber_key`(`consumerId`, `sequenceNumber`),
     PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
 -- CreateTable
 CREATE TABLE `TransactionalOutboxArchive` (
@@ -580,7 +580,7 @@ CREATE TABLE `TransactionalOutboxArchive` (
     INDEX `TransactionalOutboxArchive_archivedTimestamp_idx`(`archivedTimestamp`),
     INDEX `TransactionalOutboxArchive_aggregateType_aggregateId_idx`(`aggregateType`, `aggregateId`),
     PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
 -- CreateTable
 CREATE TABLE `OutboxConsumerDispatchIntentArchive` (
@@ -601,7 +601,7 @@ CREATE TABLE `OutboxConsumerDispatchIntentArchive` (
     INDEX `OutboxConsumerDispatchIntentArchive_outboxId_idx`(`outboxId`),
     INDEX `OutboxConsumerDispatchIntentArchive_consumerId_idx`(`consumerId`),
     PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
 -- CreateTable
 CREATE TABLE `DeliveryLedgerArchive` (
@@ -628,7 +628,7 @@ CREATE TABLE `DeliveryLedgerArchive` (
     INDEX `DeliveryLedgerArchive_consumerId_idx`(`consumerId`),
     INDEX `DeliveryLedgerArchive_outboxId_idx`(`outboxId`),
     PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
 
 -- AddForeignKey
 ALTER TABLE `Driver` ADD CONSTRAINT `Driver_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `User`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;

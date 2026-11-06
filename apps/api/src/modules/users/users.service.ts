@@ -100,7 +100,7 @@ export async function createUser(actor: Actor, input: CreateUser): Promise<UserP
   }
 
   // 4. Driving License (DL) for Driver Role (Required & Unique)
-  const normLicense = input.licenseNumber?.trim() || null;
+  const normLicense = input.licenseNumber?.trim().toUpperCase() || null;
   if (input.role === 'DRIVER') {
     if (!normLicense) {
       throw ApiError.badRequest('Driving License (DL) number is required for driver accounts.');

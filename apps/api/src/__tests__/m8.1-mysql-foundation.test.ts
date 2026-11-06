@@ -155,6 +155,8 @@ describe('M8.1 MySQL Migration Foundation — Schema & Model Tests', () => {
     expect(baselineSql).toContain('`id` VARCHAR(36) NOT NULL');
     expect(baselineSql).toContain('`description` TEXT NOT NULL');
     expect(baselineSql).toContain('`idempotencyKey` VARCHAR(255) NULL');
-    expect(baselineSql).toContain('COLLATE utf8mb4_unicode_ci');
+    expect(baselineSql).toContain('COLLATE utf8mb4_0900_ai_ci');
+    const collationMatches = baselineSql.match(/COLLATE utf8mb4_0900_ai_ci/g) || [];
+    expect(collationMatches.length).toBe(28);
   });
 });
