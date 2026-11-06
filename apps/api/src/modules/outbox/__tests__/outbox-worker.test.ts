@@ -6,7 +6,9 @@ import { dispatchPendingOutboxEvents } from '../dispatcher.service';
 import { startOutboxWorkers, stopOutboxWorkers } from '../outbox.worker';
 import { OutboxStatus, DeliveryOutcome } from '../outbox.types';
 
-describe('Milestone 3: Outbox Worker & Lifecycle Tests', () => {
+const isPostgres = (process.env.DATABASE_URL ?? '').startsWith('postgres');
+
+describe.skipIf(!isPostgres)('Milestone 3: Outbox Worker & Lifecycle Tests', () => {
   const TEST_GROUP = `worker_grp_${Date.now()}`;
   let consumerId: string;
   const receivedPayloads: unknown[] = [];
