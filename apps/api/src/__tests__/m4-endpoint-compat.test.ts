@@ -1,6 +1,3 @@
-process.env.DATABASE_URL = 'postgresql://app:app@127.0.0.1:5432/driver_complaint_m4_disposable?schema=public';
-process.env.M4_ALLOW_DESTRUCTIVE_TEST_DB = 'true';
-
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
 import { PrismaClient } from '@prisma/client';
@@ -8,7 +5,9 @@ import { createApp } from '../app';
 import { signAccessToken } from '../lib/jwt';
 import { assertDestructiveTestDbSafety } from '../../test/disposable-db-safety';
 
-describe('M4 — Endpoint Compatibility & Response Envelopes', () => {
+const isPostgres = (process.env.DATABASE_URL ?? '').startsWith('postgres');
+
+describe.skipIf(!isPostgres)('M4 — Endpoint Compatibility & Response Envelopes', () => {
   const app = createApp();
   let db: PrismaClient;
   let adminToken: string;

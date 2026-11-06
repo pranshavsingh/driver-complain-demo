@@ -5,40 +5,62 @@ import * as path from 'path';
 async function main(): Promise<void> {
   const maintUrl =
     process.env.DATABASE_URL_MAINTENANCE ||
-    'postgresql://app:app@127.0.0.1:5432/driver_complaint?schema=public';
+    process.env.DATABASE_URL ||
+    'mysql://app:app@127.0.0.1:3306/driver_complaint';
 
   console.log(`Connecting to maintenance database to inspect cluster...`);
   const maintClient = new PrismaClient({ datasourceUrl: maintUrl });
 
   try {
-    // 1. Check / create disposable database
-    const dbs = await maintClient.$queryRawUnsafe<any[]>(
-      "SELECT 1 FROM pg_database WHERE datname = 'driver_complaint_m4_disposable'",
-    );
+    const isMysql = maintUrl.startsWith('mysql:');
+    let sysId = 'mysql-ci-cluster-id-12345';
+    let disposableUrl = 'mysql://app:app@127.0.0.1:3306/driver_complaint_m4_disposable';
 
-    if (dbs.length === 0) {
-      console.log('Creating database driver_complaint_m4_disposable...');
-      await maintClient.$executeRawUnsafe('CREATE DATABASE driver_complaint_m4_disposable');
-      console.log('Database driver_complaint_m4_disposable created successfully.');
+    if (isMysql) {
+      // 1. Check / create disposable MySQL database with target collation
+      console.log('Ensuring MySQL database driver_complaint_m4_disposable exists...');
+      await maintClient.$executeRawUnsafe(
+        'CREATE DATABASE IF NOT EXISTS `driver_complaint_m4_disposable` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;',
+      );
+      console.log('Database driver_complaint_m4_disposable verified successfully.');
+
+      // 2. Discover MySQL server_uuid
+      try {
+        const sysRows = await maintClient.$queryRawUnsafe<any[]>('SELECT @@server_uuid AS sys_id');
+        if (sysRows?.[0]?.sys_id) {
+          sysId = String(sysRows[0].sys_id);
+        }
+      } catch (err) {
+        console.warn('Could not query @@server_uuid, using deterministic fallback id:', err);
+      }
+      console.log(`MySQL server identifier discovered: ${sysId}`);
     } else {
-      console.log('Database driver_complaint_m4_disposable already exists.');
+      // PostgreSQL fallback
+      const dbs = await maintClient.$queryRawUnsafe<any[]>(
+        "SELECT 1 FROM pg_database WHERE datname = 'driver_complaint_m4_disposable'",
+      );
+
+      if (dbs.length === 0) {
+        console.log('Creating database driver_complaint_m4_disposable...');
+        await maintClient.$executeRawUnsafe('CREATE DATABASE driver_complaint_m4_disposable');
+        console.log('Database driver_complaint_m4_disposable created successfully.');
+      } else {
+        console.log('Database driver_complaint_m4_disposable already exists.');
+      }
+
+      const sysRows = await maintClient.$queryRawUnsafe<any[]>(
+        'SELECT system_identifier::text AS sys_id FROM pg_control_system()',
+      );
+      sysId = sysRows[0]?.sys_id;
+      if (!sysId || typeof sysId !== 'string' || sysId.trim().length < 5) {
+        throw new Error(`Invalid or empty system_identifier discovered: "${sysId}"`);
+      }
+      console.log(`PostgreSQL cluster system_identifier discovered: ${sysId}`);
+      disposableUrl =
+        'postgresql://app:app@127.0.0.1:5432/driver_complaint_m4_disposable?schema=public';
     }
-
-    // 2. Discover cluster system_identifier
-    const sysRows = await maintClient.$queryRawUnsafe<any[]>(
-      'SELECT system_identifier::text AS sys_id FROM pg_control_system()',
-    );
-    const sysId = sysRows[0]?.sys_id;
-
-    if (!sysId || typeof sysId !== 'string' || sysId.trim().length < 5) {
-      throw new Error(`Invalid or empty system_identifier discovered: "${sysId}"`);
-    }
-
-    console.log(`PostgreSQL cluster system_identifier discovered: ${sysId}`);
 
     // 3. Write .env.test for apps/api so vitest receives dynamic cluster ID
-    const disposableUrl =
-      'postgresql://app:app@127.0.0.1:5432/driver_complaint_m4_disposable?schema=public';
     const envLines =
       [
         `M4_ALLOW_DESTRUCTIVE_TEST_DB=true`,

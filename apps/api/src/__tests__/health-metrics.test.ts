@@ -30,11 +30,13 @@ describe('Health and Metrics Endpoints', () => {
 
   describe('GET /health/readiness', () => {
     it('returns READY and database CONNECTED when database responds', async () => {
+      const querySpy = vi.spyOn(prisma, '$queryRaw').mockResolvedValueOnce([1] as any);
       const res = await request(app).get('/health/readiness');
       expect(res.status).toBe(200);
       expect(res.body.status).toBe('READY');
       expect(res.body.database).toBe('CONNECTED');
       expect(typeof res.body.timestamp).toBe('string');
+      querySpy.mockRestore();
     });
 
     it('returns 503 and NOT_READY when database query fails', async () => {

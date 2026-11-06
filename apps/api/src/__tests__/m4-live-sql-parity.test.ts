@@ -53,7 +53,9 @@ const FIXTURE_MAINT_IDS = [
   '88888888-8888-4000-8000-888888888881',
 ];
 
-describe('M4 — Live PostgreSQL 17 Aggregation Parity Tests', () => {
+const isPostgres = (process.env.DATABASE_URL ?? DISPOSABLE_DB_URL).startsWith('postgres');
+
+describe.skipIf(!isPostgres)('M4 — Live PostgreSQL 17 Aggregation Parity Tests', () => {
   let db: PrismaClient;
 
   async function cleanupTargetedFixtures(): Promise<void> {

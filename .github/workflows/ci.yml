@@ -10,19 +10,23 @@ jobs:
     runs-on: ubuntu-latest
 
     services:
-      postgres:
-        image: postgres:17
+      mysql:
+        image: mysql:8.0
         env:
-          POSTGRES_USER: app
-          POSTGRES_PASSWORD: app
-          POSTGRES_DB: driver_complaint
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: driver_complaint
+          MYSQL_USER: app
+          MYSQL_PASSWORD: app
         ports:
-          - 5432:5432
+          - 3306:3306
         options: >-
-          --health-cmd "pg_isready -U app -d driver_complaint"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -u app -papp --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+          --character-set-server=utf8mb4
+          --collation-server=utf8mb4_0900_ai_ci
+          --default-authentication-plugin=mysql_native_password
 
       redis:
         image: redis:7-alpine
@@ -36,7 +40,7 @@ jobs:
 
     env:
       NODE_ENV: test
-      DATABASE_URL: postgresql://app:app@localhost:5432/driver_complaint?schema=public
+      DATABASE_URL: mysql://app:app@127.0.0.1:3306/driver_complaint
       REDIS_URL: redis://localhost:6379
       JWT_ACCESS_SECRET: ci-access-secret-0123456789abcdef
       REFRESH_TOKEN_SECRET: ci-refresh-secret-0123456789abcdef
@@ -85,11 +89,11 @@ jobs:
       - name: Migration drift guard
         run: pnpm --filter @driver-complaint/api migrate:diff
 
-      # Setup M4 disposable test database with full migrations and cluster identity
-      - name: Setup M4 disposable test database
+      # Setup MySQL disposable test database with full migrations and cluster identity
+      - name: Setup MySQL disposable test database
         run: |
           pnpm --filter @driver-complaint/api exec tsx ../../scripts/setup-test-db.ts
-          DATABASE_URL="postgresql://app:app@127.0.0.1:5432/driver_complaint_m4_disposable?schema=public" pnpm --filter @driver-complaint/api migrate:deploy
+          DATABASE_URL="mysql://app:app@127.0.0.1:3306/driver_complaint_m4_disposable" pnpm --filter @driver-complaint/api migrate:deploy
 
       - name: Test
         run: pnpm test
@@ -159,37 +163,38 @@ jobs:
           set -e
           echo "=== 1. Starting test network and dependencies ==="
           docker network create test-net
-          docker run -d --name test-postgres --network test-net -p 5432:5432 \
-            -e POSTGRES_USER=app -e POSTGRES_PASSWORD=app -e POSTGRES_DB=driver_complaint \
-            postgres:17
+          docker run -d --name test-mysql --network test-net -p 3306:3306 \
+            -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=driver_complaint -e MYSQL_USER=app -e MYSQL_PASSWORD=app \
+            mysql:8.0 \
+            --character-set-server=utf8mb4 --collation-server=utf8mb4_0900_ai_ci --default-authentication-plugin=mysql_native_password
           docker run -d --name test-redis --network test-net -p 6379:6379 \
             redis:7-alpine
 
-          echo "=== 2. Waiting for Postgres and Redis readiness ==="
-          for i in $(seq 1 30); do
-            if docker exec test-postgres pg_isready -U app -d driver_complaint >/dev/null 2>&1 && \
+          echo "=== 2. Waiting for MySQL and Redis readiness ==="
+          for i in $(seq 1 45); do
+            if docker exec test-mysql mysqladmin ping -h 127.0.0.1 -u app -papp --silent >/dev/null 2>&1 && \
                docker exec test-redis redis-cli ping | grep -q PONG; then
-              echo "Postgres and Redis services ready"
+              echo "MySQL and Redis services ready"
               break
             fi
             sleep 1
           done
 
           echo "=== 3. Applying Prisma migrations to test database ==="
-          DATABASE_URL="postgresql://app:app@localhost:5432/driver_complaint?schema=public" pnpm --filter @driver-complaint/api migrate:deploy
+          DATABASE_URL="mysql://app:app@127.0.0.1:3306/driver_complaint" pnpm --filter @driver-complaint/api migrate:deploy
 
           echo "=== 4. Starting real production API container ==="
           docker run -d --name test-api --network test-net -p 4000:4000 \
             -e NODE_ENV=production \
             -e PORT=4000 \
-            -e DATABASE_URL="postgresql://app:app@test-postgres:5432/driver_complaint?schema=public" \
+            -e DATABASE_URL="mysql://app:app@test-mysql:3306/driver_complaint" \
             -e REDIS_URL="redis://test-redis:6379" \
             -e REQUIRE_REDIS_READY="true" \
             -e JWT_ACCESS_SECRET="ci-access-secret-0123456789abcdef" \
             -e REFRESH_TOKEN_SECRET="ci-refresh-secret-0123456789abcdef" \
             driver-complaint/api:latest
 
-          echo "=== 5. Waiting for API /health/readiness (Postgres + Redis) ==="
+          echo "=== 5. Waiting for API /health/readiness (MySQL + Redis) ==="
           for i in $(seq 1 45); do
             READY_JSON=$(curl -s http://localhost:4000/health/readiness || true)
             echo "Probe response: $READY_JSON"
@@ -225,5 +230,5 @@ jobs:
           fi
 
           echo "SUCCESS: Container handled Linux SIGTERM cleanly with zero errors"
-          docker rm -f test-api test-postgres test-redis || true
+          docker rm -f test-api test-mysql test-redis || true
           docker network rm test-net || true

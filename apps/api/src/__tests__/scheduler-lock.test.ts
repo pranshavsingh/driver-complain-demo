@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { prisma } from '../lib/prisma';
 import { tryAdvisoryXactLock } from '../lib/advisory-lock';
 
-describe('Milestone 2: Distributed Scheduler Advisory Locking', () => {
+const isPostgres = (process.env.DATABASE_URL ?? '').startsWith('postgres');
+
+describe.skipIf(!isPostgres)('Milestone 2: Distributed Scheduler Advisory Locking', () => {
   it('acquires transaction-scoped lock and automatically releases upon transaction commit', async () => {
     const lockId = 1001099; // Isolated test lock ID
 

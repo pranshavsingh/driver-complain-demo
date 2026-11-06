@@ -9,12 +9,14 @@ import {
 import { EnvSchemaWithValidation } from '../config/env';
 import { initRealtime, closeRealtime } from '../realtime/socket';
 import { createServer } from 'node:http';
+import { prisma } from '../lib/prisma';
 
 describe('Milestone 2: Redis Connection Lifecycle & Readiness Health', () => {
   const originalEnv = { ...process.env };
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.spyOn(prisma, '$queryRaw').mockResolvedValue([1] as any);
   });
 
   afterEach(async () => {

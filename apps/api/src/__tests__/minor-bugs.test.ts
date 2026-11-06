@@ -32,6 +32,7 @@ describe('Minor Bug Fixes (M-1 to M-10) — Verification Suite', () => {
   describe('M-2: listUsers search with ADMIN visibility', () => {
     it('wraps both ADMIN visibility OR condition and search OR condition inside AND', async () => {
       const findManySpy = vi.spyOn(prisma.user, 'findMany').mockResolvedValue([]);
+      vi.spyOn(prisma.user, 'count').mockResolvedValue(0);
 
       await listUsers(
         { id: VALID_UUID_1, role: 'ADMIN' },
@@ -62,6 +63,7 @@ describe('Minor Bug Fixes (M-1 to M-10) — Verification Suite', () => {
 
     it('does not apply AND wrapper for SUPER_ADMIN when no search filter is present', async () => {
       const findManySpy = vi.spyOn(prisma.user, 'findMany').mockResolvedValue([]);
+      vi.spyOn(prisma.user, 'count').mockResolvedValue(0);
 
       await listUsers({ id: VALID_UUID_1, role: 'SUPER_ADMIN' }, {});
 
