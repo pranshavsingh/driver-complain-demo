@@ -39,6 +39,7 @@ jobs:
     env:
       NODE_ENV: test
       DATABASE_URL: mysql://app:app@127.0.0.1:3306/driver_complaint
+      DATABASE_URL_MAINTENANCE: mysql://root:root@127.0.0.1:3306/driver_complaint
       REDIS_URL: redis://localhost:6379
       JWT_ACCESS_SECRET: ci-access-secret-0123456789abcdef
       REFRESH_TOKEN_SECRET: ci-refresh-secret-0123456789abcdef

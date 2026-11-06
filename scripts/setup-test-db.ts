@@ -22,6 +22,13 @@ async function main(): Promise<void> {
       await maintClient.$executeRawUnsafe(
         'CREATE DATABASE IF NOT EXISTS `driver_complaint_m4_disposable` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;',
       );
+      try {
+        await maintClient.$executeRawUnsafe(
+          "GRANT ALL PRIVILEGES ON `driver_complaint_m4_disposable`.* TO 'app'@'%'; FLUSH PRIVILEGES;",
+        );
+      } catch (grantErr) {
+        console.warn('Could not grant privileges on disposable database to app user:', grantErr);
+      }
       console.log('Database driver_complaint_m4_disposable verified successfully.');
 
       // 2. Discover MySQL server_uuid
