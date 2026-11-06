@@ -16,7 +16,6 @@ import {
   outboxDispatchesTotal,
   outboxDeliveriesTotal,
 } from '../../lib/metrics';
-import { logger } from '../../lib/logger';
 
 export interface OutboxLagQueryResult {
   pending_count?: number | bigint;
@@ -58,23 +57,19 @@ export function computeOutboxMetricsFromRow(
  * by the background dispatcher and watchdog scheduler to maintain low pending-set cardinality.
  */
 export async function collectOutboxMetrics(): Promise<void> {
-  try {
-    const result = await prisma.$queryRaw<Array<OutboxLagQueryResult>>`
-      SELECT 
-        count(*)::int as pending_count,
-        count(CASE WHEN "scheduledAt" <= NOW() THEN 1 END)::int as overdue_count,
-        MIN(CASE WHEN "scheduledAt" <= NOW() THEN "scheduledAt" END) as oldest_overdue
-      FROM "TransactionalOutbox"
-      WHERE status = 'PENDING'
-    `;
+  const result = await prisma.$queryRaw<Array<OutboxLagQueryResult>>`
+    SELECT 
+      count(*)::int as pending_count,
+      count(CASE WHEN "scheduledAt" <= NOW() THEN 1 END)::int as overdue_count,
+      MIN(CASE WHEN "scheduledAt" <= NOW() THEN "scheduledAt" END) as oldest_overdue
+    FROM "TransactionalOutbox"
+    WHERE status = 'PENDING'
+  `;
 
-    const metrics = computeOutboxMetricsFromRow(result?.[0]);
-    outboxPendingEvents.set(metrics.pendingCount);
-    outboxOverdueEvents.set(metrics.overdueCount);
-    outboxDispatchLagSeconds.set(metrics.lagSeconds);
-  } catch (err) {
-    logger.debug({ err }, 'Safe non-blocking error collecting Outbox metrics');
-  }
+  const metrics = computeOutboxMetricsFromRow(result?.[0]);
+  outboxPendingEvents.set(metrics.pendingCount);
+  outboxOverdueEvents.set(metrics.overdueCount);
+  outboxDispatchLagSeconds.set(metrics.lagSeconds);
 }
 
 export function recordOutboxDispatch(status: 'success' | 'failure', count = 1): void {

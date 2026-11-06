@@ -16,7 +16,7 @@
  */
 import { bullmqQueueJobs, bullmqJobDurationSeconds } from '../lib/metrics';
 import { getRegisteredQueues, getQueue, QUEUES } from './queue';
-import { isRedisAvailable } from '../lib/redis';
+import { isRedisAvailable, getRedisStatus } from '../lib/redis';
 import { logger } from '../lib/logger';
 
 export const ALLOWED_QUEUES = new Set<string>([
@@ -76,9 +76,17 @@ export function instrumentWorker(worker: any, queueName: string): void {
  * Ensures allowlisted queues in Redis are visible without creating duplicate instances.
  * Tolerates uninitialized queues and Redis connection issues.
  */
-export async function collectBullmqMetrics(): Promise<void> {
-  if (!isRedisAvailable()) {
-    return;
+export async function collectBullmqMetrics(): Promise<{ status: 'skipped'; reason: string } | void> {
+  const available = isRedisAvailable();
+  const redisStatus = getRedisStatus();
+
+  // If Redis is explicitly unconfigured and not available, skip collection
+  if (redisStatus === 'NOT_CONFIGURED' && !available) {
+    return { status: 'skipped', reason: 'Redis not configured (BullMQ disabled)' };
+  }
+
+  if (!available) {
+    throw new Error(`BullMQ metrics collection unavailable: Redis is ${redisStatus}`);
   }
 
   const queueMap = new Map<string, any>();

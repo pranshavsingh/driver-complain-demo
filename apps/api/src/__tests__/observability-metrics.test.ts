@@ -535,8 +535,12 @@ describe('Observability & Metrics Hardening (M8 Phase 2)', () => {
       expect(overdueResult.lagSeconds).toBe(120);
     });
 
-    it('handles database errors gracefully during collectOutboxMetrics without throwing', async () => {
-      await expect(collectOutboxMetrics()).resolves.not.toThrow();
+    it('propagates database errors during collectOutboxMetrics so failures are observable', async () => {
+      const dbErr = new Error("Connection terminated");
+      const querySpy = vi.spyOn(prisma, '$queryRaw').mockRejectedValue(dbErr);
+
+      await expect(collectOutboxMetrics()).rejects.toThrow("Connection terminated");
+      querySpy.mockRestore();
     });
 
     it('records outbox dispatches and deliveries total correctly', () => {
@@ -567,26 +571,45 @@ describe('Observability & Metrics Hardening (M8 Phase 2)', () => {
 
     it('throttles collection calls made within the 15-second TTL window', async () => {
       _resetCollectThrottleForTesting();
+      const basePrismaSpy = vi.spyOn(basePrisma, '$queryRaw').mockResolvedValue([{ '?column?': 1 }] as any);
+      const prismaSpy = vi
+        .spyOn(prisma, '$queryRaw')
+        .mockResolvedValue([{ pending_count: 0, overdue_count: 0, oldest_overdue: null }] as any);
 
-      // First run executes collection
+      // First run executes collection successfully
       await collectSystemMetrics();
 
       // Second immediate run returns without starting collection
       const promise = collectSystemMetrics();
       await expect(promise).resolves.toBeUndefined();
+
+      basePrismaSpy.mockRestore();
+      prismaSpy.mockRestore();
     });
 
     it('allows a subsequent collection after throttle timestamp is reset or TTL expires', async () => {
       _resetCollectThrottleForTesting();
+      const basePrismaSpy = vi.spyOn(basePrisma, '$queryRaw').mockResolvedValue([{ '?column?': 1 }] as any);
+      const prismaSpy = vi
+        .spyOn(prisma, '$queryRaw')
+        .mockResolvedValue([{ pending_count: 0, overdue_count: 0, oldest_overdue: null }] as any);
+
       await collectSystemMetrics();
 
       // Simulate TTL expiration
       _resetCollectThrottleForTesting();
       await expect(collectSystemMetrics()).resolves.not.toThrow();
+
+      basePrismaSpy.mockRestore();
+      prismaSpy.mockRestore();
     });
 
     it('tracks individual collector completion and does not mark entire collection successful when one collector fails', async () => {
       _resetCollectThrottleForTesting();
+      const basePrismaSpy = vi.spyOn(basePrisma, '$queryRaw').mockResolvedValue([{ '?column?': 1 }] as any);
+      const prismaSpy = vi
+        .spyOn(prisma, '$queryRaw')
+        .mockResolvedValue([{ pending_count: 0, overdue_count: 0, oldest_overdue: null }] as any);
 
       const bullmqSpy = vi
         .spyOn(queueMetricsModule, 'collectBullmqMetrics')
@@ -604,12 +627,15 @@ describe('Observability & Metrics Hardening (M8 Phase 2)', () => {
       expect(status.lastEntireCollectionSuccessTime).toBeNull();
 
       bullmqSpy.mockRestore();
+      basePrismaSpy.mockRestore();
+      prismaSpy.mockRestore();
     });
 
     it('retries a failed collector on subsequent scrape while preserving 15s throttle for successful collectors', async () => {
       _resetCollectThrottleForTesting();
 
       const dbSpy = vi.spyOn(dbMetricsModule, 'collectDbMetrics').mockResolvedValue();
+      const outboxSpy = vi.spyOn(outboxMetricsModule, 'collectOutboxMetrics').mockResolvedValue();
       const bullmqSpy = vi
         .spyOn(queueMetricsModule, 'collectBullmqMetrics')
         .mockRejectedValueOnce(new Error('Transient BullMQ failure'))
@@ -648,11 +674,16 @@ describe('Observability & Metrics Hardening (M8 Phase 2)', () => {
       expect(bullmqSpy).toHaveBeenCalledTimes(2);
 
       dbSpy.mockRestore();
+      outboxSpy.mockRestore();
       bullmqSpy.mockRestore();
     });
 
     it('preserves non-blocking behavior: one failed collector does not prevent unrelated collectors from executing', async () => {
       _resetCollectThrottleForTesting();
+      const basePrismaSpy = vi.spyOn(basePrisma, '$queryRaw').mockResolvedValue([{ '?column?': 1 }] as any);
+      const outboxQuerySpy = vi
+        .spyOn(prisma, '$queryRaw')
+        .mockResolvedValue([{ pending_count: 0, overdue_count: 0, oldest_overdue: null }] as any);
 
       const redisSpy = vi
         .spyOn(redisMetricsModule, 'collectRedisMetrics')
@@ -670,6 +701,111 @@ describe('Observability & Metrics Hardening (M8 Phase 2)', () => {
 
       redisSpy.mockRestore();
       outboxSpy.mockRestore();
+      basePrismaSpy.mockRestore();
+      outboxQuerySpy.mockRestore();
+    });
+
+    it('observes real database collector failure through ping probe failure without mocking collectDbMetrics', async () => {
+      _resetCollectThrottleForTesting();
+
+      // Real ping probe failure via basePrisma.$queryRaw rejection without mocking collectDbMetrics
+      const basePrismaSpy = vi
+        .spyOn(basePrisma, '$queryRaw')
+        .mockRejectedValueOnce(new Error("Can't reach database server at 127.0.0.1:5432"));
+      const outboxSpy = vi.spyOn(outboxMetricsModule, 'collectOutboxMetrics').mockResolvedValue();
+
+      // Scrape 1: DB ping fails in real code path
+      await collectSystemMetrics();
+
+      const statusAfterScrape1 = _getCollectorStatusForTesting();
+      expect(statusAfterScrape1.collectors.db.status).toBe('failed');
+      expect(statusAfterScrape1.collectors.db.lastError).toContain('Database connectivity check failed');
+      expect(statusAfterScrape1.collectors.db.lastSuccessTime).toBeNull();
+      expect(statusAfterScrape1.entireCollectionSucceeded).toBe(false);
+      expect((await dbUpGauge.get()).values[0]?.value).toBe(0);
+
+      // Scrape 2: Database recovers, basePrisma.$queryRaw resolves
+      basePrismaSpy.mockResolvedValue([{ '?column?': 1 }] as any);
+      await collectSystemMetrics();
+
+      const statusAfterScrape2 = _getCollectorStatusForTesting();
+      expect(statusAfterScrape2.collectors.db.status).toBe('success');
+      expect(statusAfterScrape2.collectors.db.lastSuccessTime).not.toBeNull();
+      expect((await dbUpGauge.get()).values[0]?.value).toBe(1);
+
+      basePrismaSpy.mockRestore();
+      outboxSpy.mockRestore();
+    });
+
+    it('observes real outbox collector failure through prisma query rejection without mocking collectOutboxMetrics', async () => {
+      _resetCollectThrottleForTesting();
+
+      const basePrismaSpy = vi.spyOn(basePrisma, '$queryRaw').mockResolvedValue([{ '?column?': 1 }] as any);
+      // Real outbox failure via prisma.$queryRaw rejection
+      const prismaSpy = vi
+        .spyOn(prisma, '$queryRaw')
+        .mockRejectedValueOnce(new Error('relation "TransactionalOutbox" does not exist'));
+
+      // Scrape 1: Outbox query fails in real code path
+      await collectSystemMetrics();
+
+      const statusAfterScrape1 = _getCollectorStatusForTesting();
+      expect(statusAfterScrape1.collectors.outbox.status).toBe('failed');
+      expect(statusAfterScrape1.collectors.outbox.lastError).toBe('relation "TransactionalOutbox" does not exist');
+      expect(statusAfterScrape1.collectors.outbox.lastSuccessTime).toBeNull();
+      expect(statusAfterScrape1.collectors.db.status).toBe('success'); // DB unaffected (non-blocking)
+      expect(statusAfterScrape1.entireCollectionSucceeded).toBe(false);
+
+      // Scrape 2: Outbox table query recovers
+      prismaSpy.mockResolvedValue([{ pending_count: 5, overdue_count: 2, oldest_overdue: new Date() }] as any);
+      await collectSystemMetrics();
+
+      const statusAfterScrape2 = _getCollectorStatusForTesting();
+      expect(statusAfterScrape2.collectors.outbox.status).toBe('success');
+      expect(statusAfterScrape2.collectors.outbox.lastSuccessTime).not.toBeNull();
+
+      basePrismaSpy.mockRestore();
+      prismaSpy.mockRestore();
+    });
+
+    it('distinguishes real Redis unavailable error from valid skipped state', async () => {
+      _resetCollectThrottleForTesting();
+      const basePrismaSpy = vi.spyOn(basePrisma, '$queryRaw').mockResolvedValue([{ '?column?': 1 }] as any);
+      const prismaSpy = vi
+        .spyOn(prisma, '$queryRaw')
+        .mockResolvedValue([{ pending_count: 0, overdue_count: 0, oldest_overdue: null }] as any);
+
+      // Part 1: Real UNAVAILABLE state (configured but unavailable)
+      const isAvailSpy = vi.spyOn(redisModule, 'isRedisAvailable').mockReturnValue(false);
+      const statusSpy = vi.spyOn(redisModule, 'getRedisStatus').mockReturnValue('UNAVAILABLE');
+
+      await collectSystemMetrics();
+
+      const statusUnavailable = _getCollectorStatusForTesting();
+      expect(statusUnavailable.collectors.redis.status).toBe('failed');
+      expect(statusUnavailable.collectors.redis.lastError).toContain('Redis unavailable (status: UNAVAILABLE)');
+      expect(statusUnavailable.collectors.bullmq.status).toBe('failed');
+      expect(statusUnavailable.collectors.bullmq.lastError).toContain('Redis is UNAVAILABLE');
+      expect(statusUnavailable.entireCollectionSucceeded).toBe(false);
+
+      // Part 2: Explicitly classified valid SKIPPED state (e.g. NOT_CONFIGURED)
+      _resetCollectThrottleForTesting();
+      statusSpy.mockReturnValue('NOT_CONFIGURED');
+
+      await collectSystemMetrics();
+
+      const statusSkipped = _getCollectorStatusForTesting();
+      expect(statusSkipped.collectors.redis.status).toBe('skipped');
+      expect(statusSkipped.collectors.bullmq.status).toBe('skipped');
+      expect(statusSkipped.collectors.db.status).toBe('success');
+      expect(statusSkipped.collectors.outbox.status).toBe('success');
+      // Skipped optional dependencies do not fail the overall collection
+      expect(statusSkipped.entireCollectionSucceeded).toBe(true);
+
+      isAvailSpy.mockRestore();
+      statusSpy.mockRestore();
+      basePrismaSpy.mockRestore();
+      prismaSpy.mockRestore();
     });
 
     it('preserves single-flight mutex across concurrent scrapes during failure and retry', async () => {

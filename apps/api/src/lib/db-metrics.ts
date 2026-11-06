@@ -14,12 +14,10 @@ import { pingDatabase } from './prisma';
 import { logger } from './logger';
 
 export async function collectDbMetrics(): Promise<void> {
-  try {
-    const isUp = await pingDatabase(1500);
-    if (!isUp) {
-      logger.debug('Safe non-blocking DB connectivity check returned down');
-    }
-  } catch (err) {
-    logger.debug({ err }, 'Safe non-blocking DB connectivity check failed');
+  const isUp = await pingDatabase(1500);
+  if (!isUp) {
+    const errorMsg = 'Database connectivity check failed (database down or ping timed out)';
+    logger.debug(errorMsg);
+    throw new Error(errorMsg);
   }
 }

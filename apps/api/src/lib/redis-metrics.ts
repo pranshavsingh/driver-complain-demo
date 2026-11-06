@@ -13,7 +13,7 @@
  * measurable CPU overhead on hot event loops and can destabilize BullMQ's multi-key atomic
  * Lua scripts. Ping latency is used as the safe, standardized responsiveness measurement.
  */
-import { getRedisClient, isRedisAvailable, pingRedis } from './redis';
+import { getRedisClient, isRedisAvailable, pingRedis, getRedisStatus } from './redis';
 import {
   redisUpGauge,
   redisPingLatencySeconds,
@@ -29,11 +29,20 @@ export function markRedisUnavailable(): void {
   redisUsedMemoryBytes.remove();
 }
 
-export async function collectRedisMetrics(): Promise<void> {
+export async function collectRedisMetrics(): Promise<{ status: 'skipped'; reason: string } | void> {
   const client = getRedisClient();
-  if (!client || !isRedisAvailable()) {
+  const available = isRedisAvailable();
+  const redisStatus = getRedisStatus();
+
+  // If Redis is explicitly unconfigured and not available, skip collection
+  if (redisStatus === 'NOT_CONFIGURED' && !available) {
     markRedisUnavailable();
-    return;
+    return { status: 'skipped', reason: 'Redis not configured (optional dependency)' };
+  }
+
+  if (!client || !available) {
+    markRedisUnavailable();
+    throw new Error(`Redis unavailable (status: ${redisStatus})`);
   }
 
   try {
@@ -44,7 +53,7 @@ export async function collectRedisMetrics(): Promise<void> {
       redisPingLatencySeconds.set(pingResult.latencyMs / 1000);
     } else {
       markRedisUnavailable();
-      return;
+      throw new Error(`Redis ping failed (status: ${pingResult.status})`);
     }
 
     // 2. Safe, section-scoped INFO queries (INFO clients, INFO memory)
@@ -78,5 +87,6 @@ export async function collectRedisMetrics(): Promise<void> {
   } catch (err) {
     markRedisUnavailable();
     logger.debug({ err }, 'Error collecting Redis metrics (handled safely)');
+    throw err;
   }
 }

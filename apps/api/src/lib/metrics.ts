@@ -326,19 +326,22 @@ export function verifyMetricsAuth(req: Request, res: Response, next: NextFunctio
 export const ALL_SYSTEM_COLLECTORS = ['db', 'redis', 'bullmq', 'socketio', 'outbox'] as const;
 export type SystemCollectorName = (typeof ALL_SYSTEM_COLLECTORS)[number];
 
+export type CollectorExecutionResult = { status: 'success' } | { status: 'skipped'; reason?: string } | void;
+
 export interface CollectorStatus {
   lastSuccessTime: number | null;
   lastFailureTime: number | null;
   lastError: string | null;
-  status: 'idle' | 'success' | 'failed';
+  status: 'idle' | 'success' | 'failed' | 'skipped';
+  skipReason?: string | null;
 }
 
 const collectorStatus: Record<SystemCollectorName, CollectorStatus> = {
-  db: { lastSuccessTime: null, lastFailureTime: null, lastError: null, status: 'idle' },
-  redis: { lastSuccessTime: null, lastFailureTime: null, lastError: null, status: 'idle' },
-  bullmq: { lastSuccessTime: null, lastFailureTime: null, lastError: null, status: 'idle' },
-  socketio: { lastSuccessTime: null, lastFailureTime: null, lastError: null, status: 'idle' },
-  outbox: { lastSuccessTime: null, lastFailureTime: null, lastError: null, status: 'idle' },
+  db: { lastSuccessTime: null, lastFailureTime: null, lastError: null, status: 'idle', skipReason: null },
+  redis: { lastSuccessTime: null, lastFailureTime: null, lastError: null, status: 'idle', skipReason: null },
+  bullmq: { lastSuccessTime: null, lastFailureTime: null, lastError: null, status: 'idle', skipReason: null },
+  socketio: { lastSuccessTime: null, lastFailureTime: null, lastError: null, status: 'idle', skipReason: null },
+  outbox: { lastSuccessTime: null, lastFailureTime: null, lastError: null, status: 'idle', skipReason: null },
 };
 
 let entireCollectionSucceeded = false;
@@ -361,17 +364,32 @@ export function isCollectorDue(name: SystemCollectorName, now: number = Date.now
 /**
  * Helper to run a collector with safety and status tracking.
  */
-async function runCollector(name: SystemCollectorName, fn: () => Promise<void>): Promise<boolean> {
+async function runCollector(
+  name: SystemCollectorName,
+  fn: () => Promise<CollectorExecutionResult>,
+): Promise<boolean> {
   try {
-    await fn();
+    const result = await fn();
+    if (result && result.status === 'skipped') {
+      collectorStatus[name].lastFailureTime = null;
+      collectorStatus[name].lastError = null;
+      collectorStatus[name].status = 'skipped';
+      collectorStatus[name].skipReason = result.reason || 'Skipped';
+      // Record lastSuccessTime for valid skipped states so throttle prevents repetitive probe attempts every tick
+      collectorStatus[name].lastSuccessTime = Date.now();
+      return true;
+    }
+
     collectorStatus[name].lastSuccessTime = Date.now();
     collectorStatus[name].lastError = null;
+    collectorStatus[name].skipReason = null;
     collectorStatus[name].status = 'success';
     return true;
   } catch (err) {
     collectorStatus[name].lastFailureTime = Date.now();
     collectorStatus[name].lastError = err instanceof Error ? err.message : String(err);
     collectorStatus[name].status = 'failed';
+    collectorStatus[name].skipReason = null;
     // Clear lastSuccessTime so this collector is immediately eligible for retry on the next scrape
     collectorStatus[name].lastSuccessTime = null;
     logger.debug({ err, collector: name }, `Safe non-blocking error collecting ${name} metrics`);
@@ -389,6 +407,7 @@ export function _resetCollectThrottleForTesting(): void {
       lastFailureTime: null,
       lastError: null,
       status: 'idle',
+      skipReason: null,
     };
   }
   entireCollectionSucceeded = false;
@@ -445,7 +464,7 @@ export async function collectSystemMetrics(): Promise<void> {
     if (collectorsToRun.includes('redis')) {
       const ok = await runCollector('redis', async () => {
         const { collectRedisMetrics } = await import('./redis-metrics');
-        await collectRedisMetrics();
+        return await collectRedisMetrics();
       });
       if (!ok) anyCollectorFailed = true;
     }
@@ -454,7 +473,7 @@ export async function collectSystemMetrics(): Promise<void> {
     if (collectorsToRun.includes('bullmq')) {
       const ok = await runCollector('bullmq', async () => {
         const { collectBullmqMetrics } = await import('../jobs/queue-metrics');
-        await collectBullmqMetrics();
+        return await collectBullmqMetrics();
       });
       if (!ok) anyCollectorFailed = true;
     }
@@ -464,9 +483,13 @@ export async function collectSystemMetrics(): Promise<void> {
       const ok = await runCollector('socketio', async () => {
         const { getIo } = await import('../realtime/socket');
         const io = getIo();
-        if (io && io.sockets && io.sockets.adapter && io.sockets.adapter.rooms) {
+        if (!io) {
+          return { status: 'skipped', reason: 'Socket.IO instance not initialized' };
+        }
+        if (io.sockets && io.sockets.adapter && io.sockets.adapter.rooms) {
           socketioRoomsCount.set(io.sockets.adapter.rooms.size);
         }
+        return { status: 'success' };
       });
       if (!ok) anyCollectorFailed = true;
     }
@@ -480,13 +503,13 @@ export async function collectSystemMetrics(): Promise<void> {
       if (!ok) anyCollectorFailed = true;
     }
 
-    // Mark entire collection as successful only when no collector failed and all collectors have valid success timestamps
-    if (
-      !anyCollectorFailed &&
-      ALL_SYSTEM_COLLECTORS.every(
-        (name) => collectorStatus[name].status === 'success' && collectorStatus[name].lastSuccessTime !== null,
-      )
-    ) {
+    // Mark entire collection as successful only when no collector failed and all collectors have valid success/skipped statuses
+    const isHealthyOrSkipped = (name: SystemCollectorName) => {
+      const s = collectorStatus[name];
+      return (s.status === 'success' && s.lastSuccessTime !== null) || s.status === 'skipped';
+    };
+
+    if (!anyCollectorFailed && ALL_SYSTEM_COLLECTORS.every(isHealthyOrSkipped)) {
       entireCollectionSucceeded = true;
       lastEntireCollectionSuccessTime = Date.now();
     } else {
