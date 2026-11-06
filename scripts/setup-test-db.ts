@@ -5,11 +5,13 @@ import * as path from 'path';
 async function main(): Promise<void> {
   const maintUrl =
     process.env.DATABASE_URL_MAINTENANCE ||
-    process.env.DATABASE_URL ||
-    'mysql://app:app@127.0.0.1:3306/driver_complaint';
+    'mysql://root:root@127.0.0.1:3306/driver_complaint';
 
-  console.log(`Connecting to maintenance database to inspect cluster...`);
-  const maintClient = new PrismaClient({ datasourceUrl: maintUrl });
+  console.log(`Connecting to maintenance database to inspect cluster (${maintUrl})...`);
+  process.env.DATABASE_URL = maintUrl;
+  const maintClient = new PrismaClient({
+    datasources: { db: { url: maintUrl } },
+  });
 
   try {
     const isMysql = maintUrl.startsWith('mysql:');
@@ -24,8 +26,12 @@ async function main(): Promise<void> {
       );
       try {
         await maintClient.$executeRawUnsafe(
-          "GRANT ALL PRIVILEGES ON `driver_complaint_m4_disposable`.* TO 'app'@'%'; FLUSH PRIVILEGES;",
+          "GRANT ALL PRIVILEGES ON `driver_complaint_m4_disposable`.* TO 'app'@'%';",
         );
+        await maintClient.$executeRawUnsafe(
+          "GRANT ALL PRIVILEGES ON `driver_complaint_m4_disposable`.* TO 'app'@'localhost';",
+        );
+        await maintClient.$executeRawUnsafe('FLUSH PRIVILEGES;');
       } catch (grantErr) {
         console.warn('Could not grant privileges on disposable database to app user:', grantErr);
       }
