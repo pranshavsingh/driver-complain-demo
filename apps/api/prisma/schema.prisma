@@ -568,7 +568,7 @@ model SupportMessage {
   receiverId            String             @db.VarChar(36)
   receiver              User               @relation("ReceivedSupportMessages", fields: [receiverId], references: [id], onDelete: Cascade)
 
-  content               String             @default("") @db.Text
+  content               String             @db.Text
   type                  SupportMessageType @default(TEXT)
 
   attachmentUrl         String? @db.Text

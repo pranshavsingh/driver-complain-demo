@@ -76,7 +76,7 @@ describe('M8.1 MySQL Migration Foundation — Schema & Model Tests', () => {
     expect(schemaContent).toMatch(/model RefreshToken \{[\s\S]*?\s+userAgent\s+String\?\s+@db\.Text/);
 
     // SupportMessage content
-    expect(schemaContent).toMatch(/model SupportMessage \{[\s\S]*?\s+content\s+String\s+@default\(""\)\s+@db\.Text/);
+    expect(schemaContent).toMatch(/model SupportMessage \{[\s\S]*?\s+content\s+String\s+(@default\(""\)\s+)?@db\.Text/);
     expect(schemaContent).toMatch(/model SupportMessage \{[\s\S]*?\s+attachmentUrl\s+String\?\s+@db\.Text/);
   });
 

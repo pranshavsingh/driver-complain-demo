@@ -77,13 +77,7 @@ jobs:
 
       # Migrations must be applied before the integration tests run.
       - name: Apply migrations
-        run: |
-          pnpm --filter @driver-complaint/api migrate:deploy 2> /tmp/mig_err.txt || {
-            ERR_MSG=$(cat /tmp/mig_err.txt | tr '\n' ' ')
-            echo "::error::Prisma migrate:deploy failed: $ERR_MSG"
-            cat /tmp/mig_err.txt
-            exit 1
-          }
+        run: pnpm --filter @driver-complaint/api migrate:deploy
 
       - name: Migration status
         run: pnpm --filter @driver-complaint/api exec prisma migrate status

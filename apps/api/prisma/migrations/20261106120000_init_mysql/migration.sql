@@ -368,7 +368,7 @@ CREATE TABLE `SupportMessage` (
     `id` VARCHAR(36) NOT NULL,
     `senderId` VARCHAR(36) NOT NULL,
     `receiverId` VARCHAR(36) NOT NULL,
-    `content` TEXT NOT NULL DEFAULT '',
+    `content` TEXT NOT NULL,
     `type` ENUM('TEXT', 'IMAGE', 'AUDIO') NOT NULL DEFAULT 'TEXT',
     `attachmentUrl` TEXT NULL,
     `attachmentPublicId` VARCHAR(191) NULL,
